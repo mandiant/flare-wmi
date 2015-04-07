@@ -1,0 +1,97 @@
+//--------------------------------------
+//--- 010 Editor v6.0.1 Binary Template
+//
+// File:
+// Author:
+// Revision:
+// Purpose:
+//--------------------------------------
+typedef DWORD uint32_t; 
+typedef QWORD uint64_t; 
+typedef unsigned char uint8_t;
+
+
+struct MappingHeader {
+    DWORD dwStartSignature;
+    DWORD dwVersion;
+};
+
+struct MappingXPHeader {
+    struct MappingHeader sHeader;
+    DWORD         dwPhysicalPages;
+    DWORD         dwMappingEntries;
+};
+
+struct MappingWin7Header {
+    struct MappingHeader sHeader;
+    DWORD dwFirstID;
+    DWORD dwSecondID;
+    DWORD dwPhysicalPages;
+    DWORD dwMappingEntries;
+};
+
+struct MappingEntry {
+    DWORD dwPageNumber;
+    DWORD dwPageCRC;
+    DWORD dwFreeSpace;
+    DWORD dwUserData;
+    DWORD dwFirstID;
+    DWORD dwSecondID;
+};
+
+struct Mapping {
+    struct MappingWin7Header header;
+    struct MappingEntry entries[header.dwMappingEntries];
+    uint32_t numFreeDwords;
+    uint32_t free[numFreeDwords];
+    uint32_t footer;
+};
+
+struct MappingFile {
+    struct Mapping objectsMap;
+    struct Mapping indexMap;
+    uint32_t isDirty;
+};
+
+struct Toc {
+  uint32 RecordID;
+  uint32 Offset;
+  uint32 Size;
+  uint32 Crc32;
+};
+
+struct ObjData {
+  local QWORD offset = 0;
+  local DWORD tocsize = 0;
+  while (1) {
+    if (ReadQuad(offset) == 0x0) {
+      tocsize = offset / sizeof(struct Toc);
+      break;
+    }
+    offset += sizeof(struct Toc);  
+  }
+  struct Toc tocs[tocsize];
+};
+
+struct Object {
+    uint32_t nameLen;
+    wchar_t name[nameLen];
+    uint64_t unk0;
+    uint32_t bufLen;
+    //uint8_t buf[bufLen - sizeof(bufLen)];
+    uint8_t unk1[0xE];
+    char nameA[ReadStringLength(FTell())];
+    uint32_t unk2; // 0x0F
+    uint32_t unk3; // 0x04
+    uint32_t unk4; // 0x01
+    uint32_t unk5; // 0x0D
+    uint32_t unk6;
+
+};
+
+struct MappingFile f;
+//struct ObjData o;
+
+//FSeek(GetCursorPos());
+//struct Object o;
+
