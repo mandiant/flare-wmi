@@ -109,11 +109,11 @@ struct BtrPage {
     struct PageHeader header;
     uint32_t current[header.RecordCount];
     uint32_t children[header.RecordCount + 1];
-    uint16_t toc[header.RecordCount];
-    uint16_t indirSize;
-    uint16_t indir[indirSize];
-    uint16_t strArraySize;
-    uint16_t strArray[strArraySize + 1];
+    uint16_t keys[header.RecordCount];
+    uint16_t stringDefTableSize;
+    uint16_t stringDefTable[stringDefTableSize];
+    uint16_t stringPartTableSize;
+    uint16_t stringPartTable[stringPartTableSize + 1];
 };
 
 //struct MappingFile f;
@@ -122,4 +122,5 @@ struct BtrPage {
 //FSeek(GetCursorPos());
 //struct Object o;
 
+FSeek(GetCursorPos());
 struct BtrPage ph;

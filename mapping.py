@@ -23,6 +23,7 @@ CIM_TYPE_XP = "xp"
 CIM_TYPE_WIN7 = "win7"
 DATA_PAGE_SIZE = 0x2000
 INDEX_PAGE_SIZE = 0x2000
+INDEX_PAGE_INVALID = 0xFFFFFFFF
 
 
 class LoggingObject(object):
@@ -104,12 +105,29 @@ class Mapping(vstruct.VStruct):
         self.free = v_bytes()
         self.footerSig = v_uint32()
 
+        # from physical page to logical page
+        # cached
+        self._reverseMapping = None
+
     def pcb_header(self):
         for i in xrange(self.header.mappingEntries):
             self.entries.vsAddElement(Entry())
 
     def pcb_numFreeDwords(self):
         self["free"].vsSetLength(self.numFreeDwords * 0x4)
+
+    def _buildReverseMapping(self):
+        for i in xrange(self.header.mappingEntries):
+            self._reverseMapping[self.entries[i].getPageNumber()] = i
+
+    def getPhysicalPage(self, logicalPage):
+        return self.entries[logicalPage].getPageNumber()
+
+    def getLogicalPage(self, physicalPage):
+        if self._reverseMapping is None:
+            self._buildReverseMapping()
+
+        return self.entries[logicalPage].getPageNumber()
 
 
 class Toc(vstruct.VStruct):
@@ -177,6 +195,20 @@ class DataPage(LoggingObject):
         toc = self.tocs[index]
         return self._buf[toc.offset:toc.offset + toc.size]
 
+    def getDataByKey(self, key):
+        targetId = key.getDataId()
+        targetSize = key.getDataSize()
+        for i in xrange(self.tocs.count):
+            toc = self.tocs[i]
+            if toc.recordId == targetId:
+                if toc.size < targetSize:
+                    raise RuntimeError("Data size doesn't match TOC size")
+                if toc.size > DATA_PAGE_SIZE - toc.offset:
+                    self.d("Large data item: key: %s, size: %s",
+                            str(key), hex(targetSize))
+                return self._buf[toc.offset:toc.offset + toc.size]
+        raise RuntimeError("record ID not found: %s", hex(targetId))
+
 
 INDEX_PAGE_TYPES = v_enum()
 INDEX_PAGE_TYPES.PAGE_TYPE_UNK = 0x0000
@@ -199,18 +231,18 @@ class _IndexPage(vstruct.VStruct):
     def __init__(self):
         vstruct.VStruct.__init__(self)
         self.header = IndexPageHeader()
-        self.keys = vstruct.VArray()
+        self.unk0 = vstruct.VArray()
         self.children = vstruct.VArray()
-        self.toc = vstruct.VArray()
+        self.keys = vstruct.VArray()
         self.stringDefTableSize = v_uint16()
         self.stringDefTable = vstruct.VArray()
         self.stringTableSize = v_uint16()
         self.stringTable = vstruct.VArray()
 
     def pcb_header(self):
-        self.keys.vsAddElements(self.header.recordCount, v_uint32)
+        self.unk0.vsAddElements(self.header.recordCount, v_uint32)
         self.children.vsAddElements(self.header.recordCount + 1, v_uint32)
-        self.toc.vsAddElements(self.header.recordCount, v_uint16)
+        self.keys.vsAddElements(self.header.recordCount, v_uint16)
 
     def pcb_stringDefTableSize(self):
         self.stringDefTable.vsAddElements(self.stringDefTableSize, v_uint16)
@@ -222,6 +254,35 @@ class _IndexPage(vstruct.VStruct):
         return self.header.sig == INDEX_PAGE_TYPES.PAGE_TYPE_ACTIVE
 
 
+class Key(LoggingObject):
+    def __init__(self, string):
+        super(Key, self).__init__()
+        self._string = string
+
+    def __str__(self):
+        return self._string
+
+    def isDataReference(self):
+        return "." in self._string
+
+    KEY_INDEX_DATA_PAGE = 1
+    KEY_INDEX_DATA_ID = 2
+    KEY_INDEX_DATA_SIZE = 3
+    def _getDataPart(self, index):
+        if not self.isDataReference():
+            raise RuntimeError("key is not a data reference: %s", str(self))
+        return self._string.split(".")[index]
+
+    def getDataPage(self):
+        return int(self._getDataPart(self.KEY_INDEX_DATA_PAGE))
+
+    def getDataId(self):
+        return int(self._getDataPart(self.KEY_INDEX_DATA_ID))
+
+    def getDataSize(self):
+        return int(self._getDataPart(self.KEY_INDEX_DATA_SIZE))
+
+
 class IndexPage(LoggingObject):
     def __init__(self, buf):
         super(IndexPage, self).__init__()
@@ -229,7 +290,7 @@ class IndexPage(LoggingObject):
         self._page = _IndexPage()
         self._page.vsParse(buf)
 
-    def getStringPart(self, stringIndex):
+    def _getStringPart(self, stringIndex):
         self.d("stringIndex: %s", hex(stringIndex))
 
         stringOffset = self._page.stringTable[stringIndex]
@@ -242,7 +303,7 @@ class IndexPage(LoggingObject):
         self.d("stringPart: %s", string)
         return string
 
-    def getString(self, stringDefIndex):
+    def _getString(self, stringDefIndex):
         self.d("stringDefIndex: %s", hex(stringDefIndex))
 
         stringPartCount = self._page.stringDefTable[stringDefIndex]
@@ -253,28 +314,24 @@ class IndexPage(LoggingObject):
             stringPartIndex = self._page.stringDefTable[stringDefIndex + 1 + i]
             self.d("stringPartIndex: %s", hex(stringPartIndex))
 
-            part = self.getStringPart(stringPartIndex)
+            part = self._getStringPart(stringPartIndex)
             parts.append(part)
 
         string = "/".join(parts)
         return string
 
-    def getItem(self, tocIndex):
-        self.d("tocIndex: %s", hex(tocIndex))
+    def getKeyCount(self):
+        return self._page.header.recordCount
 
-        stringDefIndex = self._page.toc[tocIndex]
+    def getKey(self, keyIndex):
+        self.d("keyIndex: %s", hex(keyIndex))
+
+        stringDefIndex = self._page.keys[keyIndex]
         self.d("stringDefIndex: %s", hex(stringDefIndex))
-        return self.getString(stringDefIndex)
+        return Key(self._getString(stringDefIndex))
 
-    def getValidTocIndices(self):
-        index = 0
-        while True:
-            try:
-                tocCount = self._page.toc[index]
-            except Exception:  # sorry, this is what vstruct gives us
-                return
-            yield index
-            index += tocCount
+    def getChildByIndex(self, childIndex):
+        return self._page.children[childIndex]
 
 
 class Template(vstruct.VStruct):
@@ -362,6 +419,110 @@ class CIM(LoggingObject):
         physicalPage = m.entries[index].getPageNumber()
         return self.getPhysicalIndexPageBuffer(physicalPage)
 
+    def getLogicalIndexPage(self, index):
+        return IndexPage(self.getLogicalIndexPageBuffer(index))
+
+    def getLogicalDataPage(self, index):
+        return DataPage(self.getLogicalDataPageBuffer(index))
+
+    def getDataBuffer(self, key):
+        if not key.isDataReference():
+            raise RuntimeError("key is not data reference: %s", str(key))
+
+        # this logic of this function is a bit more complex than
+        #   we'd want, since we have to handle the case where an
+        #   item's data spans multiple pages.
+        dataPage = key.getDataPage()
+        page = self.getLogicalDataPage(dataPage)
+
+        targetSize = key.getDataSize()
+        firstData = page.getDataByKey(key)
+
+        # this is the common case, return early
+        if targetSize == len(firstData):
+            return firstData
+
+        # here we handle data that spans multiple pages
+        data = [firstData]
+        foundSize = len(firstData)
+
+        i = 1
+        while foundSize < targetSize:
+            nextPage = self.getLogicalDataPageBuffer(dataPage + i)
+            if foundSize + len(nextPage) > targetSize:
+                # this is the last page containing data for this item
+                chunkSize = targetSize - foundSize
+                data.append(nextPage[:chunkSize])
+                foundSize += chunkSize
+            else:
+                # the entire page is used for this item
+                data.append(nextPage)
+                foundSize += len(nextPage)
+            i += 1
+
+        return "".join(data)
+
+
+def formatKey(k):
+    ret = []
+    for part in str(k).split("/"):
+        if "." in part:
+            ret.append(part[:7] + "..." + part.partition(".")[2])
+        else:
+            ret.append(part[:7])
+    return "/".join(ret)
+
+
+def formatIndexPage(c, p, num):
+    ret = []
+    ret.append("<header> logical page: {:s} | physical page: {:s} | count: {:s}".format(
+        hex(num).strip("L"),
+        hex(c.getCurrentIndexMapping().getPhysicalPage(num)).strip("L"),
+        hex(p.getKeyCount()).strip("L")))
+    for i in xrange(p.getKeyCount()):
+        key = p.getKey(i)
+        g_logger.debug("%s", str(key))
+        ret.append(" | {{ {key:s} | <child_{child:s}> {child:s} }}".format(
+            key=formatKey(key),
+            child=hex(p.getChildByIndex(i)).strip("L")))
+    return "".join(ret)
+
+
+def graphIndexPageRec(c, p, num):
+    print("  \"node{:s}\" [".format(hex(num).strip("L")))
+    print("     label = \"{:s}\"".format(formatIndexPage(c, p, num)))
+    print("     shape = \"record\"")
+    print("  ];")
+
+    for i in xrange(p.getKeyCount()):
+        childIndex = p.getChildByIndex(i)
+        if childIndex == INDEX_PAGE_INVALID:
+            continue
+        graphIndexPageRec(c, c.getLogicalIndexPage(childIndex), childIndex)
+
+    for i in xrange(p.getKeyCount()):
+        childIndex = p.getChildByIndex(i)
+        if childIndex == INDEX_PAGE_INVALID:
+            continue
+        print("  \"node{num:s}\":child{child:s} -> \"node{child:s}\"".format(
+            num=hex(num).strip("L"),
+            child=hex(childIndex).strip("L")))
+
+
+def graphIndex(c):
+    print("digraph g {")
+    print("  graph [ rankdir = \"LR\" ];")
+    print("  node [")
+    print("     fontsize = \"16\"")
+    print("     shape = \"ellipse\"")
+    print("  ];")
+    print("  edge [];")
+
+    p = c.getLogicalIndexPage(1)
+    graphIndexPageRec(c, p, 1)
+
+    print("}")
+
 
 def main(type_, path):
     if type_ not in ("xp", "win7"):
@@ -378,17 +539,21 @@ def main(type_, path):
     #    buf = f.read(DATA_PAGE_SIZE)
 
     #p = Page(buf)
-    #import hexdump
+    import hexdump
     #for i in xrange(p.tocs.count):
     #    hexdump.hexdump(p._getObjectBufByIndex(i))
     #    print("\n")
 
-    buf = c.getLogicalIndexPageBuffer(0)
-    p = IndexPage(buf)
-    print(p._page.tree())
+    #buf = c.getLogicalIndexPageBuffer(1)
+    #p = IndexPage(buf)
+    #print(p._page.tree())
 
-    for i in p.getValidTocIndices():
-        print(p.getItem(i))
+    #for i in xrange(p._page.header.recordCount):
+    #    print(p.getItem(i))
+    #graphIndex(c)
+
+    k = Key("NS_FCBAF5A1255D45B1176570C0B63AA60199749700C79A11D5811D54A83A1F4EFD/CD_FD1C1D414B71B5082C266A650E31EF6D5019382724244B685F217C0AAE00A921.3.1.12701")
+    hexdump.hexdump(c.getDataBuffer(k))
 
 
 if __name__ == "__main__":
