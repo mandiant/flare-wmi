@@ -195,15 +195,86 @@ class IndexPageHeader(vstruct.VStruct):
         self.recordCount = v_uint32()
 
 
+class _IndexPage(vstruct.VStruct):
+    def __init__(self):
+        vstruct.VStruct.__init__(self)
+        self.header = IndexPageHeader()
+        self.keys = vstruct.VArray()
+        self.children = vstruct.VArray()
+        self.toc = vstruct.VArray()
+        self.stringDefTableSize = v_uint16()
+        self.stringDefTable = vstruct.VArray()
+        self.stringTableSize = v_uint16()
+        self.stringTable = vstruct.VArray()
+
+    def pcb_header(self):
+        self.keys.vsAddElements(self.header.recordCount, v_uint32)
+        self.children.vsAddElements(self.header.recordCount + 1, v_uint32)
+        self.toc.vsAddElements(self.header.recordCount, v_uint16)
+
+    def pcb_stringDefTableSize(self):
+        self.stringDefTable.vsAddElements(self.stringDefTableSize, v_uint16)
+
+    def pcb_stringTableSize(self):
+        self.stringTable.vsAddElements(self.stringTableSize + 1, v_uint16)
+
+    def isValid(self):
+        return self.header.sig == INDEX_PAGE_TYPES.PAGE_TYPE_ACTIVE
+
+
 class IndexPage(LoggingObject):
     def __init__(self, buf):
         super(IndexPage, self).__init__()
         self._buf = buf
-        self.header = IndexPageHeader()
-        self.header.vsParse(buf)
+        self._page = _IndexPage()
+        self._page.vsParse(buf)
 
-    def isValid(self):
-        return self.header.sig == INDEX_PAGE_TYPES.PAGE_TYPE_ACTIVE
+    def getStringPart(self, stringIndex):
+        self.d("stringIndex: %s", hex(stringIndex))
+
+        stringOffset = self._page.stringTable[stringIndex]
+        self.d("stringOffset: %s", hex(stringOffset))
+        pageStringOffset = len(self._page) + stringOffset
+        self.d("stringOffset (page): %s", hex(pageStringOffset))
+
+        pageStringEndOffset = self._buf.find("\x00", pageStringOffset)
+        string = self._buf[pageStringOffset:pageStringEndOffset].decode("utf-8")
+        self.d("stringPart: %s", string)
+        return string
+
+    def getString(self, stringDefIndex):
+        self.d("stringDefIndex: %s", hex(stringDefIndex))
+
+        stringPartCount = self._page.stringDefTable[stringDefIndex]
+        self.d("stringPartCount: %s", hex(stringPartCount))
+
+        parts = []
+        for i in range(stringPartCount):
+            stringPartIndex = self._page.stringDefTable[stringDefIndex + 1 + i]
+            self.d("stringPartIndex: %s", hex(stringPartIndex))
+
+            part = self.getStringPart(stringPartIndex)
+            parts.append(part)
+
+        string = "/".join(parts)
+        return string
+
+    def getItem(self, tocIndex):
+        self.d("tocIndex: %s", hex(tocIndex))
+
+        stringDefIndex = self._page.toc[tocIndex]
+        self.d("stringDefIndex: %s", hex(stringDefIndex))
+        return self.getString(stringDefIndex)
+
+    def getValidTocIndices(self):
+        index = 0
+        while True:
+            try:
+                tocCount = self._page.toc[index]
+            except Exception:  # sorry, this is what vstruct gives us
+                return
+            yield index
+            index += tocCount
 
 
 class Template(vstruct.VStruct):
@@ -271,19 +342,25 @@ class CIM(LoggingObject):
             self._currentDataMapping, self._currentIndexMapping = self.getCurrentMappings()
         return self._currentIndexMapping
 
+    def getPhysicalDataPageBuffer(self, index):
+        with open(self._getDataFilePath(), "rb") as f:
+            f.seek(DATA_PAGE_SIZE * index)
+            return f.read(DATA_PAGE_SIZE)
+
+    def getPhysicalIndexPageBuffer(self, index):
+        with open(self._getIndexFilePath(), "rb") as f:
+            f.seek(INDEX_PAGE_SIZE * index)
+            return f.read(INDEX_PAGE_SIZE)
+
     def getLogicalDataPageBuffer(self, index):
         m = self.getCurrentDataMapping()
         physicalPage = m.entries[index].getPageNumber()
-        with open(self._getDataFilePath(), "rb") as f:
-            f.seek(DATA_PAGE_SIZE * physicalPage)
-            return f.read(DATA_PAGE_SIZE)
+        return self.getPhysicalDataPageBuffer(physicalPage)
 
-    def getLogicalIndexPage(self, index):
+    def getLogicalIndexPageBuffer(self, index):
         m = self.getCurrentIndexMapping()
         physicalPage = m.entries[index].getPageNumber()
-        with open(self._getIndexFilePath(), "rb") as f:
-            f.seek(INDEX_PAGE_SIZE * physicalPage)
-            return f.read(INDEX_PAGE_SIZE)
+        return self.getPhysicalIndexPageBuffer(physicalPage)
 
 
 def main(type_, path):
@@ -306,9 +383,12 @@ def main(type_, path):
     #    hexdump.hexdump(p._getObjectBufByIndex(i))
     #    print("\n")
 
-    buf = c.getLogicalIndexPage(0)
+    buf = c.getLogicalIndexPageBuffer(0)
     p = IndexPage(buf)
-    print(p.header.tree())
+    print(p._page.tree())
+
+    for i in p.getValidTocIndices():
+        print(p.getItem(i))
 
 
 if __name__ == "__main__":

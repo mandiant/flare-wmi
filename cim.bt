@@ -6,6 +6,7 @@
 // Revision:
 // Purpose:
 //--------------------------------------
+typedef WORD uint16_t; 
 typedef DWORD uint32_t; 
 typedef QWORD uint64_t; 
 typedef unsigned char uint8_t;
@@ -89,9 +90,36 @@ struct Object {
 
 };
 
-struct MappingFile f;
+enum {
+  PAGE_TYPE_UNK        = 0x0000,
+  PAGE_TYPE_ACTIVE     = 0xACCC,
+  PAGE_TYPE_DELETED    = 0xBADD,
+  PAGE_TYPE_ADMIN      = 0xADDD
+};
+
+struct PageHeader {
+    uint32_t Sig;
+    uint32_t LogicalId;
+    uint32_t Zero1;
+    uint32_t Zero2;
+    uint32_t RecordCount;
+};
+
+struct BtrPage {
+    struct PageHeader header;
+    uint32_t current[header.RecordCount];
+    uint32_t children[header.RecordCount + 1];
+    uint16_t toc[header.RecordCount];
+    uint16_t indirSize;
+    uint16_t indir[indirSize];
+    uint16_t strArraySize;
+    uint16_t strArray[strArraySize + 1];
+};
+
+//struct MappingFile f;
 //struct ObjData o;
 
 //FSeek(GetCursorPos());
 //struct Object o;
 
+struct BtrPage ph;
