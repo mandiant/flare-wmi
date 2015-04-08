@@ -2,6 +2,7 @@
 doc
 """
 import os
+import hashlib
 import inspect
 import logging
 
@@ -333,6 +334,9 @@ class IndexPage(LoggingObject):
     def getChildByIndex(self, childIndex):
         return self._page.children[childIndex]
 
+    def isValid(self):
+        return self._page.isValid()
+
 
 class Template(vstruct.VStruct):
     def __init__(self):
@@ -376,6 +380,9 @@ class CIM(LoggingObject):
                     maxVersion = h.version
             self._currentMappingFile = mappingFilePath
         return self._currentMappingFile
+
+    def getCimType(self):
+        return self._cim_type
 
     def getCurrentMappings(self):
         if self._currentIndexMapping is None:
@@ -462,6 +469,205 @@ class CIM(LoggingObject):
 
         return "".join(data)
 
+    def getIndexRootPageNumber(self):
+        indexMapping = self.getCurrentIndexMapping()
+
+        possibleRoots = set([])
+        impossibleRoots = set([])
+        for i in xrange(indexMapping.header.mappingEntries):
+            try:
+                page = self.getLogicalIndexPage(i)
+            except:
+                self.w("bad unpack: %s", hex(i))
+                continue
+
+            if not page.isValid():
+                continue
+
+            # careful: vstruct returns int-like objects with bad hash-equivalence
+            possibleRoots.add(int(i))
+            for j in xrange(page.getKeyCount() + 1):
+                childPage = page.getChildByIndex(j)
+                if childPage == INDEX_PAGE_INVALID:
+                    continue
+                # careful: vstruct int types
+                impossibleRoots.add(int(childPage))
+        ret = possibleRoots - impossibleRoots
+        if len(ret) != 1:
+            raise RuntimeError("Unable to determine root index node: %s" % (str(ret)))
+        return list(ret)[0]
+
+    def getMatchingKeys(self, key):
+        pass
+
+
+class Moniker(LoggingObject):
+    def __init__(self, string):
+        super(Moniker, self).__init__()
+        self._string = string
+        self.hostname = None  # type: str
+        self.namespace = None  # type: str
+        self.klass = None  # type: str
+        self.instance = None  # type: dict of str to str
+        self._parse()
+
+    def __str__(self):
+        return self._string
+
+    def _parse(self):
+        """
+        supported schemas:
+            //./root/cimv2 --> namespace
+            //HOSTNAME/root/cimv2 --> namespace
+            winmgmts://./root/cimv2 --> namespace
+            //./root/cimv2:Win32_Service --> class
+            //./root/cimv2:Win32_Service.Name="Beep" --> instance
+            //./root/cimv2:Win32_Service.Name='Beep' --> instance
+
+        we'd like to support this, but can't differentiate this
+          from a class:
+            //./root/cimv2/Win32_Service --> class
+        """
+        s = self._string
+        s = s.replace("\\", "/")
+
+        if s.startswith("winmgmts:"):
+            s = s[len("winmgmts:"):]
+
+        if not s.startswith("//"):
+            raise RuntimeError("Moniker doesn't contain '//': %s" % (s))
+        s = s[len("//"):]
+
+        self.hostname, _, s = s.partition("/")
+        if self.hostname == ".":
+            self.hostname = "localhost"
+
+        s, _, keys = s.partition(".")
+        if keys == "":
+            keys = None
+        # s must now not contain any special characters
+        # we'll process the keys later
+
+        self.namespace, _, self.klass = s.partition(":")
+        if self.klass == "":
+            self.klass = None
+        self.namespace = self.namespace.replace("/", "\\")
+
+        if keys is not None:
+            self.instance = {}
+            for key in keys.split(","):
+                k, _, v = key.partition("=")
+                self.instance[k] = v.strip("\"'")
+
+
+class Index(LoggingObject):
+    def __init__(self, cim):
+        super(Index, self).__init__()
+        self._cim = cim
+        self._rootPageNumber = self._cim.getIndexRootPageNumber()
+
+    LEFT_CHILD_DIRECTION = 0
+    RIGHT_CHILD_DIRECTION = 1
+    def _lookupKeysChild(self, key, page, i, direction):
+        childIndex = page.getChildByIndex(i + direction)
+        if childIndex == INDEX_PAGE_INVALID:
+            return []
+        childPage = self._cim.getLogicalIndexPage(childIndex)
+        return self._lookupKeys(key, childPage)
+
+    def _lookupKeysLeft(self, key, page, i):
+        return self._lookupKeysChild(key, page, i, self.LEFT_CHILD_DIRECTION)
+
+    def _lookupKeysRight(self, key, page, i):
+        return self._lookupKeysChild(key, page, i, self.RIGHT_CHILD_DIRECTION)
+
+    def _lookupKeys(self, key, page):
+        skey = str(key)
+        keyCount = page.getKeyCount()
+        matches = []
+        for i in xrange(keyCount):
+            k = page.getKey(i)
+            sk = str(k)
+
+            if i != keyCount - 1:
+                # not last
+                if skey in sk:
+                    matches.extend(self._lookupKeysLeft(key, page, i))
+                    matches.append(k)
+                    matches.extend(self._lookupKeysRight(key, page, i))
+                    continue
+                if skey < sk:
+                    matches.extend(self._lookupKeysLeft(key, page, i))
+                    break
+                if skey > sk:
+                    continue
+            else:
+                # last key
+                if skey in sk:
+                    matches.extend(self._lookupKeysLeft(key, page, i))
+                    matches.append(k)
+                    matches.extend(self._lookupKeysRight(key, page, i))
+                    break
+                if skey < sk:
+                    matches.extend(self._lookupKeysLeft(key, page, i))
+                    break
+                if skey > sk:
+                    # we have to be in this node for a reason,
+                    #   so it must be the right child
+                    matches.extend(self._lookupKeysRight(key, page, i))
+                    break
+        return matches
+
+    def lookupKeys(self, key):
+        """
+        get keys that match the given key prefix
+        """
+        rootPage = self._cim.getLogicalIndexPage(self._rootPageNumber)
+        return self._lookupKeys(key, rootPage)
+
+    NAMESPACE_PREFIX = "NS_"
+    CLASS_DEFINITION_PREFIX = "CD_"  # has data
+    MAYBE_CLASS_REFERENCE_PREFIX = "CR_"
+    MAYBE_REFERENCE_PREFIX = "R_"
+    CLASS_INSTANCE_PREFIX = "CI_"
+    UNK_CLASS_INSTANCE_PREFIX = "KI_"
+    INSTANCE_NAME_PREFIX = "IL_"  # has data
+    UNK_INSTANCE_NAME_PREFIX = "I_"  # has data
+
+    def _hash(self, s):
+        cimType = self._cim.getCimType()
+        if cimType == CIM_TYPE_XP:
+            h = hashlib.md5()
+        elif cimType == CIM_TYPE_WIN7:
+            h = hashlib.sha256()
+        self.d("hash: %s", list(s.upper()))
+        h.update(s.upper())
+        return h.hexdigest().upper()
+
+    def _lookupMonikerClassInstance(self, moniker):
+        self.d("moniker: %s", moniker)
+
+    def _lookupMonikerClass(self, moniker):
+        self.d("moniker: %s", moniker)
+
+    def _lookupMonikerNamespace(self, moniker):
+        self.d("moniker: %s", moniker)
+        keyString = self.NAMESPACE_PREFIX + self._hash(moniker.namespace.upper().encode("UTF-16LE"))
+        self.d("keystring: %s", keyString)
+        key = Key(keyString)
+        return self.lookupKeys(key)
+
+    def lookupMoniker(self, moniker):
+        self.d("moniker: %s", moniker)
+        if moniker.instance is not None:
+            return self._lookupMonikerClassInstance(moniker)
+        elif moniker.klass is not None:
+            return self._lookupMonikerClass(moniker)
+        elif moniker.namespace is not None:
+            return self._lookupMonikerNamespace(moniker)
+        else:
+            raise RuntimeError("Unsupported moniker lookup: %s" % (str(moniker)))
+
 
 def formatKey(k):
     ret = []
@@ -518,7 +724,7 @@ def graphIndex(c):
     print("  ];")
     print("  edge [];")
 
-    p = c.getLogicalIndexPage(1)
+    p = c.getLogicalIndexPage(c.getIndexRootPageNumber())
     graphIndexPageRec(c, p, 1)
 
     print("}")
@@ -552,8 +758,24 @@ def main(type_, path):
     #    print(p.getItem(i))
     #graphIndex(c)
 
-    k = Key("NS_FCBAF5A1255D45B1176570C0B63AA60199749700C79A11D5811D54A83A1F4EFD/CD_FD1C1D414B71B5082C266A650E31EF6D5019382724244B685F217C0AAE00A921.3.1.12701")
-    hexdump.hexdump(c.getDataBuffer(k))
+    #k = Key("NS_FCBAF5A1255D45B1176570C0B63AA60199749700C79A11D5811D54A83A1F4EFD/CD_FD1C1D414B71B5082C266A650E31EF6D5019382724244B685F217C0AAE00A921.3.1.12701")
+    #hexdump.hexdump(c.getDataBuffer(k))
+
+    #p = c.getLogicalIndexPage(1)
+    #for i in xrange(p.getKeyCount()):
+    #    print(formatKey(p.getKey(i)))
+
+    i = Index(c)
+    #needle = Key("NS_E1DD43413ED9FD9C458D2051F082D1D739399B29035B455F09073926E5ED9870/CI_CFF")
+    #print("looking for: " + formatKey(needle))
+    #for k in i.lookupKeys(needle):
+    #    print(formatKey(k))
+
+    needle = Moniker("//./root/cimv2")
+    for k in i.lookupMoniker(needle):
+        print(formatKey(k))
+
+    #print(c.getIndexRootPageNumber())
 
 
 if __name__ == "__main__":
