@@ -18,14 +18,19 @@ g_logger = logging.getLogger("cim.mapping")
 MAPPING_SIGNATURES = v_enum()
 MAPPING_SIGNATURES.MAPPING_START_SIGNATURE = 0xABCD
 MAPPING_SIGNATURES.MAPPING_END_SIGNATURE = 0xDCBA
+
 MAX_MAPPING_FILES = 0x3
+
 MAPPING_PAGE_ID_MASK = 0x3FFFFFFF
 MAPPING_PAGE_UNAVAIL = 0xFFFFFFFF
 MAPPING_FILE_CLEAN = 0x1
+
 CIM_TYPE_XP = "xp"
 CIM_TYPE_WIN7 = "win7"
+
 DATA_PAGE_SIZE = 0x2000
 INDEX_PAGE_SIZE = 0x2000
+
 INDEX_PAGE_INVALID = 0xFFFFFFFF
 INDEX_PAGE_INVALID2 = 0x00000000
 
@@ -36,6 +41,8 @@ INDEX_PAGE_TYPES.PAGE_TYPE_DELETED = 0xBADD
 INDEX_PAGE_TYPES.PAGE_TYPE_ADMIN = 0xADDD
 
 
+# TODO: maybe stick this onto the CIM class?
+#  then it can do lookups against the mapping?
 def isIndexPageNumberValid(num):
     return num != INDEX_PAGE_INVALID and num != INDEX_PAGE_INVALID2
 
@@ -93,7 +100,6 @@ class MappingWin7(vstruct.VStruct):
         self.numFreeDwords = v_uint32()
         self.free = v_bytes()
         self.footerSig = v_uint32()
-        self.isDirty = v_uint32()
 
         # from physical page to logical page
         # cached
@@ -634,10 +640,10 @@ class Moniker(LoggingObject):
 
 
 class Index(LoggingObject):
-    def __init__(self, cim, indexStore):
+    def __init__(self, cim):
         super(Index, self).__init__()
         self._cim = cim
-        self._indexStore
+        self._indexStore = cim.getLogicalIndexStore()
 
     LEFT_CHILD_DIRECTION = 0
     RIGHT_CHILD_DIRECTION = 1
@@ -758,11 +764,6 @@ def formatKey(k):
     return "/".join(ret)
 
 
-def h(i):
-    return hex(i).strip("L")
-
-
-
 def main(type_, path):
     if type_ not in ("xp", "win7"):
         raise RuntimeError("Invalid mapping type: {:s}".format(type_))
@@ -798,22 +799,20 @@ def main(type_, path):
     #for i in xrange(p.getKeyCount()):
     #    print(formatKey(p.getKey(i)))
 
-    #i = Index(c)
+    i = Index(c)
     #needle = Key("NS_E1DD43413ED9FD9C458D2051F082D1D739399B29035B455F09073926E5ED9870/CI_CFF")
     #print("looking for: " + formatKey(needle))
     #for k in i.lookupKeys(needle):
     #    print(formatKey(k))
 
-    #needle = Moniker("//./root/cimv2")
-    #for k in i.lookupMoniker(needle):
-    #    print(formatKey(k))
+    needle = Moniker("//./root/cimv2")
+    for k in i.lookupMoniker(needle):
+        print(formatKey(k))
 
     #print(c.getIndexRootPageNumber())
 
     #indexStore = c.getLogicalIndexStore()
     #print(hex(indexStore.getRootPageNumber()))
-    g = Grapher(c)
-    g.graphIndex()
 
 
 

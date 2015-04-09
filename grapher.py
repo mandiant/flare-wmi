@@ -45,14 +45,15 @@ class Grapher(LoggingObject):
         print("     shape = \"record\"")
         print("  ];")
 
-        for i in xrange(page.getKeyCount()):
+        keyCount = page.getKeyCount()
+        for i in xrange(keyCount + 1):
             childIndex = page.getChildByIndex(i)
             if not isIndexPageNumberValid(childIndex):
                 continue
             i = self._cim.getLogicalIndexStore()
             self._graphIndexPageRec(i.getPage(childIndex))
 
-        for i in xrange(page.getKeyCount()):
+        for i in xrange(keyCount):
             childIndex = page.getChildByIndex(i)
             if not isIndexPageNumberValid(childIndex):
                 continue
@@ -60,6 +61,13 @@ class Grapher(LoggingObject):
                 num=h(page.logicalPage),
                 i=h(i),
                 child=h(childIndex)))
+        # last entry has two links, to both less and greater children nodes
+        finalChildIndex = page.getChildByIndex(keyCount)
+        if isIndexPageNumberValid(finalChildIndex):
+            print("  \"node{num:s}\":child_{i:s} -> \"node{child:s}\"".format(
+                num=h(page.logicalPage),
+                i=h(keyCount - 1),
+                child=h(finalChildIndex)))
 
     def graphIndex(self):
         print("digraph g {")

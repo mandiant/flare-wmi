@@ -9,7 +9,7 @@ def h(i):
 class LoggingObject(object):
     def __init__(self):
         self._logger = logging.getLogger("{:s}.{:s}".format(
-            __file__, self.__class__.__name__))
+            self.__module__, self.__class__.__name__))
 
     def _getCallerFunction(self):
         FUNCTION_NAME_INDEX = 3
