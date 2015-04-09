@@ -25,6 +25,7 @@ CIM_TYPE_WIN7 = "win7"
 DATA_PAGE_SIZE = 0x2000
 INDEX_PAGE_SIZE = 0x2000
 INDEX_PAGE_INVALID = 0xFFFFFFFF
+INDEX_PAGE_INVALID2 = 0x00000000
 
 INDEX_PAGE_TYPES = v_enum()
 INDEX_PAGE_TYPES.PAGE_TYPE_UNK = 0x0000
@@ -32,6 +33,9 @@ INDEX_PAGE_TYPES.PAGE_TYPE_ACTIVE = 0xACCC
 INDEX_PAGE_TYPES.PAGE_TYPE_DELETED = 0xBADD
 INDEX_PAGE_TYPES.PAGE_TYPE_ADMIN = 0xADDD
 
+
+def isIndexPageNumberValid(num):
+    return num != INDEX_PAGE_INVALID and num != INDEX_PAGE_INVALID2
 
 
 class LoggingObject(object):
@@ -235,9 +239,11 @@ class TocArray(vstruct.VArray):
 
 
 class DataPage(LoggingObject):
-    def __init__(self, buf):
+    def __init__(self, buf, logicalPage, physicalPage):
         super(DataPage, self).__init__()
         self._buf = buf
+        self.logicalPage = logicalPage
+        self.physicalPage = physicalPage
         self.tocs = TocArray()
         self.tocs.vsParse(buf)
 
@@ -327,9 +333,11 @@ class Key(LoggingObject):
 
 
 class IndexPage(LoggingObject):
-    def __init__(self, buf):
+    def __init__(self, buf, logicalPage, physicalPage):
         super(IndexPage, self).__init__()
         self._buf = buf
+        self.logicalPage = logicalPage
+        self.physicalPage = physicalPage
         self._page = _IndexPage()
         self._page.vsParse(buf)
 
@@ -400,7 +408,8 @@ class LogicalDataStore(LoggingObject):
         return self.getPhysicalPageBuffer(physicalPage)
 
     def getPage(self, index):
-        return DataPage(self.getPageBuffer(index))
+        physicalPage = self._mapping.entries[index].getPageNumber()
+        return DataPage(self.getPageBuffer(index), index, physicalPage)
 
     def getObjectBuffer(self, key):
         if not key.isDataReference():
@@ -464,7 +473,8 @@ class LogicalIndexStore(LoggingObject):
         return self.getPhysicalPageBuffer(physicalPage)
 
     def getPage(self, index):
-        return IndexPage(self.getPageBuffer(index))
+        physicalPage = self._mapping.entries[index].getPageNumber()
+        return IndexPage(self.getPageBuffer(index), index, physicalPage)
 
     def _getRootPageNumber(self):
         # TODO: currently we bruteforce the root page, but we should be able
@@ -489,7 +499,7 @@ class LogicalIndexStore(LoggingObject):
             possibleRoots.add(int(i))
             for j in xrange(page.getKeyCount() + 1):
                 childPage = page.getChildByIndex(j)
-                if childPage == INDEX_PAGE_INVALID:
+                if not isIndexPageNumberValid(childPage):
                     continue
                 # careful: vstruct int types
                 impossibleRoots.add(int(childPage))
@@ -656,7 +666,7 @@ class Index(LoggingObject):
     RIGHT_CHILD_DIRECTION = 1
     def _lookupKeysChild(self, key, page, i, direction):
         childIndex = page.getChildByIndex(i + direction)
-        if childIndex == INDEX_PAGE_INVALID:
+        if not isIndexPageNumberValid(childIndex):
             return []
         childPage = self._indexStore.getPage(childIndex)
         return self._lookupKeys(key, childPage)
@@ -771,55 +781,64 @@ def formatKey(k):
     return "/".join(ret)
 
 
-def formatIndexPage(c, p, num):
-    ret = []
-    ret.append("<header> logical page: {:s} | physical page: {:s} | count: {:s}".format(
-        hex(num).strip("L"),
-        hex(c.getCurrentIndexMapping().getPhysicalPage(num)).strip("L"),
-        hex(p.getKeyCount()).strip("L")))
-    for i in xrange(p.getKeyCount()):
-        key = p.getKey(i)
-        g_logger.debug("%s", str(key))
-        ret.append(" | {{ {key:s} | <child_{child:s}> {child:s} }}".format(
-            key=formatKey(key),
-            child=hex(p.getChildByIndex(i)).strip("L")))
-    return "".join(ret)
+def h(i):
+    return hex(i).strip("L")
 
 
-def graphIndexPageRec(c, p, num):
-    print("  \"node{:s}\" [".format(hex(num).strip("L")))
-    print("     label = \"{:s}\"".format(formatIndexPage(c, p, num)))
-    print("     shape = \"record\"")
-    print("  ];")
+class Grapher(LoggingObject):
+    def __init__(self, cim):
+        super(Grapher, self).__init__()
+        self._cim = cim
 
-    for i in xrange(p.getKeyCount()):
-        childIndex = p.getChildByIndex(i)
-        if childIndex == INDEX_PAGE_INVALID:
-            continue
-        graphIndexPageRec(c, c.getLogicalIndexPage(childIndex), childIndex)
+    def _formatIndexPage(self, page):
+        ret = []
+        ret.append("<header> logical page: {:s} | physical page: {:s} | count: {:s}".format(
+            h(page.logicalPage),
+            h(page.physicalPage),
+            h(page.getKeyCount())))
+        for i in xrange(page.getKeyCount()):
+            key = page.getKey(i)
+            ret.append(" | {{ {key:s} | <child_{i:s}> {child:s} }}".format(
+                key=formatKey(key),
+                i=h(i),
+                child=h(page.getChildByIndex(i))))
+        return "".join(ret)
 
-    for i in xrange(p.getKeyCount()):
-        childIndex = p.getChildByIndex(i)
-        if childIndex == INDEX_PAGE_INVALID:
-            continue
-        print("  \"node{num:s}\":child{child:s} -> \"node{child:s}\"".format(
-            num=hex(num).strip("L"),
-            child=hex(childIndex).strip("L")))
+    def _graphIndexPageRec(self, page):
+        print("  \"node{:s}\" [".format(h(page.logicalPage)))
+        print("     label = \"{:s}\"".format(self._formatIndexPage(page)))
+        print("     shape = \"record\"")
+        print("  ];")
 
+        for i in xrange(page.getKeyCount()):
+            childIndex = page.getChildByIndex(i)
+            if not isIndexPageNumberValid(childIndex):
+                continue
+            i = self._cim.getLogicalIndexStore()
+            self._graphIndexPageRec(i.getPage(childIndex))
 
-def graphIndex(c):
-    print("digraph g {")
-    print("  graph [ rankdir = \"LR\" ];")
-    print("  node [")
-    print("     fontsize = \"16\"")
-    print("     shape = \"ellipse\"")
-    print("  ];")
-    print("  edge [];")
+        for i in xrange(page.getKeyCount()):
+            childIndex = page.getChildByIndex(i)
+            if not isIndexPageNumberValid(childIndex):
+                continue
+            print("  \"node{num:s}\":child_{i:s} -> \"node{child:s}\"".format(
+                num=h(page.logicalPage),
+                i=h(i),
+                child=h(childIndex)))
 
-    p = c.getLogicalIndexPage(c.getIndexRootPageNumber())
-    graphIndexPageRec(c, p, 1)
+    def graphIndex(self):
+        print("digraph g {")
+        print("  graph [ rankdir = \"LR\" ];")
+        print("  node [")
+        print("     fontsize = \"16\"")
+        print("     shape = \"ellipse\"")
+        print("  ];")
+        print("  edge [];")
 
-    print("}")
+        i = self._cim.getLogicalIndexStore()
+        self._graphIndexPageRec(i.getRootPage())
+
+        print("}")
 
 
 def main(type_, path):
@@ -869,8 +888,10 @@ def main(type_, path):
 
     #print(c.getIndexRootPageNumber())
 
-    indexStore = c.getLogicalIndexStore()
-    print(hex(indexStore.getRootPageNumber()))
+    #indexStore = c.getLogicalIndexStore()
+    #print(hex(indexStore.getRootPageNumber()))
+    g = Grapher(c)
+    g.graphIndex()
 
 
 
