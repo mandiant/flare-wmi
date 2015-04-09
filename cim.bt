@@ -40,7 +40,7 @@ struct MappingEntry {
     DWORD dwSecondID;
 };
 
-struct Mapping {
+struct MappingWin7 {
     struct MappingWin7Header header;
     struct MappingEntry entries[header.dwMappingEntries];
     uint32_t numFreeDwords;
@@ -48,10 +48,23 @@ struct Mapping {
     uint32_t footer;
 };
 
-struct MappingFile {
-    struct Mapping objectsMap;
-    struct Mapping indexMap;
+struct MappingFileWin7 {
+    struct MappingWin7 objectsMap;
+    struct MappingWin7 indexMap;
     uint32_t isDirty;
+};
+
+struct MappingXP {
+    struct MappingXPHeader header;
+    DWORD entries[header.dwMappingEntries];
+    uint32_t numFreeDwords;
+    uint32_t free[numFreeDwords];
+    uint32_t footer;
+};
+
+struct MappingFileXP {
+    struct MappingXP objectsMap;
+    struct MappingXP indexMap;
 };
 
 struct Toc {
@@ -116,11 +129,11 @@ struct BtrPage {
     uint16_t stringPartTable[stringPartTableSize + 1];
 };
 
-//struct MappingFile f;
+struct MappingFileXP f;
 //struct ObjData o;
 
 //FSeek(GetCursorPos());
 //struct Object o;
 
-FSeek(GetCursorPos());
-struct BtrPage ph;
+//FSeek(GetCursorPos());
+//struct BtrPage ph;

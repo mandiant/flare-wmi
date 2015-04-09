@@ -26,6 +26,13 @@ DATA_PAGE_SIZE = 0x2000
 INDEX_PAGE_SIZE = 0x2000
 INDEX_PAGE_INVALID = 0xFFFFFFFF
 
+INDEX_PAGE_TYPES = v_enum()
+INDEX_PAGE_TYPES.PAGE_TYPE_UNK = 0x0000
+INDEX_PAGE_TYPES.PAGE_TYPE_ACTIVE = 0xACCC
+INDEX_PAGE_TYPES.PAGE_TYPE_DELETED = 0xBADD
+INDEX_PAGE_TYPES.PAGE_TYPE_ADMIN = 0xADDD
+
+
 
 class LoggingObject(object):
     def __init__(self):
@@ -52,7 +59,7 @@ class LoggingObject(object):
         self._logger.error(*self._formatFormatString(args), **kwargs)
 
 
-class XPHeader(vstruct.VStruct):
+class MappingHeaderXP(vstruct.VStruct):
     def __init__(self):
         vstruct.VStruct.__init__(self)
         self.startSignature = v_uint32()
@@ -61,7 +68,7 @@ class XPHeader(vstruct.VStruct):
         self.mappingEntries = v_uint32()
 
 
-class Win7Header(vstruct.VStruct):
+class MappingHeaderWin7(vstruct.VStruct):
     def __init__(self):
         vstruct.VStruct.__init__(self)
         self.startSignature = v_uint32()
@@ -72,13 +79,13 @@ class Win7Header(vstruct.VStruct):
         self.mappingEntries = v_uint32()
 
 
-MAPPING_HEADER = {
-    CIM_TYPE_XP: XPHeader,
-    CIM_TYPE_WIN7: Win7Header,
+MAPPING_HEADER_TYPES = {
+    CIM_TYPE_XP: MappingHeaderXP,
+    CIM_TYPE_WIN7: MappingHeaderWin7,
 }
 
 
-class Entry(vstruct.VStruct):
+class EntryWin7(vstruct.VStruct):
     def __init__(self):
         vstruct.VStruct.__init__(self)
         self.pageNumber = v_uint32()
@@ -93,18 +100,19 @@ class Entry(vstruct.VStruct):
         return self.pageNumber & MAPPING_PAGE_ID_MASK
 
 
-class Mapping(vstruct.VStruct):
+class MappingWin7(vstruct.VStruct):
     """
     lookup via:
       m.entries[0x101].getPageNumber()
     """
-    def __init__(self, headerClass):
+    def __init__(self):
         vstruct.VStruct.__init__(self)
-        self.header = headerClass()
+        self.header = MappingHeaderWin7()
         self.entries = vstruct.VArray()
         self.numFreeDwords = v_uint32()
         self.free = v_bytes()
         self.footerSig = v_uint32()
+        self.isDirty = v_uint32()
 
         # from physical page to logical page
         # cached
@@ -112,7 +120,7 @@ class Mapping(vstruct.VStruct):
 
     def pcb_header(self):
         for i in xrange(self.header.mappingEntries):
-            self.entries.vsAddElement(Entry())
+            self.entries.vsAddElement(EntryWin7())
 
     def pcb_numFreeDwords(self):
         self["free"].vsSetLength(self.numFreeDwords * 0x4)
@@ -129,6 +137,60 @@ class Mapping(vstruct.VStruct):
             self._buildReverseMapping()
 
         return self.entries[logicalPage].getPageNumber()
+
+
+class EntryXP(vstruct.primitives.v_uint32):
+    def __init__(self):
+        vstruct.primitives.v_uint32.__init__(self)
+
+    def getPageNumber(self):
+        # TODO: add lookup against header.physicalPages to ensure range
+        return self & MAPPING_PAGE_ID_MASK
+
+
+# TODO: maybe merge these together
+class MappingXP(vstruct.VStruct):
+    """
+    lookup via:
+      m.entries[0x101].getPageNumber()
+    """
+    def __init__(self):
+        vstruct.VStruct.__init__(self)
+        self.header = MappingHeaderXP()
+        self.entries = vstruct.VArray()
+        self.numFreeDwords = v_uint32()
+        self.free = v_bytes()
+        self.footerSig = v_uint32()
+
+        # from physical page to logical page
+        # cached
+        self._reverseMapping = None
+
+    def pcb_header(self):
+        for i in xrange(self.header.mappingEntries):
+            self.entries.vsAddElement(EntryXP())
+
+    def pcb_numFreeDwords(self):
+        self["free"].vsSetLength(self.numFreeDwords * 0x4)
+
+    def _buildReverseMapping(self):
+        for i in xrange(self.header.mappingEntries):
+            self._reverseMapping[self.entries[i].getPageNumber()] = i
+
+    def getPhysicalPage(self, logicalPage):
+        return self.entries[logicalPage].getPageNumber()
+
+    def getLogicalPage(self, physicalPage):
+        if self._reverseMapping is None:
+            self._buildReverseMapping()
+
+        return self.entries[logicalPage].getPageNumber()
+
+
+MAPPING_TYPES = {
+    CIM_TYPE_XP: MappingXP,
+    CIM_TYPE_WIN7: MappingWin7,
+}
 
 
 class Toc(vstruct.VStruct):
@@ -172,19 +234,6 @@ class TocArray(vstruct.VArray):
                 return
 
 
-class Object(vstruct.VStruct):
-    # TODO
-    def __init__(self):
-        vstruct.VStruct.__init__(self)
-        self.nameLen = v_uint32()
-        self.name = v_wstr()
-        self.unknown0 = v_uint64()
-        self.unknown1 = v_uint32()
-
-    def pcb_nameLen(self):
-        self.name = v_wstr(size=self.nameLen / 2)
-
-
 class DataPage(LoggingObject):
     def __init__(self, buf):
         super(DataPage, self).__init__()
@@ -209,13 +258,6 @@ class DataPage(LoggingObject):
                             str(key), hex(targetSize))
                 return self._buf[toc.offset:toc.offset + toc.size]
         raise RuntimeError("record ID not found: %s", hex(targetId))
-
-
-INDEX_PAGE_TYPES = v_enum()
-INDEX_PAGE_TYPES.PAGE_TYPE_UNK = 0x0000
-INDEX_PAGE_TYPES.PAGE_TYPE_ACTIVE = 0xACCC
-INDEX_PAGE_TYPES.PAGE_TYPE_DELETED = 0xBADD
-INDEX_PAGE_TYPES.PAGE_TYPE_ADMIN = 0xADDD
 
 
 class IndexPageHeader(vstruct.VStruct):
@@ -338,9 +380,131 @@ class IndexPage(LoggingObject):
         return self._page.isValid()
 
 
-class Template(vstruct.VStruct):
-    def __init__(self):
-        vstruct.VStruct.__init__(self)
+class LogicalDataStore(LoggingObject):
+    """
+    provides an interface for accessing data by logical page or object id.
+    """
+    def __init__(self, cim, filePath, mapping):
+        super(LogicalDataStore, self).__init__()
+        self._cim = cim
+        self._filePath = filePath
+        self._mapping = mapping
+
+    def getPhysicalPageBuffer(self, index):
+        with open(self._filePath, "rb") as f:
+            f.seek(DATA_PAGE_SIZE * index)
+            return f.read(DATA_PAGE_SIZE)
+
+    def getPageBuffer(self, index):
+        physicalPage = self._mapping.entries[index].getPageNumber()
+        return self.getPhysicalPageBuffer(physicalPage)
+
+    def getPage(self, index):
+        return DataPage(self.getPageBuffer(index))
+
+    def getObjectBuffer(self, key):
+        if not key.isDataReference():
+            raise RuntimeError("Key is not data reference: %s", str(key))
+
+        # this logic of this function is a bit more complex than
+        #   we'd want, since we have to handle the case where an
+        #   item's data spans multiple pages.
+        dataPage = key.getDataPage()
+        page = self.getPage(dataPage)
+
+        targetSize = key.getDataSize()
+        firstData = page.getDataByKey(key)
+
+        # this is the common case, return early
+        if targetSize == len(firstData):
+            return firstData
+
+        # here we handle data that spans multiple pages
+        data = [firstData]
+        foundSize = len(firstData)
+
+        i = 1
+        while foundSize < targetSize:
+            nextPage = self.getPageBuffer(dataPage + i)
+            if foundSize + len(nextPage) > targetSize:
+                # this is the last page containing data for this item
+                chunkSize = targetSize - foundSize
+                data.append(nextPage[:chunkSize])
+                foundSize += chunkSize
+            else:
+                # the entire page is used for this item
+                data.append(nextPage)
+                foundSize += len(nextPage)
+            i += 1
+
+        return "".join(data)
+
+
+class LogicalIndexStore(LoggingObject):
+    """
+    provides an interface for accessing index nodes by logical page id.
+    indexing logic should go at a higher level.
+    """
+    def __init__(self, cim, filePath, mapping):
+        super(LogicalIndexStore, self).__init__()
+        self._cim = cim
+        self._filePath = filePath
+        self._mapping = mapping
+
+        # cache
+        self._rootPageNumber = None
+
+    def getPhysicalPageBuffer(self, index):
+        with open(self._filePath, "rb") as f:
+            f.seek(INDEX_PAGE_SIZE * index)
+            return f.read(INDEX_PAGE_SIZE)
+
+    def getPageBuffer(self, index):
+        physicalPage = self._mapping.entries[index].getPageNumber()
+        return self.getPhysicalPageBuffer(physicalPage)
+
+    def getPage(self, index):
+        return IndexPage(self.getPageBuffer(index))
+
+    def _getRootPageNumber(self):
+        # TODO: currently we bruteforce the root page, but we should be able
+        #   to use the .userdata field of the first index mapping entry to select
+        #   it directly (on win7).
+        # this algorithm walks all nodes and tracks which nodes are children of
+        #   other nodes. we expect there to be a single node that is never linked
+        #   as a child --- therefore, its the root.
+        possibleRoots = set([])
+        impossibleRoots = set([])
+        for i in xrange(self._mapping.header.mappingEntries):
+            try:
+                page = self.getPage(i)
+            except:
+                self.w("bad unpack: %s", hex(i))
+                continue
+
+            if not page.isValid():
+                continue
+
+            # careful: vstruct returns int-like objects with no hash-equivalence
+            possibleRoots.add(int(i))
+            for j in xrange(page.getKeyCount() + 1):
+                childPage = page.getChildByIndex(j)
+                if childPage == INDEX_PAGE_INVALID:
+                    continue
+                # careful: vstruct int types
+                impossibleRoots.add(int(childPage))
+        ret = possibleRoots - impossibleRoots
+        if len(ret) != 1:
+            raise RuntimeError("Unable to determine root index node: %s" % (str(ret)))
+        return ret.pop()
+
+    def getRootPageNumber(self):
+        if self._rootPageNumber is None:
+            self._rootPageNumber = self._getRootPageNumber()
+        return self._rootPageNumber
+
+    def getRootPage(self):
+        return self.getPage(self.getRootPageNumber())
 
 
 class CIM(LoggingObject):
@@ -348,12 +512,15 @@ class CIM(LoggingObject):
         super(CIM, self).__init__()
         self._cim_type = cim_type
         self._directory = directory
-        self._mappingHeaderClass = MAPPING_HEADER[self._cim_type]
+        self._mappingClass = MAPPING_TYPES[self._cim_type]
+        self._mappingHeaderClass = MAPPING_HEADER_TYPES[self._cim_type]
 
         # caches
         self._currentMappingFile = None
         self._currentDataMapping = None
         self._currentIndexMapping = None
+        self._dataStore = None
+        self._indexStore = None
 
     def _getDataFilePath(self):
         return os.path.join(self._directory, "OBJECTS.DATA")
@@ -369,6 +536,8 @@ class CIM(LoggingObject):
             for i in xrange(MAX_MAPPING_FILES):
                 fn = "MAPPING{:d}.MAP".format(i + 1)
                 fp = os.path.join(self._directory, fn)
+                if not os.path.exists(fp):
+                    continue
                 h = self._mappingHeaderClass()
 
                 with open(fp, "rb") as f:
@@ -379,6 +548,7 @@ class CIM(LoggingObject):
                     mappingFilePath = fp
                     maxVersion = h.version
             self._currentMappingFile = mappingFilePath
+            self.d("current mapping file: %s", self._currentMappingFile)
         return self._currentMappingFile
 
     def getCimType(self):
@@ -387,8 +557,8 @@ class CIM(LoggingObject):
     def getCurrentMappings(self):
         if self._currentIndexMapping is None:
             fp = self._getCurrentMappingFile()
-            dm = Mapping(self._mappingHeaderClass)
-            im = Mapping(self._mappingHeaderClass)
+            dm = self._mappingClass()
+            im = self._mappingClass()
             with open(fp, "rb") as f:
                 dm.vsParseFd(f)
                 im.vsParseFd(f)
@@ -406,99 +576,15 @@ class CIM(LoggingObject):
             self._currentDataMapping, self._currentIndexMapping = self.getCurrentMappings()
         return self._currentIndexMapping
 
-    def getPhysicalDataPageBuffer(self, index):
-        with open(self._getDataFilePath(), "rb") as f:
-            f.seek(DATA_PAGE_SIZE * index)
-            return f.read(DATA_PAGE_SIZE)
+    def getLogicalDataStore(self):
+        if self._dataStore is None:
+            self._dataStore = LogicalDataStore(self, self._getDataFilePath(), self.getCurrentDataMapping())
+        return self._dataStore
 
-    def getPhysicalIndexPageBuffer(self, index):
-        with open(self._getIndexFilePath(), "rb") as f:
-            f.seek(INDEX_PAGE_SIZE * index)
-            return f.read(INDEX_PAGE_SIZE)
-
-    def getLogicalDataPageBuffer(self, index):
-        m = self.getCurrentDataMapping()
-        physicalPage = m.entries[index].getPageNumber()
-        return self.getPhysicalDataPageBuffer(physicalPage)
-
-    def getLogicalIndexPageBuffer(self, index):
-        m = self.getCurrentIndexMapping()
-        physicalPage = m.entries[index].getPageNumber()
-        return self.getPhysicalIndexPageBuffer(physicalPage)
-
-    def getLogicalIndexPage(self, index):
-        return IndexPage(self.getLogicalIndexPageBuffer(index))
-
-    def getLogicalDataPage(self, index):
-        return DataPage(self.getLogicalDataPageBuffer(index))
-
-    def getDataBuffer(self, key):
-        if not key.isDataReference():
-            raise RuntimeError("key is not data reference: %s", str(key))
-
-        # this logic of this function is a bit more complex than
-        #   we'd want, since we have to handle the case where an
-        #   item's data spans multiple pages.
-        dataPage = key.getDataPage()
-        page = self.getLogicalDataPage(dataPage)
-
-        targetSize = key.getDataSize()
-        firstData = page.getDataByKey(key)
-
-        # this is the common case, return early
-        if targetSize == len(firstData):
-            return firstData
-
-        # here we handle data that spans multiple pages
-        data = [firstData]
-        foundSize = len(firstData)
-
-        i = 1
-        while foundSize < targetSize:
-            nextPage = self.getLogicalDataPageBuffer(dataPage + i)
-            if foundSize + len(nextPage) > targetSize:
-                # this is the last page containing data for this item
-                chunkSize = targetSize - foundSize
-                data.append(nextPage[:chunkSize])
-                foundSize += chunkSize
-            else:
-                # the entire page is used for this item
-                data.append(nextPage)
-                foundSize += len(nextPage)
-            i += 1
-
-        return "".join(data)
-
-    def getIndexRootPageNumber(self):
-        indexMapping = self.getCurrentIndexMapping()
-
-        possibleRoots = set([])
-        impossibleRoots = set([])
-        for i in xrange(indexMapping.header.mappingEntries):
-            try:
-                page = self.getLogicalIndexPage(i)
-            except:
-                self.w("bad unpack: %s", hex(i))
-                continue
-
-            if not page.isValid():
-                continue
-
-            # careful: vstruct returns int-like objects with bad hash-equivalence
-            possibleRoots.add(int(i))
-            for j in xrange(page.getKeyCount() + 1):
-                childPage = page.getChildByIndex(j)
-                if childPage == INDEX_PAGE_INVALID:
-                    continue
-                # careful: vstruct int types
-                impossibleRoots.add(int(childPage))
-        ret = possibleRoots - impossibleRoots
-        if len(ret) != 1:
-            raise RuntimeError("Unable to determine root index node: %s" % (str(ret)))
-        return list(ret)[0]
-
-    def getMatchingKeys(self, key):
-        pass
+    def getLogicalIndexStore(self):
+        if self._indexStore is None:
+            self._indexStore = LogicalIndexStore(self, self._getIndexFilePath(), self.getCurrentIndexMapping())
+        return self._indexStore
 
 
 class Moniker(LoggingObject):
@@ -561,10 +647,10 @@ class Moniker(LoggingObject):
 
 
 class Index(LoggingObject):
-    def __init__(self, cim):
+    def __init__(self, cim, indexStore):
         super(Index, self).__init__()
         self._cim = cim
-        self._rootPageNumber = self._cim.getIndexRootPageNumber()
+        self._indexStore
 
     LEFT_CHILD_DIRECTION = 0
     RIGHT_CHILD_DIRECTION = 1
@@ -572,7 +658,7 @@ class Index(LoggingObject):
         childIndex = page.getChildByIndex(i + direction)
         if childIndex == INDEX_PAGE_INVALID:
             return []
-        childPage = self._cim.getLogicalIndexPage(childIndex)
+        childPage = self._indexStore.getPage(childIndex)
         return self._lookupKeys(key, childPage)
 
     def _lookupKeysLeft(self, key, page, i):
@@ -622,8 +708,7 @@ class Index(LoggingObject):
         """
         get keys that match the given key prefix
         """
-        rootPage = self._cim.getLogicalIndexPage(self._rootPageNumber)
-        return self._lookupKeys(key, rootPage)
+        return self._lookupKeys(key, self._indexStore.getRootPage())
 
     NAMESPACE_PREFIX = "NS_"
     CLASS_DEFINITION_PREFIX = "CD_"  # has data
@@ -640,8 +725,7 @@ class Index(LoggingObject):
             h = hashlib.md5()
         elif cimType == CIM_TYPE_WIN7:
             h = hashlib.sha256()
-        self.d("hash: %s", list(s.upper()))
-        h.update(s.upper())
+        h.update(s)
         return h.hexdigest().upper()
 
     def _lookupMonikerClassInstance(self, moniker):
@@ -650,9 +734,17 @@ class Index(LoggingObject):
     def _lookupMonikerClass(self, moniker):
         self.d("moniker: %s", moniker)
 
+    def _encodeItem(self, prefix, s):
+        return "{prefix:s}{hash_:s}".format(
+                prefix=prefix,
+                hash_=self._hash(s.upper().encode("UTF-16LE")))
+
+    def _encodeNamespace(self, namespace):
+        return self._encodeItem(self.NAMESPACE_PREFIX, namespace)
+
     def _lookupMonikerNamespace(self, moniker):
         self.d("moniker: %s", moniker)
-        keyString = self.NAMESPACE_PREFIX + self._hash(moniker.namespace.upper().encode("UTF-16LE"))
+        keyString = self._encodeNamespace(moniker.namespace)
         self.d("keystring: %s", keyString)
         key = Key(keyString)
         return self.lookupKeys(key)
@@ -765,17 +857,21 @@ def main(type_, path):
     #for i in xrange(p.getKeyCount()):
     #    print(formatKey(p.getKey(i)))
 
-    i = Index(c)
+    #i = Index(c)
     #needle = Key("NS_E1DD43413ED9FD9C458D2051F082D1D739399B29035B455F09073926E5ED9870/CI_CFF")
     #print("looking for: " + formatKey(needle))
     #for k in i.lookupKeys(needle):
     #    print(formatKey(k))
 
-    needle = Moniker("//./root/cimv2")
-    for k in i.lookupMoniker(needle):
-        print(formatKey(k))
+    #needle = Moniker("//./root/cimv2")
+    #for k in i.lookupMoniker(needle):
+    #    print(formatKey(k))
 
     #print(c.getIndexRootPageNumber())
+
+    indexStore = c.getLogicalIndexStore()
+    print(hex(indexStore.getRootPageNumber()))
+
 
 
 if __name__ == "__main__":
