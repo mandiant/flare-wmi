@@ -263,12 +263,80 @@ CIM_TYPE_SIZES = {
 }
 
 
-class CIM_TYPE(v_uint32):
-    def __init__(self, *args, **kwargs):
-        v_uint32.__init__(self, *args, **kwargs)
+class BaseType(object):
+    """
+    this acts like a CimType, but its not backed by some bytes,
+      and is used to represent a type.
+    probably not often used. good example is an array CimType
+      that needs to pass along info on the type of each item.
+      each item is not an array, but has the type of the array.
+    needs to adhere to CimType interface.
+    """
+    def __init__(self, type_, valueParser):
+        self._type = type_
+        self._valueParser = valueParser
+
+    def getType(self):
+        return self._type
+
+    def isArray(self):
+        return False
+
+    def getValueParser(self):
+        return self._valueParser
 
     def __repr__(self):
-        return CIM_TYPES.vsReverseMapping(int(self))
+        return CIM_TYPES.vsReverseMapping(self._type)
+
+    def getBaseTypeClone(self):
+        return self
+
+
+class CimType(vstruct.VStruct):
+    def __init__(self):
+        vstruct.VStruct.__init__(self)
+        self._type = v_uint8()
+        self._isArray = v_uint8()
+        self.unk0 = v_uint8()
+        self.unk2 = v_uint8()
+
+    def getType(self):
+        return self._type
+
+    def isArray(self):
+        return self._isArray == 0x20
+
+    def getValueParser(self):
+        if self.isArray():
+            return v_uint32
+        elif self._type == CIM_TYPES.CIM_TYPE_LANGID:
+            return v_uint32
+        elif self._type == CIM_TYPES.CIM_TYPE_REAL32:
+            return v_float
+        elif self._type == CIM_TYPES.CIM_TYPE_STRING:
+            return v_uint32
+        elif self._type == CIM_TYPES.CIM_TYPE_BOOLEAN:
+            return v_uint16
+        elif self._type == CIM_TYPES.CIM_TYPE_UINT16:
+            return v_uint16
+        elif self._type == CIM_TYPES.CIM_TYPE_UINT32:
+            return v_uint32
+        elif self._type == CIM_TYPES.CIM_TYPE_UINT64:
+            return v_uint64
+        elif self._type == CIM_TYPES.CIM_TYPE_DATETIME:
+            return FILETIME
+        else:
+            raise RuntimeError("unknown qualifier type: %s", h(self._type))
+
+    def __repr__(self):
+        r = ""
+        if self.isArray():
+            r += "arrayref to "
+        r += CIM_TYPES.vsReverseMapping(self._type)
+        return r
+
+    def getBaseTypeClone(self):
+        return BaseType(self.getType(), self.getValueParser())
 
 
 BUILTIN_QUALIFIERS = v_enum()
@@ -277,51 +345,17 @@ BUILTIN_QUALIFIERS.CLASS_NAMESPACE = 0x6
 BUILTIN_QUALIFIERS.CLASS_UNK = 0x7
 BUILTIN_QUALIFIERS.PROP_TYPE = 0xA
 
-class CimType(vstruct.VStruct):
-    def __init__(self, cimType=None):
-        vstruct.VStruct.__init__(self)
-        self._cimType = cimType
-
-    def setCimType(self, cimType):
-        self._cimType = cimType
-
-
 
 class QualifierReference(vstruct.VStruct):
     def __init__(self):
         vstruct.VStruct.__init__(self)
         self.keyReference = v_uint32()
         self.unk0 = v_uint8()
-        self.valueType = CIM_TYPE()
+        self.valueType = CimType()
         self.value = v_bytes(size=0)
 
     def pcb_valueType(self):
-        if self.valueType == CIM_TYPES.CIM_TYPE_LANGID:
-            self.vsSetField("value", v_uint32())
-            #self["value"] = v_uint32()
-        elif self.valueType == CIM_TYPES.CIM_TYPE_REAL32:
-            self.vsSetField("value", v_float())
-            #self["value"] = v_float()
-        elif self.valueType == CIM_TYPES.CIM_TYPE_STRING:
-            self.vsSetField("value", v_uint32())
-            #self["value"] = v_uint32()
-        elif self.valueType == CIM_TYPES.CIM_TYPE_BOOLEAN:
-            self.vsSetField("value", v_uint16())
-            #self["value"] = v_uint16()
-        elif self.valueType == CIM_TYPES.CIM_TYPE_UINT16:
-            self.vsSetField("value", v_uint16())
-            #self["value"] = v_uint16()
-        elif self.valueType == CIM_TYPES.CIM_TYPE_UINT32:
-            self.vsSetField("value", v_uint32())
-            #self["value"] = v_uint32()
-        elif self.valueType == CIM_TYPES.CIM_TYPE_UINT64:
-            self.vsSetField("value", v_uint64())
-            #self["value"] = v_uint64()
-        elif self.valueType == CIM_TYPES.CIM_TYPE_DATETIME:
-            self.vsSetField("value", FILETIME())
-            #self["value"] = FILETIME()
-        else:
-            raise RuntimeError("unknown qualifier type!")
+        self.vsSetField("value", self.valueType.getValueParser()())
 
     def isBuiltinKey(self):
         return self.keyReference & 0x80000000 > 0
@@ -330,7 +364,7 @@ class QualifierReference(vstruct.VStruct):
         return self.keyReference & 0x7FFFFFFF
 
 
-class ClassDefinitionQualifiers(vstruct.VStruct):
+class QualifiersList(vstruct.VStruct):
     def __init__(self):
         vstruct.VStruct.__init__(self)
         self.count = 0
@@ -351,6 +385,47 @@ class ClassDefinitionQualifiers(vstruct.VStruct):
     def vsParseFd(self, fd):
         # need to be able to peek at 1-bytes worth of data
         raise NotImplementedError()
+
+
+class _Property(vstruct.VStruct):
+    def __init__(self):
+        vstruct.VStruct.__init__(self)
+        self.type = CimType()
+        self.unk0 = v_uint16()
+        self.unk1 = v_uint32()
+        self.unk2 = v_uint32()
+        self.unk3 = v_uint32()
+        self.qualifiers = QualifiersList()
+
+
+class Property(LoggingObject):
+    def __init__(self, classDef, propref):
+        super(Property, self).__init__()
+        self._classDef = classDef
+        self._propref = propref
+
+        # this is the raw struct, without references/strings resolved
+        self._prop = _Property()
+        offsetProperty = self._propref.offsetPropertyStruct
+        self._prop.vsParse(self._classDef.getData(), offset=offsetProperty)
+
+    def getName(self):
+        return self._classDef.getString(self._propref.offsetPropertyName)
+
+    def getType(self):
+        return self._prop.type
+
+    def getQualifiers(self):
+        """ get dict of str to str """
+        # TODO: can merge this will ClassDef.getQualifiers
+        ret = {}
+        for i in xrange(self._prop.qualifiers.count):
+            q = self._prop.qualifiers.qualifiers[i]
+            qk = self._classDef.getQualifierKey(q)
+            qv = self._classDef.getQualifierValue(q)
+            ret[str(qk)] = str(qv)
+            self.d("%s: %s", qk, qv)
+        return ret
 
 
 class ClassDefinitionPropertyReference(vstruct.VStruct):
@@ -374,7 +449,7 @@ class _ClassDefinition(vstruct.VStruct):
     def __init__(self):
         vstruct.VStruct.__init__(self)
         self.header = ClassDefinitionHeader()
-        self.qualifiers = ClassDefinitionQualifiers()
+        self.qualifiers = QualifiersList()
         self.propertyReferences = ClassDefinitionPropertyReferences()
 
 
@@ -387,6 +462,9 @@ class ClassDefinition(LoggingObject):
 
         self._propDataOffset = self._findPropDataOffset()
 
+        # cache
+        self._data = None
+
     def _findPropDataOffset(self):
         off = len(self._def)
 
@@ -398,51 +476,86 @@ class ClassDefinition(LoggingObject):
         self.d("prop data offset: %s", h(off))
         return off
 
-    def _getPropString(self, ref):
+    def getData(self):
+        if self._data is None:
+            dataLen = v_uint32()
+            o = self._propDataOffset
+            # 0x4 == sizeof(dataLen)
+            dataLen.vsParse(self._buf, offset=o - 0x4)
+            self._data = self._buf[o:o + dataLen]
+        return self._data
+
+    def getString(self, ref):
         s = WMIString()
         offsetString = self._propDataOffset + int(ref)
         self.d("ref: %s", h(ref))
-        self.d("offset: %s", h(offsetString))
-        s.vsParse(self._buf, offset=offsetString)
+        s.vsParse(self.getData(), offset=int(ref))
         return str(s.s)
 
-    def _getQualifierValue(self, qualifier):
-        if qualifier.valueType == CIM_TYPES.CIM_TYPE_STRING:
-            return self._getPropString(qualifier.value)
-        elif qualifier.valueType == CIM_TYPES.CIM_TYPE_BOOLEAN:
-            return qualifier.value != 0
-        elif CIM_TYPES.vsReverseMapping(qualifier.valueType):
-            return qualifier.value
-        else:
-            raise RuntimeError("unknown qualifier type!")
+    def getArray(self, ref, itemType):
+        self.d("ref: %s, type: %s", ref, itemType)
+        Parser = itemType.getValueParser()
+        data = self.getData()
 
-    def _getQualifierKey(self, qualifier):
+        arraySize = v_uint32()
+        arraySize.vsParse(data, offset=int(ref))
+
+        items = []
+        offset = ref + 4  # sizeof(array_size:uint32_t)
+        for i in xrange(arraySize):
+            p = Parser()
+            p.vsParse(data, offset=offset)
+            items.append(self.getValue(p, itemType))
+            offset += len(p)
+        return items
+
+    def getValue(self, value, valueType):
+        """
+        value is a parsed value, might need dereferencing
+        valueType is a CimType
+        """
+        self.d("value: %s, type: %s", value, valueType)
+        if valueType.isArray():
+            self.d("isArray")
+            return self.getArray(value, valueType.getBaseTypeClone())
+
+        t = valueType.getType()
+        if t == CIM_TYPES.CIM_TYPE_STRING:
+            return self.getString(value)
+        elif t == CIM_TYPES.CIM_TYPE_BOOLEAN:
+            return value != 0
+        elif CIM_TYPES.vsReverseMapping(t):
+            return value
+        else:
+            raise RuntimeError("unknown qualifier type: %s",
+                    str(valueType))
+
+    def getQualifierValue(self, qualifier):
+        return self.getValue(qualifier.value, qualifier.valueType)
+
+    def getQualifierKey(self, qualifier):
         if qualifier.isBuiltinKey():
             return BUILTIN_QUALIFIERS.vsReverseMapping(qualifier.getKey())
-        return self._getPropString(qualifier.getKey())
+        return self.getString(qualifier.getKey())
 
     def getQualifiers(self):
         """ get dict of str to str """
         ret = {}
         for i in xrange(self._def.qualifiers.count):
             q = self._def.qualifiers.qualifiers[i]
-            qk = self._getQualifierKey(q)
-            qv = self._getQualifierValue(q)
+            qk = self.getQualifierKey(q)
+            qv = self.getQualifierValue(q)
             ret[str(qk)] = str(qv)
             self.d("%s: %s", qk, qv)
         return ret
 
-    def _getPropertyName(self, propref):
-        return self._getPropString(propref.offsetPropertyName)
-
     def getProperties(self):
         """ get dict of str to Property instances """
-        ret = {}
+        ret = []
         for i in xrange(self._def.propertyReferences.count):
             propref = self._def.propertyReferences.refs[i]
-            pn = self._getPropertyName(propref)
-            ret[str(pn)] = True
-        return ret
+            ret.append(Property(self, propref))
+        return {p.getName(): p for p in ret}
 
 
 class Toc(vstruct.VStruct):
@@ -741,6 +854,7 @@ class LogicalIndexStore(LoggingObject):
             try:
                 page = self.getPage(i)
             except:
+                # TODO: find out why this is. probably: validate page ranges.
                 self.w("bad unpack: %s", hex(i))
                 continue
 
@@ -1111,7 +1225,11 @@ def main(type_, path):
         cd = ClassDefinition(buf)
         g_logger.debug(cd._def.tree())
         g_logger.debug(cd.getQualifiers())
-        g_logger.debug(cd.getProperties())
+        props = cd.getProperties()
+        for propname, prop in props.iteritems():
+            g_logger.debug("key: %s", prop.getName())
+            g_logger.debug("type: %s", prop.getType())
+            g_logger.debug(prop.getQualifiers())
         break
 
     #print(c.getIndexRootPageNumber())
