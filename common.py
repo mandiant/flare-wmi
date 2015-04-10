@@ -6,6 +6,11 @@ def h(i):
     return hex(i).strip("L")
 
 
+def one(s):
+    for c in s:
+        return c
+
+
 class LoggingObject(object):
     def __init__(self):
         self._logger = logging.getLogger("{:s}.{:s}".format(

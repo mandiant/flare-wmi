@@ -143,7 +143,11 @@ struct ObjectClassDefinition {
     uint32_t offsetClassName;
     uint32_t unk2;
     uint32_t unk3;
-    struct WmiString aname;
+    if (wnameLen > 0) {
+        struct WmiString aname;
+        uint32_t unk4;
+    }
+    uint32_t unk5;
 };
 
 enum <uint32_t> CIM_TYPES {
@@ -199,10 +203,10 @@ struct ObjectField {
     uint32_t offInterpretationStruct;
 };
 
-//FSeek(GetCursorPos());
+FSeek(GetCursorPos());
 
 //struct MappingFileXP f;
-struct MappingFileWin7 f;
+//struct MappingFileWin7 f;
 //struct ObjData o;
 
 
@@ -211,6 +215,6 @@ struct MappingFileWin7 f;
 //FSeek(GetCursorPos());
 //struct BtrPage ph;
 
-//struct ObjectClassDefinition ocd;
+struct ObjectClassDefinition ocd;
 //struct ObjectField f;
 //struct Qualifier q;

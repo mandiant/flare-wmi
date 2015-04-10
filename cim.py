@@ -6,10 +6,12 @@ import hashlib
 import logging
 from datetime import datetime
 
+import hexdump
 import vstruct
 from vstruct.primitives import *
 
 from common import h
+from common import one
 from common import LoggingObject
 
 logging.basicConfig(level=logging.DEBUG)
@@ -226,19 +228,22 @@ class ClassDefinitionHeader(vstruct.VStruct):
     def __init__(self):
         vstruct.VStruct.__init__(self)
         self.superClassNameWLen = v_uint32()
-        self.superClassNameW = v_wstr(size=0)
+        self.superClassNameW = v_wstr(size=0)  # not present if no superclass
         self.timestamp = FILETIME()
         self.unk0 = v_uint8()
         self.unk1 = v_uint32()
         self.offsetClassNameA = v_uint32()
         self.unk2 = v_uint32()
         self.unk3 = v_uint32()
-        self.classNameA = WMIString()
-        self.unk4 = v_uint32()
+        self.superClassNameA = WMIString()  # not present if no superclass
+        self.unk4 = v_uint32()  # not present if no superclass
         self.unk5 = v_uint32()
 
     def pcb_superClassNameWLen(self):
         self["superClassNameW"].vsSetLength(self.superClassNameWLen * 2)
+        if self.superClassNameWLen == 0:
+            self.vsSetField("superClassNameA", v_str(size=0))
+            self.vsSetField("unk4", v_str(size=0))
 
 
 CIM_TYPES = v_enum()
@@ -442,6 +447,7 @@ class ClassDefinitionPropertyReferences(vstruct.VStruct):
         self.refs = vstruct.VArray()
 
     def pcb_count(self):
+        g_logger.debug("CDPR: pcb_count: %s", h(self.count))
         self.refs.vsAddElements(self.count, ClassDefinitionPropertyReference)
 
 
@@ -452,10 +458,20 @@ class _ClassDefinition(vstruct.VStruct):
         self.qualifiers = QualifiersList()
         self.propertyReferences = ClassDefinitionPropertyReferences()
 
+    def pcb_header(self):
+        g_logger.debug("CD: \n%s", self.header.tree())
+
+    def pcb_qualifiers(self):
+        g_logger.debug("CD: \n%s", self.qualifiers.tree())
+
+    def pcb_propertyReferences(self):
+        g_logger.debug("CD: \n%s", self.propertyReferences.tree())
+
 
 class ClassDefinition(LoggingObject):
     def __init__(self, buf):
         super(ClassDefinition, self).__init__()
+        self.d("hex: \n%s", hexdump.hexdump(buf))
         self._buf = buf
         self._def = _ClassDefinition()
         self._def.vsParse(buf)
@@ -466,28 +482,31 @@ class ClassDefinition(LoggingObject):
         self._data = None
 
     def _findPropDataOffset(self):
+        # this is currently a hack.
+        # search for the last 0xFF in a big block
         off = len(self._def)
 
         while self._buf.find("\xFF" * 3, off, off + 0x10) != -1:
             off = self._buf.find("\xFF" * 3, off, off + 0x10)
+            # scan past sequential 0xFF bytes until non-0xFF
             while ord(self._buf[off]) == 0xFF:
                 off += 1
-        off += 4  # length of data section size field
+            # break if not "FF FF FF" within 0x10 bytes
+
         self.d("prop data offset: %s", h(off))
         return off
 
     def getData(self):
         if self._data is None:
+            o = self._findPropDataOffset()
             dataLen = v_uint32()
-            o = self._propDataOffset
-            # 0x4 == sizeof(dataLen)
-            dataLen.vsParse(self._buf, offset=o - 0x4)
+            dataLen.vsParse(self._buf, offset=o)
+            o += len(dataLen)
             self._data = self._buf[o:o + dataLen]
         return self._data
 
     def getString(self, ref):
         s = WMIString()
-        offsetString = self._propDataOffset + int(ref)
         self.d("ref: %s", h(ref))
         s.vsParse(self.getData(), offset=int(ref))
         return str(s.s)
@@ -537,6 +556,18 @@ class ClassDefinition(LoggingObject):
         if qualifier.isBuiltinKey():
             return BUILTIN_QUALIFIERS.vsReverseMapping(qualifier.getKey())
         return self.getString(qualifier.getKey())
+
+    def getClassName(self):
+        """ return string """
+        return self.getString(self._def.header.offsetClassNameA)
+
+    def getSuperClassName(self):
+        """ return string """
+        return str(self._def.header.superClassNameW)
+
+    def getTimestamp(self):
+        """ return datetime.datetime """
+        return self._def.header.timestamp
 
     def getQualifiers(self):
         """ get dict of str to str """
@@ -1216,21 +1247,43 @@ def main(type_, path):
     #for k in i.lookupKeys(needle):
     #    print(formatKey(k))
 
-    needle = Moniker("//./root/cimv2:Win32_Service")
-    for k in i.lookupMoniker(needle):
-        print(formatKey(k))
-        print(h(DATA_PAGE_SIZE * c.getDataMapping().getPhysicalPage(k.getDataPage())))
+    def dump_class_def(cd):
+        #g_logger.info(cd._def.tree())
+        g_logger.info("classname: %s", cd.getClassName())
+        g_logger.info("super: %s", cd.getSuperClassName())
+        g_logger.info("ts: %s", cd.getTimestamp().isoformat("T"))
+        g_logger.info("qualifiers:")
+        for k, v in cd.getQualifiers().iteritems():
+            g_logger.info("  %s: %s", k, str(v))
+        g_logger.info("properties:")
+        for propname, prop in cd.getProperties().iteritems():
+            g_logger.info("  name: %s", prop.getName())
+            g_logger.info("    type: %s", prop.getType())
+            g_logger.info("    qualifiers:")
+            for k, v in prop.getQualifiers().iteritems():
+                g_logger.info("      %s: %s", k, str(v))
+
+    className = "Win32_Service"
+
+    while className != "":
+        g_logger.info("%s", "=" * 80)
+        g_logger.info("classname: %s", className)
+        needle = Moniker("//./root/cimv2:%s" % (className))
+        g_logger.info("moniker: %s", str(needle))
+        k = one(i.lookupMoniker(needle))
+        g_logger.info("database id: %s", formatKey(k))
+        g_logger.info("objects.data page: %s", h(k.getDataPage()))
+        physicalOffset = DATA_PAGE_SIZE * \
+                          c.getDataMapping().getPhysicalPage(k.getDataPage())
+        g_logger.info("physical offset: %s", h(physicalOffset))
         buf = c.getLogicalDataStore().getObjectBuffer(k)
-        hexdump.hexdump(buf)
+        #hexdump.hexdump(buf)
+
         cd = ClassDefinition(buf)
-        g_logger.debug(cd._def.tree())
-        g_logger.debug(cd.getQualifiers())
-        props = cd.getProperties()
-        for propname, prop in props.iteritems():
-            g_logger.debug("key: %s", prop.getName())
-            g_logger.debug("type: %s", prop.getType())
-            g_logger.debug(prop.getQualifiers())
-        break
+        dump_class_def(cd)
+
+        className = cd.getSuperClassName()
+
 
     #print(c.getIndexRootPageNumber())
 
