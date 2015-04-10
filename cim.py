@@ -471,7 +471,7 @@ class _ClassDefinition(vstruct.VStruct):
 class ClassDefinition(LoggingObject):
     def __init__(self, buf):
         super(ClassDefinition, self).__init__()
-        self.d("hex: \n%s", hexdump.hexdump(buf))
+        #self.d("hex: \n%s", hexdump.hexdump(buf))
         self._buf = buf
         self._def = _ClassDefinition()
         self._def.vsParse(buf)
@@ -1166,6 +1166,12 @@ class Index(LoggingObject):
 
     def _lookupMonikerClassInstances(self, moniker):
         self.d("moniker: %s", moniker)
+        keyString = self._encodeNamespace(moniker.namespace)
+        keyString += "/" + self._encodeItem(self.CLASS_INSTANCE_PREFIX, moniker.klass)
+        keyString += "/" + self.INSTANCE_NAME_PREFIX
+        self.d("keystring: %s", keyString)
+        key = Key(keyString)
+        return self.lookupKeys(key)
 
     def _lookupMonikerClassDefinition(self, moniker):
         self.d("moniker: %s", moniker)
@@ -1219,7 +1225,6 @@ def main(type_, path):
     #    buf = f.read(DATA_PAGE_SIZE)
 
     #p = Page(buf)
-    import hexdump
     #for i in xrange(p.tocs.count):
     #    hexdump.hexdump(p._getObjectBufByIndex(i))
     #    print("\n")
@@ -1247,49 +1252,49 @@ def main(type_, path):
     #for k in i.lookupKeys(needle):
     #    print(formatKey(k))
 
-    def dump_class_def(cd):
-        #g_logger.info(cd._def.tree())
-        g_logger.info("classname: %s", cd.getClassName())
-        g_logger.info("super: %s", cd.getSuperClassName())
-        g_logger.info("ts: %s", cd.getTimestamp().isoformat("T"))
-        g_logger.info("qualifiers:")
-        for k, v in cd.getQualifiers().iteritems():
-            g_logger.info("  %s: %s", k, str(v))
-        g_logger.info("properties:")
-        for propname, prop in cd.getProperties().iteritems():
-            g_logger.info("  name: %s", prop.getName())
-            g_logger.info("    type: %s", prop.getType())
-            g_logger.info("    qualifiers:")
-            for k, v in prop.getQualifiers().iteritems():
-                g_logger.info("      %s: %s", k, str(v))
 
-    className = "Win32_Service"
+    #def dump_class_def(cd):
+    #    #g_logger.info(cd._def.tree())
+    #    g_logger.info("classname: %s", cd.getClassName())
+    #    g_logger.info("super: %s", cd.getSuperClassName())
+    #    g_logger.info("ts: %s", cd.getTimestamp().isoformat("T"))
+    #    g_logger.info("qualifiers:")
+    #    for k, v in cd.getQualifiers().iteritems():
+    #        g_logger.info("  %s: %s", k, str(v))
+    #    g_logger.info("properties:")
+    #    for propname, prop in cd.getProperties().iteritems():
+    #        g_logger.info("  name: %s", prop.getName())
+    #        g_logger.info("    type: %s", prop.getType())
+    #        g_logger.info("    qualifiers:")
+    #        for k, v in prop.getQualifiers().iteritems():
+    #            g_logger.info("      %s: %s", k, str(v))
+#
+    #className = "Win32_Service"
 
-    while className != "":
-        g_logger.info("%s", "=" * 80)
-        g_logger.info("classname: %s", className)
-        needle = Moniker("//./root/cimv2:%s" % (className))
-        g_logger.info("moniker: %s", str(needle))
-        k = one(i.lookupMoniker(needle))
-        g_logger.info("database id: %s", formatKey(k))
-        g_logger.info("objects.data page: %s", h(k.getDataPage()))
-        physicalOffset = DATA_PAGE_SIZE * \
-                          c.getDataMapping().getPhysicalPage(k.getDataPage())
-        g_logger.info("physical offset: %s", h(physicalOffset))
-        buf = c.getLogicalDataStore().getObjectBuffer(k)
-        #hexdump.hexdump(buf)
-
-        cd = ClassDefinition(buf)
-        dump_class_def(cd)
-
-        className = cd.getSuperClassName()
-
-
+    #while className != "":
+    #    g_logger.info("%s", "=" * 80)
+    #    g_logger.info("classname: %s", className)
+    #    needle = Moniker("//./root/cimv2:%s" % (className))
+    #    g_logger.info("moniker: %s", str(needle))
+    #    k = one(i.lookupMoniker(needle))
+    #    g_logger.info("database id: %s", formatKey(k))
+    #    g_logger.info("objects.data page: %s", h(k.getDataPage()))
+    #    physicalOffset = DATA_PAGE_SIZE * \
+    #                      c.getDataMapping().getPhysicalPage(k.getDataPage())
+    #    g_logger.info("physical offset: %s", h(physicalOffset))
+    #    buf = c.getLogicalDataStore().getObjectBuffer(k)
+    #    #hexdump.hexdump(buf)
+    #    cd = ClassDefinition(buf)
+    #    dump_class_def(cd)
+    #    className = cd.getSuperClassName()
     #print(c.getIndexRootPageNumber())
-
     #indexStore = c.getLogicalIndexStore()
     #print(hex(indexStore.getRootPageNumber()))
-
+    className = "ActiveScriptEventConsumer"
+    g_logger.info("classname: %s", className)
+    needle = Moniker("//./root/subscription:%s" % (className))
+    g_logger.info("moniker: %s", str(needle))
+    g_logger.info(i._lookupMonikerClassInstances(needle))
 
 
 if __name__ == "__main__":
