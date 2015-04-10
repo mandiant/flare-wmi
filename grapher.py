@@ -69,7 +69,7 @@ class Grapher(LoggingObject):
                 i=h(keyCount - 1),
                 child=h(finalChildIndex)))
 
-    def graphIndex(self):
+    def graphIndexFromPage(self, page):
         print("digraph g {")
         print("  graph [ rankdir = \"LR\" ];")
         print("  node [")
@@ -78,19 +78,27 @@ class Grapher(LoggingObject):
         print("  ];")
         print("  edge [];")
 
-        i = self._cim.getLogicalIndexStore()
-        self._graphIndexPageRec(i.getRootPage())
+        self._graphIndexPageRec(page)
 
         print("}")
 
+    def graphIndex(self):
+        i = self._cim.getLogicalIndexStore()
+        self.graphIndexFromPage(i.getRootPage())
 
-def main(type_, path):
+def main(type_, path, pageNum=None):
     if type_ not in ("xp", "win7"):
         raise RuntimeError("Invalid mapping type: {:s}".format(type_))
 
     c = CIM(type_, path)
     g = Grapher(c)
-    g.graphIndex()
+    if pageNum is None:
+        g.graphIndex()
+    else:
+        pageNum = int(pageNum)
+        i = c.getLogicalIndexStore()
+        p = i.getPage(pageNum)
+        g.graphIndexFromPage(p)
 
 
 if __name__ == "__main__":

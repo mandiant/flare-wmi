@@ -4,6 +4,7 @@ doc
 import os
 import hashlib
 import logging
+from datetime import datetime
 
 import vstruct
 from vstruct.primitives import *
@@ -79,7 +80,7 @@ class EntryWin7(vstruct.VStruct):
         self.pageNumber = v_uint32()
         self.pageCRC = v_uint32()
         self.freeSpace = v_uint32()
-        self.userData = v_uint32()
+        self.usedSpace = v_uint32()
         self.firstId = v_uint32()
         self.secondId = v_uint32()
 
@@ -178,6 +179,270 @@ MAPPING_TYPES = {
     CIM_TYPE_XP: MappingXP,
     CIM_TYPE_WIN7: MappingWin7,
 }
+
+
+class FILETIME(vstruct.primitives.v_prim):
+    _vs_builder = True
+    def __init__(self):
+        vstruct.primitives.v_prim.__init__(self)
+        self._vs_length = 8
+        self._vs_value = "\x00" * 8
+        self._vs_fmt = "<Q"
+        self._ts = datetime.min
+
+    def vsParse(self, fbytes, offset=0):
+        offend = offset + self._vs_length
+        q = struct.unpack("<Q", fbytes[offset:offend])[0]
+        self._ts = datetime.utcfromtimestamp(float(q) * 1e-7 - 11644473600 )
+        return offend
+
+    def vsEmit(self):
+        raise NotImplementedError()
+
+    def vsSetValue(self, guidstr):
+        raise NotImplementedError()
+
+    def vsGetValue(self):
+        return self._ts
+
+    def __repr__(self):
+        return self._ts.isoformat("T") + "Z"
+
+
+class WMIString(vstruct.VStruct):
+    def __init__(self):
+        vstruct.VStruct.__init__(self)
+        self.zero = v_uint8()
+        self.s = v_zstr()
+
+    def __repr__(self):
+        return repr(self.s)
+
+    def vsGetValue(self):
+        return self.s.vsGetValue()
+
+
+class ClassDefinitionHeader(vstruct.VStruct):
+    def __init__(self):
+        vstruct.VStruct.__init__(self)
+        self.superClassNameWLen = v_uint32()
+        self.superClassNameW = v_wstr(size=0)
+        self.timestamp = FILETIME()
+        self.unk0 = v_uint8()
+        self.unk1 = v_uint32()
+        self.offsetClassNameA = v_uint32()
+        self.unk2 = v_uint32()
+        self.unk3 = v_uint32()
+        self.classNameA = WMIString()
+        self.unk4 = v_uint32()
+        self.unk5 = v_uint32()
+
+    def pcb_superClassNameWLen(self):
+        self["superClassNameW"].vsSetLength(self.superClassNameWLen * 2)
+
+
+CIM_TYPES = v_enum()
+CIM_TYPES.CIM_TYPE_LANGID = 0x3
+CIM_TYPES.CIM_TYPE_REAL32 = 0x4
+CIM_TYPES.CIM_TYPE_STRING = 0x8
+CIM_TYPES.CIM_TYPE_BOOLEAN = 0xB
+CIM_TYPES.CIM_TYPE_UINT16 = 0x12
+CIM_TYPES.CIM_TYPE_UINT32= 0x13
+CIM_TYPES.CIM_TYPE_UINT64 = 0x15
+CIM_TYPES.CIM_TYPE_DATETIME = 0x65
+
+CIM_TYPE_SIZES = {
+    CIM_TYPES.CIM_TYPE_LANGID: 4,
+    CIM_TYPES.CIM_TYPE_REAL32: 4,
+    CIM_TYPES.CIM_TYPE_STRING: 4,
+    CIM_TYPES.CIM_TYPE_BOOLEAN: 2,
+    CIM_TYPES.CIM_TYPE_UINT16: 2,
+    CIM_TYPES.CIM_TYPE_UINT32: 4,
+    CIM_TYPES.CIM_TYPE_UINT64: 8,
+    CIM_TYPES.CIM_TYPE_DATETIME: 8   # guess
+}
+
+
+class CIM_TYPE(v_uint32):
+    def __init__(self, *args, **kwargs):
+        v_uint32.__init__(self, *args, **kwargs)
+
+    def __repr__(self):
+        return CIM_TYPES.vsReverseMapping(int(self))
+
+
+BUILTIN_QUALIFIERS = v_enum()
+BUILTIN_QUALIFIERS.PROP_READ_ACCESS = 0x3
+BUILTIN_QUALIFIERS.CLASS_NAMESPACE = 0x6
+BUILTIN_QUALIFIERS.CLASS_UNK = 0x7
+BUILTIN_QUALIFIERS.PROP_TYPE = 0xA
+
+class CimType(vstruct.VStruct):
+    def __init__(self, cimType=None):
+        vstruct.VStruct.__init__(self)
+        self._cimType = cimType
+
+    def setCimType(self, cimType):
+        self._cimType = cimType
+
+
+
+class QualifierReference(vstruct.VStruct):
+    def __init__(self):
+        vstruct.VStruct.__init__(self)
+        self.keyReference = v_uint32()
+        self.unk0 = v_uint8()
+        self.valueType = CIM_TYPE()
+        self.value = v_bytes(size=0)
+
+    def pcb_valueType(self):
+        if self.valueType == CIM_TYPES.CIM_TYPE_LANGID:
+            self.vsSetField("value", v_uint32())
+            #self["value"] = v_uint32()
+        elif self.valueType == CIM_TYPES.CIM_TYPE_REAL32:
+            self.vsSetField("value", v_float())
+            #self["value"] = v_float()
+        elif self.valueType == CIM_TYPES.CIM_TYPE_STRING:
+            self.vsSetField("value", v_uint32())
+            #self["value"] = v_uint32()
+        elif self.valueType == CIM_TYPES.CIM_TYPE_BOOLEAN:
+            self.vsSetField("value", v_uint16())
+            #self["value"] = v_uint16()
+        elif self.valueType == CIM_TYPES.CIM_TYPE_UINT16:
+            self.vsSetField("value", v_uint16())
+            #self["value"] = v_uint16()
+        elif self.valueType == CIM_TYPES.CIM_TYPE_UINT32:
+            self.vsSetField("value", v_uint32())
+            #self["value"] = v_uint32()
+        elif self.valueType == CIM_TYPES.CIM_TYPE_UINT64:
+            self.vsSetField("value", v_uint64())
+            #self["value"] = v_uint64()
+        elif self.valueType == CIM_TYPES.CIM_TYPE_DATETIME:
+            self.vsSetField("value", FILETIME())
+            #self["value"] = FILETIME()
+        else:
+            raise RuntimeError("unknown qualifier type!")
+
+    def isBuiltinKey(self):
+        return self.keyReference & 0x80000000 > 0
+
+    def getKey(self):
+        return self.keyReference & 0x7FFFFFFF
+
+
+class ClassDefinitionQualifiers(vstruct.VStruct):
+    def __init__(self):
+        vstruct.VStruct.__init__(self)
+        self.count = 0
+        self.qualifiers = vstruct.VArray()
+
+    def vsParse(self, bytez, offset=0):
+        self.count = 0
+        while bytez[offset] != "\x00":
+            if ord(bytez[offset + 4]) > 0x0F:
+                # hack, until we know how to get length of this list
+                break
+            q = QualifierReference()
+            offset = q.vsParse(bytez, offset=offset)
+            self.qualifiers.vsAddElement(q)
+            self.count += 1
+        return offset
+
+    def vsParseFd(self, fd):
+        # need to be able to peek at 1-bytes worth of data
+        raise NotImplementedError()
+
+
+class ClassDefinitionPropertyReference(vstruct.VStruct):
+    def __init__(self):
+        vstruct.VStruct.__init__(self)
+        self.offsetPropertyName = v_uint32()
+        self.offsetPropertyStruct = v_uint32()
+
+
+class ClassDefinitionPropertyReferences(vstruct.VStruct):
+    def __init__(self):
+        vstruct.VStruct.__init__(self)
+        self.count = v_uint32()
+        self.refs = vstruct.VArray()
+
+    def pcb_count(self):
+        self.refs.vsAddElements(self.count, ClassDefinitionPropertyReference)
+
+
+class _ClassDefinition(vstruct.VStruct):
+    def __init__(self):
+        vstruct.VStruct.__init__(self)
+        self.header = ClassDefinitionHeader()
+        self.qualifiers = ClassDefinitionQualifiers()
+        self.propertyReferences = ClassDefinitionPropertyReferences()
+
+
+class ClassDefinition(LoggingObject):
+    def __init__(self, buf):
+        super(ClassDefinition, self).__init__()
+        self._buf = buf
+        self._def = _ClassDefinition()
+        self._def.vsParse(buf)
+
+        self._propDataOffset = self._findPropDataOffset()
+
+    def _findPropDataOffset(self):
+        off = len(self._def)
+
+        while self._buf.find("\xFF" * 3, off, off + 0x10) != -1:
+            off = self._buf.find("\xFF" * 3, off, off + 0x10)
+            while ord(self._buf[off]) == 0xFF:
+                off += 1
+        off += 4  # length of data section size field
+        self.d("prop data offset: %s", h(off))
+        return off
+
+    def _getPropString(self, ref):
+        s = WMIString()
+        offsetString = self._propDataOffset + int(ref)
+        self.d("ref: %s", h(ref))
+        self.d("offset: %s", h(offsetString))
+        s.vsParse(self._buf, offset=offsetString)
+        return str(s.s)
+
+    def _getQualifierValue(self, qualifier):
+        if qualifier.valueType == CIM_TYPES.CIM_TYPE_STRING:
+            return self._getPropString(qualifier.value)
+        elif qualifier.valueType == CIM_TYPES.CIM_TYPE_BOOLEAN:
+            return qualifier.value != 0
+        elif CIM_TYPES.vsReverseMapping(qualifier.valueType):
+            return qualifier.value
+        else:
+            raise RuntimeError("unknown qualifier type!")
+
+    def _getQualifierKey(self, qualifier):
+        if qualifier.isBuiltinKey():
+            return BUILTIN_QUALIFIERS.vsReverseMapping(qualifier.getKey())
+        return self._getPropString(qualifier.getKey())
+
+    def getQualifiers(self):
+        """ get dict of str to str """
+        ret = {}
+        for i in xrange(self._def.qualifiers.count):
+            q = self._def.qualifiers.qualifiers[i]
+            qk = self._getQualifierKey(q)
+            qv = self._getQualifierValue(q)
+            ret[str(qk)] = str(qv)
+            self.d("%s: %s", qk, qv)
+        return ret
+
+    def _getPropertyName(self, propref):
+        return self._getPropString(propref.offsetPropertyName)
+
+    def getProperties(self):
+        """ get dict of str to Property instances """
+        ret = {}
+        for i in xrange(self._def.propertyReferences.count):
+            propref = self._def.propertyReferences.refs[i]
+            pn = self._getPropertyName(propref)
+            ret[str(pn)] = True
+        return ret
 
 
 class Toc(vstruct.VStruct):
@@ -459,13 +724,17 @@ class LogicalIndexStore(LoggingObject):
         physicalPage = self._mapping.entries[index].getPageNumber()
         return IndexPage(self.getPageBuffer(index), index, physicalPage)
 
+    def _getRootPageNumberWin7(self):
+        return int(self._mapping.entries[0x0].usedSpace)
+
     def _getRootPageNumber(self):
-        # TODO: currently we bruteforce the root page, but we should be able
-        #   to use the .userdata field of the first index mapping entry to select
-        #   it directly (on win7).
-        # this algorithm walks all nodes and tracks which nodes are children of
-        #   other nodes. we expect there to be a single node that is never linked
-        #   as a child --- therefore, its the root.
+        if self._cim.getCimType() == CIM_TYPE_WIN7:
+            return self._getRootPageNumberWin7()
+
+        # TODO: for xp, we should be able to inspect page[0] of the index.
+        # this algorithm walks all nodes and tracks which nodes are children
+        #   of other nodes. we expect there to be a single node that is never
+        #   linked as a child --- therefore, its the root.
         possibleRoots = set([])
         impossibleRoots = set([])
         for i in xrange(self._mapping.header.mappingEntries):
@@ -478,7 +747,8 @@ class LogicalIndexStore(LoggingObject):
             if not page.isValid():
                 continue
 
-            # careful: vstruct returns int-like objects with no hash-equivalence
+            # careful: vstruct returns int-like objects with
+            #   no hash-equivalence
             possibleRoots.add(int(i))
             for j in xrange(page.getKeyCount() + 1):
                 childPage = page.getChildByIndex(j)
@@ -487,6 +757,8 @@ class LogicalIndexStore(LoggingObject):
                 # careful: vstruct int types
                 impossibleRoots.add(int(childPage))
         ret = possibleRoots - impossibleRoots
+        # note: hardcode that the root is not logical page 0
+        ret.remove(int(0))
         if len(ret) != 1:
             raise RuntimeError("Unable to determine root index node: %s" % (str(ret)))
         return ret.pop()
@@ -494,6 +766,7 @@ class LogicalIndexStore(LoggingObject):
     def getRootPageNumber(self):
         if self._rootPageNumber is None:
             self._rootPageNumber = self._getRootPageNumber()
+        self.d("root page number: %s", h(self._rootPageNumber))
         return self._rootPageNumber
 
     def getRootPage(self):
@@ -547,7 +820,7 @@ class CIM(LoggingObject):
     def getCimType(self):
         return self._cim_type
 
-    def getCurrentMappings(self):
+    def getMappings(self):
         if self._currentIndexMapping is None:
             fp = self._getCurrentMappingFile()
             dm = self._mappingClass()
@@ -559,24 +832,24 @@ class CIM(LoggingObject):
             self._currentIndexMapping = im
         return self._currentDataMapping, self._currentIndexMapping
 
-    def getCurrentDataMapping(self):
+    def getDataMapping(self):
         if self._currentDataMapping is None:
-            self._currentDataMapping, self._currentIndexMapping = self.getCurrentMappings()
+            self._currentDataMapping, self._currentIndexMapping = self.getMappings()
         return self._currentDataMapping
 
-    def getCurrentIndexMapping(self):
+    def getIndexMapping(self):
         if self._currentIndexMapping is None:
-            self._currentDataMapping, self._currentIndexMapping = self.getCurrentMappings()
+            self._currentDataMapping, self._currentIndexMapping = self.getMappings()
         return self._currentIndexMapping
 
     def getLogicalDataStore(self):
         if self._dataStore is None:
-            self._dataStore = LogicalDataStore(self, self._getDataFilePath(), self.getCurrentDataMapping())
+            self._dataStore = LogicalDataStore(self, self._getDataFilePath(), self.getDataMapping())
         return self._dataStore
 
     def getLogicalIndexStore(self):
         if self._indexStore is None:
-            self._indexStore = LogicalIndexStore(self, self._getIndexFilePath(), self.getCurrentIndexMapping())
+            self._indexStore = LogicalIndexStore(self, self._getIndexFilePath(), self.getIndexMapping())
         return self._indexStore
 
 
@@ -663,6 +936,11 @@ class Index(LoggingObject):
     def _lookupKeys(self, key, page):
         skey = str(key)
         keyCount = page.getKeyCount()
+
+        self.d("index lookup: %s: page: %s",
+                formatKey(key),
+                h(page.logicalPage))
+
         matches = []
         for i in xrange(keyCount):
             k = page.getKey(i)
@@ -671,14 +949,20 @@ class Index(LoggingObject):
             if i != keyCount - 1:
                 # not last
                 if skey in sk:
+                    self.d("contains match: %s", formatKey(sk))
+                    self.d("going left")
                     matches.extend(self._lookupKeysLeft(key, page, i))
+                    self.d("including: %s", formatKey(sk))
                     matches.append(k)
+                    self.d("going right")
                     matches.extend(self._lookupKeysRight(key, page, i))
                     continue
                 if skey < sk:
+                    self.d("less-than match, going left: %s", formatKey(sk))
                     matches.extend(self._lookupKeysLeft(key, page, i))
                     break
                 if skey > sk:
+                    self.d("greater-than, moving along: %s", formatKey(sk))
                     continue
             else:
                 # last key
@@ -721,12 +1005,6 @@ class Index(LoggingObject):
         h.update(s)
         return h.hexdigest().upper()
 
-    def _lookupMonikerClassInstance(self, moniker):
-        self.d("moniker: %s", moniker)
-
-    def _lookupMonikerClass(self, moniker):
-        self.d("moniker: %s", moniker)
-
     def _encodeItem(self, prefix, s):
         return "{prefix:s}{hash_:s}".format(
                 prefix=prefix,
@@ -734,6 +1012,23 @@ class Index(LoggingObject):
 
     def _encodeNamespace(self, namespace):
         return self._encodeItem(self.NAMESPACE_PREFIX, namespace)
+
+    def _encodeClassDefinition(self, klass):
+        return self._encodeItem(self.CLASS_DEFINITION_PREFIX, klass)
+
+    def _lookupMonikerClassInstance(self, moniker):
+        self.d("moniker: %s", moniker)
+
+    def _lookupMonikerClassInstances(self, moniker):
+        self.d("moniker: %s", moniker)
+
+    def _lookupMonikerClassDefinition(self, moniker):
+        self.d("moniker: %s", moniker)
+        keyString = self._encodeNamespace(moniker.namespace)
+        keyString += "/" + self._encodeClassDefinition(moniker.klass)
+        self.d("keystring: %s", keyString)
+        key = Key(keyString)
+        return self.lookupKeys(key)
 
     def _lookupMonikerNamespace(self, moniker):
         self.d("moniker: %s", moniker)
@@ -747,7 +1042,7 @@ class Index(LoggingObject):
         if moniker.instance is not None:
             return self._lookupMonikerClassInstance(moniker)
         elif moniker.klass is not None:
-            return self._lookupMonikerClass(moniker)
+            return self._lookupMonikerClassDefinition(moniker)
         elif moniker.namespace is not None:
             return self._lookupMonikerNamespace(moniker)
         else:
@@ -770,8 +1065,8 @@ def main(type_, path):
 
     c = CIM(type_, path)
 
-    #print(c.getCurrentDataMapping().tree())
-    #print(c.getCurrentIndexMapping().tree())
+    #print(c.getDataMapping().tree())
+    #print(c.getIndexMapping().tree())
 
 
     #print(c.getCurrentMapping().tree())
@@ -801,13 +1096,23 @@ def main(type_, path):
 
     i = Index(c)
     #needle = Key("NS_E1DD43413ED9FD9C458D2051F082D1D739399B29035B455F09073926E5ED9870/CI_CFF")
+
+    #needle = Key("NS_68577372C66A7B20658487FBD959AA154EF54B5F935DCC5663E9228B44322805/CD_FFF2")
     #print("looking for: " + formatKey(needle))
     #for k in i.lookupKeys(needle):
     #    print(formatKey(k))
 
-    needle = Moniker("//./root/cimv2")
+    needle = Moniker("//./root/cimv2:Win32_Service")
     for k in i.lookupMoniker(needle):
         print(formatKey(k))
+        print(h(DATA_PAGE_SIZE * c.getDataMapping().getPhysicalPage(k.getDataPage())))
+        buf = c.getLogicalDataStore().getObjectBuffer(k)
+        hexdump.hexdump(buf)
+        cd = ClassDefinition(buf)
+        g_logger.debug(cd._def.tree())
+        g_logger.debug(cd.getQualifiers())
+        g_logger.debug(cd.getProperties())
+        break
 
     #print(c.getIndexRootPageNumber())
 

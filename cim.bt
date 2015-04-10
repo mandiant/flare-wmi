@@ -129,11 +129,88 @@ struct BtrPage {
     uint16_t stringPartTable[stringPartTableSize + 1];
 };
 
-struct MappingFileXP f;
-//struct ObjData o;
+struct WmiString {
+    uint8_t zero;
+    char s[ReadStringLength(FTell())];
+};
+
+struct ObjectClassDefinition {
+    uint32_t wnameLen;
+    wchar_t wname[wnameLen];
+    FILETIME ts;
+    uint8_t unk0;
+    uint32_t unk1;
+    uint32_t offsetClassName;
+    uint32_t unk2;
+    uint32_t unk3;
+    struct WmiString aname;
+};
+
+enum <uint32_t> CIM_TYPES {
+    CIM_TYPE_LANGID = 0x3,
+    CIM_TYPE_REAL32 = 0x4,
+    CIM_TYPE_STRING = 0x8,
+    CIM_TYPE_BOOLEAN = 0xB,
+    CIM_TYPE_UINT16 = 0x12,
+    CIM_TYPE_UINT32 = 0x13,
+    CIM_TYPE_UINT64 = 0x15,
+    CIM_TYPE_DATETIME = 0x65
+};
+
+
+struct Qualifier {
+    uint32_t keyReference;
+    uint8_t unk0;
+    enum CIM_TYPES valueType;
+    switch (valueType) {
+    case CIM_TYPE_REAL32:
+        float value;
+        break;
+    case CIM_TYPE_LANGID:
+        uint32_t value;
+        break;
+    case CIM_TYPE_STRING:
+        uint32_t value;
+        break;
+    case CIM_TYPE_BOOLEAN:
+        uint16_t value;
+        break;
+    case CIM_TYPE_UINT16:
+        uint16_t value;
+        break;
+    case CIM_TYPE_UINT32:
+        uint32_t value;
+        break;
+    case CIM_TYPE_UINT64:
+        uint64_t value;
+        break;
+    case CIM_TYPE_DATETIME:
+        FILETIME value;
+        break;
+    }
+};
+
+struct ObjectField {
+    uint8_t unk0[0x1B];
+    uint32_t offTypeString;
+    uint8_t unk1[0xB];
+    uint32_t offMappingStringsString;
+    uint8_t unk2[0x5];
+    uint32_t offInterpretationStruct;
+};
 
 //FSeek(GetCursorPos());
+
+//struct MappingFileXP f;
+struct MappingFileWin7 f;
+//struct ObjData o;
+
+
 //struct Object o;
 
 //FSeek(GetCursorPos());
 //struct BtrPage ph;
+
+//struct ObjectClassDefinition ocd;
+//struct ObjectField f;
+//struct Qualifier q;
