@@ -147,7 +147,10 @@ struct ObjectClassDefinition {
         struct WmiString aname;
         uint32_t unk4;
     }
-    uint32_t unk5;
+    struct {
+        uint32_t qualifierListSize;
+        uint8_t qualifierListData[qualifierListSize - sizeof(qualifierListSize)];
+    } qualifierList;
 };
 
 enum <uint32_t> CIM_TYPES {
@@ -203,7 +206,25 @@ struct ObjectField {
     uint32_t offInterpretationStruct;
 };
 
-FSeek(GetCursorPos());
+struct InstanceData {
+    wchar_t classNameHash[0x40];
+    FILETIME ts1;
+    FILETIME ts2;
+    uint32_t dataLen;
+    //uint8_t data[dataLen - sizeof(dataLen)];
+    uint8_t unk0[0x6];
+    struct {
+        //uint8_t consumerToc[0xD];
+        uint32_t strRef;
+        //uint8_t unk1[0x5];
+    } toc;
+    uint32_t nextSize;
+    
+
+    uint32_t dataSize;
+};
+
+//FSeek(GetCursorPos());
 
 //struct MappingFileXP f;
 //struct MappingFileWin7 f;
@@ -218,3 +239,5 @@ FSeek(GetCursorPos());
 struct ObjectClassDefinition ocd;
 //struct ObjectField f;
 //struct Qualifier q;
+
+//struct InstanceData i;
