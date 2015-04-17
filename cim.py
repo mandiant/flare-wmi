@@ -237,7 +237,6 @@ class ClassDefinitionHeader(vstruct.VStruct):
         self.unk3 = v_uint32()
         self.superClassNameA = WMIString()  # not present if no superclass
         self.unk4 = v_uint32()  # not present if no superclass
-        self.unk5 = v_uint32()
 
     def pcb_superClassNameWLen(self):
         self["superClassNameW"].vsSetLength(self.superClassNameWLen * 2)
@@ -376,15 +375,18 @@ class QualifierReference(vstruct.VStruct):
 class QualifiersList(vstruct.VStruct):
     def __init__(self):
         vstruct.VStruct.__init__(self)
-        self.count = 0
+        self.size = v_uint32()
         self.qualifiers = vstruct.VArray()
+        self.count = 0
 
     def vsParse(self, bytez, offset=0):
+        soffset = offset
+        size = v_uint32()
+        offset = size.vsParse(bytez, offset=offset)
+        self.vsSetField("size", size)  # hack?
+
         self.count = 0
-        while bytez[offset] != "\x00":
-            if ord(bytez[offset + 4]) > 0x0F:
-                # hack, until we know how to get length of this list
-                break
+        while offset < soffset + self.size:
             q = QualifierReference()
             offset = q.vsParse(bytez, offset=offset)
             self.qualifiers.vsAddElement(q)
@@ -403,7 +405,6 @@ class _Property(vstruct.VStruct):
         self.unk0 = v_uint16()
         self.unk1 = v_uint32()
         self.unk2 = v_uint32()
-        self.unk3 = v_uint32()
         self.qualifiers = QualifiersList()
 
 
