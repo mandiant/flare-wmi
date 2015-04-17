@@ -1,6 +1,5 @@
+import sys
 import logging
-
-import hexdump
 
 from cim import CIM
 from cim import Key
@@ -12,7 +11,8 @@ def main(type_, path, key):
 
     c = CIM(type_, path)
     k = Key("a." + key)
-    hexdump.hexdump(c.getLogicalDataStore().getObjectBuffer(k))
+    sys.stdout.write(c.getLogicalDataStore().getObjectBuffer(k))
+    sys.stdout.flush()
 
 
 if __name__ == "__main__":
