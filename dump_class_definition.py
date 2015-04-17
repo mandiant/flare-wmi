@@ -1,4 +1,5 @@
 import logging
+import traceback
 
 from cim import CIM
 from cim import Index
@@ -35,7 +36,7 @@ def dump_class_def(cd):
             print("      %s: %s" % (k, str(v)))
 
 
-def main(type_, path, className):
+def main(type_, path, namespaceName, className):
     if type_ not in ("xp", "win7"):
         raise RuntimeError("Invalid mapping type: {:s}".format(type_))
 
@@ -44,10 +45,14 @@ def main(type_, path, className):
 
     while className != "":
         print("%s" % "=" * 80)
+        print("namespace: %s" % namespaceName)
         print("classname: %s" % className)
-        needle = Moniker("//./root/cimv2:%s" % (className))
+        needle = Moniker("//./%s:%s" % (namespaceName, className))
         print("moniker: %s" % str(needle))
         k = one(i.lookupMoniker(needle))
+        if k is None:
+            print("ERROR: not found!")
+            return
         print("database id: %s" % formatKey(k))
         print("objects.data page: %s" % h(k.getDataPage()))
         physicalOffset = DATA_PAGE_SIZE * \
@@ -55,7 +60,11 @@ def main(type_, path, className):
         print("physical offset: %s" % h(physicalOffset))
         buf = c.getLogicalDataStore().getObjectBuffer(k)
         cd = ClassDefinition(buf)
-        dump_class_def(cd)
+        try:
+            dump_class_def(cd)
+        except:
+            print("ERROR: failed to dump class definition!")
+            print traceback.format_exc()
         className = cd.getSuperClassName()
 
 
