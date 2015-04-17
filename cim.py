@@ -251,6 +251,7 @@ CIM_TYPES.CIM_TYPE_LANGID = 0x3
 CIM_TYPES.CIM_TYPE_REAL32 = 0x4
 CIM_TYPES.CIM_TYPE_STRING = 0x8
 CIM_TYPES.CIM_TYPE_BOOLEAN = 0xB
+CIM_TYPES.CIM_TYPE_UINT8 = 0x11
 CIM_TYPES.CIM_TYPE_UINT16 = 0x12
 CIM_TYPES.CIM_TYPE_UINT32= 0x13
 CIM_TYPES.CIM_TYPE_UINT64 = 0x15
@@ -261,6 +262,7 @@ CIM_TYPE_SIZES = {
     CIM_TYPES.CIM_TYPE_REAL32: 4,
     CIM_TYPES.CIM_TYPE_STRING: 4,
     CIM_TYPES.CIM_TYPE_BOOLEAN: 2,
+    CIM_TYPES.CIM_TYPE_UINT8: 1,
     CIM_TYPES.CIM_TYPE_UINT16: 2,
     CIM_TYPES.CIM_TYPE_UINT32: 4,
     CIM_TYPES.CIM_TYPE_UINT64: 8,
@@ -322,6 +324,8 @@ class CimType(vstruct.VStruct):
             return v_uint32
         elif self._type == CIM_TYPES.CIM_TYPE_BOOLEAN:
             return v_uint16
+        elif self._type == CIM_TYPES.CIM_TYPE_UINT8:
+            return v_uint8
         elif self._type == CIM_TYPES.CIM_TYPE_UINT16:
             return v_uint16
         elif self._type == CIM_TYPES.CIM_TYPE_UINT32:
