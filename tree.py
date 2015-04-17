@@ -214,17 +214,26 @@ class Namespace(LoggingObject, QueryBuilderMixin, ObjectFetcherMixin):
     @property
     def classes(self):
         """ get direct child class definitions """
-        pass
+        q = "{}/{}".format(
+                self.NS(self.name),
+                self.CD())
+        self.d("classes query: %s", q)
+
+        for cdbuf in self.getObjects(q):
+            cd = cimClassDefinition(cdbuf)
+            className = cd.getClassName()
+            yield ClassDefinition(self.context, self.name, className)
 
 
 class ClassDefinition(LoggingObject):
-    def __init__(self, context, name):
+    def __init__(self, context, namespace, name):
         super(ClassDefinition, self).__init__()
         self.context = context
+        self.ns = namespace
         self.name = name
 
     def __repr__(self):
-        return "ClassDefinition(name: {:s})".format(self.name)
+        return "ClassDefinition(namespace: {:s}, name: {:s})".format(self.ns, self.name)
 
     @property
     def namespace(self):
@@ -282,9 +291,19 @@ def formatKey(k):
 
 
 def rec_ns(ns):
+    g_logger.info(ns)
     for c in ns.namespaces:
-        g_logger.info(c)
         rec_ns(c)
+
+
+def rec_class(ns):
+    g_logger.info(ns)
+
+    for c in ns.classes:
+        g_logger.info(c)
+
+    for c in ns.namespaces:
+        rec_class(c)
 
 
 def main(type_, path):
@@ -294,7 +313,7 @@ def main(type_, path):
     c = CIM(type_, path)
     t = Tree(c)
     print(t.root)
-    rec_ns(t.root)
+    rec_class(t.root)
 
 
 if __name__ == "__main__":
