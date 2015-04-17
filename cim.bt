@@ -153,23 +153,30 @@ struct ObjectClassDefinition {
     } qualifierList;
 };
 
-enum <uint32_t> CIM_TYPES {
+enum <uint8_t> CIM_TYPES {
     CIM_TYPE_LANGID = 0x3,
     CIM_TYPE_REAL32 = 0x4,
     CIM_TYPE_STRING = 0x8,
     CIM_TYPE_BOOLEAN = 0xB,
+    CIM_TYPE_UINT8 = 0x11,
     CIM_TYPE_UINT16 = 0x12,
     CIM_TYPE_UINT32 = 0x13,
     CIM_TYPE_UINT64 = 0x15,
     CIM_TYPE_DATETIME = 0x65
 };
 
+struct CimType {
+    uint8_t type;
+    uint8_t isArray;
+    uint8_t unk0;
+    uint8_t unk1;
+};
 
 struct Qualifier {
     uint32_t keyReference;
     uint8_t unk0;
-    enum CIM_TYPES valueType;
-    switch (valueType) {
+    struct CimType valueType;
+    switch (valueType.type) {
     case CIM_TYPE_REAL32:
         float value;
         break;
@@ -181,6 +188,9 @@ struct Qualifier {
         break;
     case CIM_TYPE_BOOLEAN:
         uint16_t value;
+        break;
+    case CIM_TYPE_UINT8:
+        uint8_t value;
         break;
     case CIM_TYPE_UINT16:
         uint16_t value;
@@ -196,6 +206,18 @@ struct Qualifier {
         break;
     }
 };
+
+struct PropertyDef {
+    struct CimType type;
+    uint16_t unk0;
+    uint32_t unk1;
+    uint32_t unk2;
+    struct {
+        uint32_t qualifierListSize;
+        uint8_t qualifierListData[qualifierListSize - sizeof(qualifierListSize)];
+    } qualifierList;
+};
+
 
 struct ObjectField {
     uint8_t unk0[0x1B];
@@ -224,7 +246,7 @@ struct InstanceData {
     uint32_t dataSize;
 };
 
-//FSeek(GetCursorPos());
+FSeek(GetCursorPos());
 
 //struct MappingFileXP f;
 //struct MappingFileWin7 f;
@@ -236,8 +258,10 @@ struct InstanceData {
 //FSeek(GetCursorPos());
 //struct BtrPage ph;
 
-struct ObjectClassDefinition ocd;
+//struct ObjectClassDefinition ocd;
 //struct ObjectField f;
 //struct Qualifier q;
 
 //struct InstanceData i;
+
+struct PropertyDef pd;
