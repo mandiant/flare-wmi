@@ -14,9 +14,9 @@ def formatKey(k):
     ret = []
     for part in str(k).split("/"):
         if "." in part:
-            ret.append(part[:7] + "..." + part.partition(".")[2])
+            ret.append(part[:8] + "..." + part.partition(".")[2])
         else:
-            ret.append(part[:7])
+            ret.append(part[:8])
     return "/".join(ret)
 
 
