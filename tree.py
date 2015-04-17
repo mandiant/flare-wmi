@@ -19,6 +19,12 @@ SYSTEM_NAMESPACE_NAME = "__SystemClass"
 NAMESPACE_CLASS_NAME = "__namespace"
 
 
+# usually I'd avoid a "context", but its useful here to
+#   maintain multiple caches and shared objects.
+# cim is a cim.CIM object
+# index is a cim.Index object
+# cdcache is a dict from class id to cim.ClassDefinition object
+# clcache is a dict from class id to .ClassLayout objects
 TreeContext = namedtuple("TreeContext", ["cim", "index", "cdcache", "clcache"])
 
 
@@ -32,7 +38,7 @@ class QueryBuilderMixin(object):
         if name is None:
             return prefix
         else:
-            return prefix + self.index.hash(name.upper().encode("UTF-16LE"))
+            return prefix + self.context.index.hash(name.upper().encode("UTF-16LE"))
 
     def NS(self, name=None):
         return self._build("NS_", name)
@@ -65,25 +71,24 @@ class QueryBuilderMixin(object):
 class ObjectFetcherMixin(object):
     def __init__(self):
         # self must have the following fields:
-        #   - cim
-        #   - index
+        #   - context:TreeContext
         pass
 
     def getObject(self, query):
         """ fetch the first object buffer matching the query """
         self.d("query: {:s}".format(query))
-        ref = one(self.index.lookupKeys(query))
+        ref = one(self.context.index.lookupKeys(query))
         self.d("result: {:s}".format(ref))
-        return self.cim.getLogicalDataStore().getObjectBuffer(ref)
+        return self.context.cim.getLogicalDataStore().getObjectBuffer(ref)
 
     def getObjects(self, query):
         """ return a generator of object buffers matching the query """
         self.d("query: {:s}".format(query))
-        refs = self.index.lookupKeys(query)
+        refs = self.context.index.lookupKeys(query)
         self.d("result: {:d} objects".format(len(refs)))
-        for ref in self.index.lookupKeys(query):
+        for ref in self.context.index.lookupKeys(query):
             self.d("result: {:s}".format(ref))
-            yield self.cim.getLogicalDataStore().getObjectBuffer(ref)
+            yield self.context.cim.getLogicalDataStore().getObjectBuffer(ref)
 
     def getClassDefinitionByQuery(self, query):
         """ return the first cim.ClassDefinition matching the query """
@@ -93,7 +98,7 @@ class ObjectFetcherMixin(object):
     def getClassDefinition(self, namespace, classname):
         """ return the first cim.ClassDefinition matching the query """
         q = self.getClassDefinitionQuery(namespace, classname)
-        ref = one(self.index.lookupKeys(q))
+        ref = one(self.context.index.lookupKeys(q))
 
         # some standard class definitions (like __NAMESPACE) are not in the
         #   current NS, but in the __SystemClass NS. So we try that one, too.
@@ -108,19 +113,24 @@ class ObjectFetcherMixin(object):
 
 
 class ClassLayout(LoggingObject, QueryBuilderMixin, ObjectFetcherMixin):
-    def __init__(self, cim, index, namespace, classDefinition):
+    def __init__(self, context, namespace, classDefinition):
         """
         namespace is a string
         classDefinition is a cim.ClassDefinition object
         """
         super(ClassLayout, self).__init__()
-        self.cim = cim
-        self.index = index
+        self.context = context
         self._ns = namespace
         self._cd = classDefinition
 
+        # cache
+        self._properties = None
+
     @property
     def properties(self):
+        if self._properties is not None:
+            return self._properties[:]
+
         className = self._cd.getClassName()
         classDerivation = []  # initially, ordered from child to parent
         while className != "":
@@ -136,27 +146,29 @@ class ClassLayout(LoggingObject, QueryBuilderMixin, ObjectFetcherMixin):
                 self._cd.getClassName(),
                 map(lambda c: c.getClassName(), classDerivation))
 
-        ret = []
+        self._properties = []
         while len(classDerivation) > 0:
             cd = classDerivation.pop(0)
             for prop in cd.getProperties().values():
-                ret.append(prop)
+                self._properties.append(prop)
 
         self.d("%s property layout: %s",
                 self._cd.getClassName(),
-                map(lambda p: p.getName(), ret))
-
-        return ret
+                map(lambda p: p.getName(), self._properties))
+        return self._properties[:]
 
     def parseInstance(self, data):
         return cimClassInstance(self.properties, data)
 
 
+def getClassId(namespace, classname):
+    return namespace + ":" + classname
+
+
 class Namespace(LoggingObject, QueryBuilderMixin, ObjectFetcherMixin):
-    def __init__(self, cim, index, name):
+    def __init__(self, context, name):
         super(Namespace, self).__init__()
-        self.cim = cim
-        self.index = index
+        self.context = context
         self.name = name
 
     def __repr__(self):
@@ -174,20 +186,30 @@ class Namespace(LoggingObject, QueryBuilderMixin, ObjectFetcherMixin):
     @property
     def namespaces(self):
         """ return a generator direct child namespaces """
-        q = self.getClassDefinitionQuery(SYSTEM_NAMESPACE_NAME, NAMESPACE_CLASS_NAME)
+        namespaceClassId = getClassId(SYSTEM_NAMESPACE_NAME, NAMESPACE_CLASS_NAME)
+        namespaceCD = self.context.cdcache.get(namespaceClassId, None)
+        if namespaceCD is None:
+            self.d("cdcache miss")
+            q = self.getClassDefinitionQuery(SYSTEM_NAMESPACE_NAME, NAMESPACE_CLASS_NAME)
+            namespaceCD = cimClassDefinition(self.getObject(q))
+            self.context.cdcache[namespaceClassId] = namespaceCD
 
-        namespaceCD = cimClassDefinition(self.getObject(q))
-        namespaceCL = ClassLayout(self.cim, self.index, self.name, namespaceCD)
+        namespaceCL = self.context.clcache.get(namespaceClassId, None)
+        if namespaceCL is None:
+            self.d("clcache miss")
+            namespaceCL = ClassLayout(self.context, self.name, namespaceCD)
+            self.context.clcache[namespaceClassId] = namespaceCL
 
         q = "{}/{}/{}".format(
                 self.NS(self.name),
                 self.CI(NAMESPACE_CLASS_NAME),
                 self.IL())
+
         for namespaceInstance in self.getObjects(q):
             namespaceI = namespaceCL.parseInstance(namespaceInstance)
             nsName = namespaceI.getPropertyValue("Name")
             # TODO: perhaps should test if this thing exists?
-            yield Namespace(self.cim, self.index, self.name + "\\" + nsName)
+            yield Namespace(self.context, self.name + "\\" + nsName)
 
     @property
     def classes(self):
@@ -196,10 +218,9 @@ class Namespace(LoggingObject, QueryBuilderMixin, ObjectFetcherMixin):
 
 
 class ClassDefinition(LoggingObject):
-    def __init__(self, cim, index, name):
+    def __init__(self, context, name):
         super(ClassDefinition, self).__init__()
-        self.cim = cim
-        self.index = index
+        self.context = context
         self.name = name
 
     def __repr__(self):
@@ -217,10 +238,9 @@ class ClassDefinition(LoggingObject):
 
 
 class ClassInstance(LoggingObject):
-    def __init__(self, cim, index, name):
+    def __init__(self, context, name):
         super(ClassInstance, self).__init__()
-        self.cim = cim
-        self.index = index
+        self.context = context
         self.name = name
 
     def __repr__(self):
@@ -237,12 +257,10 @@ class ClassInstance(LoggingObject):
         pass
 
 
-
 class Tree(LoggingObject):
     def __init__(self, cim):
         super(Tree, self).__init__()
-        self._cim = cim
-        self._index = Index(cim)
+        self._context = TreeContext(cim, Index(cim), {}, {})
 
     def __repr__(self):
         return "Tree"
@@ -250,8 +268,7 @@ class Tree(LoggingObject):
     @property
     def root(self):
         """ get root namespace """
-        return Namespace(self._cim, self._index, ROOT_NAMESPACE_NAME)
-
+        return Namespace(self._context, ROOT_NAMESPACE_NAME)
 
 
 def formatKey(k):
