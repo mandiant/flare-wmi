@@ -17,6 +17,9 @@ from common import LoggingObject
 logging.basicConfig(level=logging.DEBUG)
 g_logger = logging.getLogger("cim.mapping")
 
+logging.getLogger("cim.IndexPage").setLevel(logging.WARNING)
+logging.getLogger("cim.Index").setLevel(logging.WARNING)
+
 
 MAPPING_SIGNATURES = v_enum()
 MAPPING_SIGNATURES.MAPPING_START_SIGNATURE = 0xABCD
@@ -348,6 +351,7 @@ class CimType(vstruct.VStruct):
 
 
 BUILTIN_QUALIFIERS = v_enum()
+BUILTIN_QUALIFIERS.PROP_KEY = 0x1
 BUILTIN_QUALIFIERS.PROP_READ_ACCESS = 0x3
 BUILTIN_QUALIFIERS.CLASS_NAMESPACE = 0x6
 BUILTIN_QUALIFIERS.CLASS_UNK = 0x7
@@ -355,6 +359,9 @@ BUILTIN_QUALIFIERS.PROP_TYPE = 0xA
 
 
 class QualifierReference(vstruct.VStruct):
+    # ref:4 + unk0:1 + valueType:4 = 9
+    MIN_SIZE = 9
+
     def __init__(self):
         vstruct.VStruct.__init__(self)
         self.keyReference = v_uint32()
@@ -371,22 +378,32 @@ class QualifierReference(vstruct.VStruct):
     def getKey(self):
         return self.keyReference & 0x7FFFFFFF
 
+    def __repr__(self):
+        return "QualifierReference(type: {:s}, isBuiltinKey: {:b}, keyref: {:s})".format(
+                self.valueType,
+                self.isBuiltinKey(),
+                h(self.getKey())
+            )
+
 
 class QualifiersList(vstruct.VStruct):
     def __init__(self):
         vstruct.VStruct.__init__(self)
+        self.count = 0
         self.size = v_uint32()
         self.qualifiers = vstruct.VArray()
-        self.count = 0
 
     def vsParse(self, bytez, offset=0):
+        #g_logger.debug("QL: \n%s", hexdump.hexdump(bytez, result="return"))
         soffset = offset
-        size = v_uint32()
-        offset = size.vsParse(bytez, offset=offset)
-        self.vsSetField("size", size)  # hack?
+        #g_logger.debug("QL: soffset: %s", h(soffset))
+        offset = self["size"].vsParse(bytez, offset=offset)
+        eoffset = soffset + self.size
+        #g_logger.debug("QL: eoffset: %s", h(eoffset))
 
         self.count = 0
-        while offset < soffset + self.size:
+        while offset + QualifierReference.MIN_SIZE <= eoffset:
+            #g_logger.debug("QL: entry: %s", h(offset))
             q = QualifierReference()
             offset = q.vsParse(bytez, offset=offset)
             self.qualifiers.vsAddElement(q)
@@ -394,7 +411,7 @@ class QualifiersList(vstruct.VStruct):
         return offset
 
     def vsParseFd(self, fd):
-        # need to be able to peek at 1-bytes worth of data
+        # TODO
         raise NotImplementedError()
 
 
@@ -414,23 +431,49 @@ class Property(LoggingObject):
         self._classDef = classDef
         self._propref = propref
 
+
+        # hack, fixme
+        """
+        HIGH_BIT = 1 << 31
+        def isHighBitSet(i):
+            return i & HIGH_BIT > 0
+        if isHighBitSet(self._propref.offsetPropertyName) or \
+                isHighBitSet(self._propref.offsetPropertyStruct):
+            self._prop = None
+            return
+        """
+
         # this is the raw struct, without references/strings resolved
         self._prop = _Property()
         offsetProperty = self._propref.offsetPropertyStruct
         self._prop.vsParse(self._classDef.getData(), offset=offsetProperty)
 
+    def isInherited(self):
+        # guess
+        return self._propref.offsetPropertyName & 0x80000000 > 0
+
     def getName(self):
+        if self.isInherited():
+            return "INHERITED_%s" % h(self._propref.offsetPropertyName & 0x7FFFFFFF)
         return self._classDef.getString(self._propref.offsetPropertyName)
 
     def getType(self):
+        if self.isInherited():
+            # hack, fixme
+            return None
         return self._prop.type
 
     def getQualifiers(self):
         """ get dict of str to str """
         # TODO: can merge this will ClassDef.getQualifiers
         ret = {}
+        if self.isInherited():
+            # hack, fixme
+            # there can definitely be a struct here, so how do we find it?
+            return ret
         for i in xrange(self._prop.qualifiers.count):
             q = self._prop.qualifiers.qualifiers[i]
+            self.d("%s", q)
             qk = self._classDef.getQualifierKey(q)
             qv = self._classDef.getQualifierValue(q)
             ret[str(qk)] = str(qv)
@@ -452,7 +495,6 @@ class ClassDefinitionPropertyReferences(vstruct.VStruct):
         self.refs = vstruct.VArray()
 
     def pcb_count(self):
-        g_logger.debug("CDPR: pcb_count: %s", h(self.count))
         self.refs.vsAddElements(self.count, ClassDefinitionPropertyReference)
 
 
@@ -464,13 +506,16 @@ class _ClassDefinition(vstruct.VStruct):
         self.propertyReferences = ClassDefinitionPropertyReferences()
 
     def pcb_header(self):
-        g_logger.debug("CD: \n%s", self.header.tree())
+        #g_logger.debug("CD: \n%s", self.header.tree())
+        pass
 
     def pcb_qualifiers(self):
-        g_logger.debug("CD: \n%s", self.qualifiers.tree())
+        #g_logger.debug("CD: \n%s", self.qualifiers.tree())
+        pass
 
     def pcb_propertyReferences(self):
-        g_logger.debug("CD: \n%s", self.propertyReferences.tree())
+        #g_logger.debug("CD: \n%s", self.propertyReferences.tree())
+        pass
 
 
 class ClassDefinition(LoggingObject):
@@ -512,7 +557,129 @@ class ClassDefinition(LoggingObject):
 
     def getString(self, ref):
         s = WMIString()
-        self.d("ref: %s", h(ref))
+        s.vsParse(self.getData(), offset=int(ref))
+        return str(s.s)
+
+    def getArray(self, ref, itemType):
+        self.d("ref: %s, type: %s", ref, itemType)
+        Parser = itemType.getValueParser()
+        data = self.getData()
+
+        arraySize = v_uint32()
+        arraySize.vsParse(data, offset=int(ref))
+
+        items = []
+        offset = ref + 4  # sizeof(array_size:uint32_t)
+        for i in xrange(arraySize):
+            p = Parser()
+            p.vsParse(data, offset=offset)
+            items.append(self.getValue(p, itemType))
+            offset += len(p)
+        return items
+
+    def getValue(self, value, valueType):
+        """
+        value is a parsed value, might need dereferencing
+        valueType is a CimType
+        """
+        self.d("value: %s, type: %s", value, valueType)
+        if valueType.isArray():
+            self.d("isArray")
+            return self.getArray(value, valueType.getBaseTypeClone())
+
+        t = valueType.getType()
+        if t == CIM_TYPES.CIM_TYPE_STRING:
+            return self.getString(value)
+        elif t == CIM_TYPES.CIM_TYPE_BOOLEAN:
+            return value != 0
+        elif CIM_TYPES.vsReverseMapping(t):
+            return value
+        else:
+            raise RuntimeError("unknown qualifier type: %s",
+                    str(valueType))
+
+    def getQualifierValue(self, qualifier):
+        return self.getValue(qualifier.value, qualifier.valueType)
+
+    def getQualifierKey(self, qualifier):
+        self.d("%s", qualifier)
+        self.d("%s", qualifier.getKey())
+        if qualifier.isBuiltinKey():
+            return BUILTIN_QUALIFIERS.vsReverseMapping(qualifier.getKey())
+        return self.getString(qualifier.getKey())
+
+    def getClassName(self):
+        """ return string """
+        return self.getString(self._def.header.offsetClassNameA)
+
+    def getSuperClassName(self):
+        """ return string """
+        return str(self._def.header.superClassNameW)
+
+    def getTimestamp(self):
+        """ return datetime.datetime """
+        return self._def.header.timestamp
+
+    def getQualifiers(self):
+        """ get dict of str to str """
+        ret = {}
+        for i in xrange(self._def.qualifiers.count):
+            q = self._def.qualifiers.qualifiers[i]
+            qk = self.getQualifierKey(q)
+            qv = self.getQualifierValue(q)
+            ret[str(qk)] = str(qv)
+            self.d("%s: %s", qk, qv)
+        return ret
+
+    def getProperties(self):
+        """ get dict of str to Property instances """
+        ret = []
+        for i in xrange(self._def.propertyReferences.count):
+            propref = self._def.propertyReferences.refs[i]
+            ret.append(Property(self, propref))
+        return {p.getName(): p for p in ret}
+
+
+class _ClassInstance(vstruct.VStruct):
+    def __init__(self, properties):
+        vstruct.VStruct.__init__(self)
+        self.nameHash = v_wstr(size=0x40)
+        self.ts1 = FILETIME()
+        self.ts2 = FILETIME()
+        self.dataLen = v_uint32()
+        self.unk0 = v_uint16()
+        self.offsetClassNameA = v_uint32()
+
+        self.toc = vstruct.VArray()
+        for prop in properties:
+            self.toc.vsAddElement(prop.getType().getValueParser()())
+
+        self.qualifiers = QualifiersList()
+        self.unk1 = v_uint8()
+        self.propDataLen = v_uint32()  # high bit always set
+        self.propData = v_bytes(size=0)
+
+    def pcb_propDataLen(self):
+        self["propData"].vsSetLength(self.propDataLen & 0x7FFFFFFF)
+
+
+class ClassInstance(LoggingObject):
+    def __init__(self, properties, buf):
+        """ properties is an ordered list of Property objects """
+        super(ClassInstance, self).__init__()
+        self._props = properties
+        self._buf = buf
+        self._def = _ClassInstance(self._props)
+        self._def.vsParse(buf)
+
+        self._propIndexMap = {prop.getName(): i for i, prop in enumerate(self._props)}
+        self._propTypeMap = {prop.getName(): prop.getType() for prop in self._props}
+
+    def getData(self):
+        return self._def.propData
+
+    def getString(self, ref):
+        s = WMIString()
         s.vsParse(self.getData(), offset=int(ref))
         return str(s.s)
 
@@ -564,15 +731,19 @@ class ClassDefinition(LoggingObject):
 
     def getClassName(self):
         """ return string """
-        return self.getString(self._def.header.offsetClassNameA)
+        return self.getString(self._def.offsetClassNameA)
 
-    def getSuperClassName(self):
+    def getClassNameHash(self):
         """ return string """
-        return str(self._def.header.superClassNameW)
+        return self._def.nameHash
 
-    def getTimestamp(self):
+    def getTimestamp1(self):
         """ return datetime.datetime """
-        return self._def.header.timestamp
+        return self._def.ts1
+
+    def getTimestamp2(self):
+        """ return datetime.datetime """
+        return self._def.ts2
 
     def getQualifiers(self):
         """ get dict of str to str """
@@ -587,11 +758,18 @@ class ClassDefinition(LoggingObject):
 
     def getProperties(self):
         """ get dict of str to Property instances """
-        ret = []
-        for i in xrange(self._def.propertyReferences.count):
-            propref = self._def.propertyReferences.refs[i]
-            ret.append(Property(self, propref))
-        return {p.getName(): p for p in ret}
+        # TODO
+        raise NotImplementedError()
+
+    def getPropertyValue(self, name):
+        i = self._propIndexMap[name]
+        t = self._propTypeMap[name]
+        v = self._def.toc[i]
+        return self.getValue(v, t)
+
+    def getProperty(self, name):
+        # TODO: this should return a Property object
+        raise NotImplementedError()
 
 
 class Toc(vstruct.VStruct):
@@ -916,7 +1094,7 @@ class LogicalIndexStore(LoggingObject):
     def getRootPageNumber(self):
         if self._rootPageNumber is None:
             self._rootPageNumber = self._getRootPageNumber()
-        self.d("root page number: %s", h(self._rootPageNumber))
+            self.d("root page number: %s", h(self._rootPageNumber))
         return self._rootPageNumber
 
     def getRootPage(self):
@@ -1154,6 +1332,9 @@ class Index(LoggingObject):
             h = hashlib.sha256()
         h.update(s)
         return h.hexdigest().upper()
+
+    def hash(self, s):
+        return self._hash(s)
 
     def _encodeItem(self, prefix, s):
         return "{prefix:s}{hash_:s}".format(
