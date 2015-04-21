@@ -292,6 +292,16 @@ class _IndexPage(vstruct.VStruct):
         return self.header.sig == INDEX_PAGE_TYPES.PAGE_TYPE_ACTIVE
 
 
+def formatKey(k):
+    ret = []
+    for part in str(k).split("/"):
+        if "." in part:
+            ret.append(part[:7] + "..." + part.partition(".")[2])
+        else:
+            ret.append(part[:7])
+    return "/".join(ret)
+
+
 class Key(LoggingObject):
     def __init__(self, string):
         super(Key, self).__init__()
@@ -592,7 +602,12 @@ class Index(LoggingObject):
         return self._lookupKeys(key, self._indexStore.getRootPage())
 
     def hash(self, s):
-        return self._hash(s)
+        if self._cimType == CIM_TYPE_XP:
+            h = hashlib.md5()
+        elif self._cimType == CIM_TYPE_WIN7:
+            h = hashlib.sha256()
+        h.update(s)
+        return h.hexdigest().upper()
 
 
 class CIM(LoggingObject):
