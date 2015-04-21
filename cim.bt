@@ -141,7 +141,7 @@ struct ObjectClassDefinition {
     uint8_t unk0;
     uint32_t unk1;
     uint32_t offsetClassName;
-    uint32_t unk2;
+    uint32_t junkLen;
     uint32_t unk3;
     if (wnameLen > 0) {
         struct WmiString aname;
@@ -156,6 +156,11 @@ struct ObjectClassDefinition {
         uint32_t nameRef;
         uint32_t defRef;
     } propertyRefs[numProperties];
+    uint8_t junk[junkLen];
+    uint32_t propDataLen;
+    uint8_t propData[propDataLen & 0x7FFFFFFF];
+    uint32_t methodDataLen;
+    uint8_t methodData[methodDataLen - sizeof(methodDataLen)];
 };
 
 enum <uint8_t> CIM_TYPES {

@@ -1,17 +1,19 @@
 import logging
+from datetime import datetime
 from collections import namedtuple
+
+import hexdump
 
 from common import h
 from common import one
 from common import LoggingObject
-
 from cim import CIM
 from cim import Index
-from cim import ClassDefinition as cimClassDefinition
-from cim import ClassInstance as cimClassInstance
+import vstruct
+from vstruct.primitives import *
 
 logging.basicConfig(level=logging.DEBUG)
-g_logger = logging.getLogger("cim.tree")
+g_logger = logging.getLogger("cim.objects")
 
 
 ROOT_NAMESPACE_NAME = "root"
@@ -23,7 +25,7 @@ NAMESPACE_CLASS_NAME = "__namespace"
 #   maintain multiple caches and shared objects.
 # cim is a cim.CIM object
 # index is a cim.Index object
-# cdcache is a dict from class id to cim.ClassDefinition object
+# cdcache is a dict from class id to .ClassDefinition object
 # clcache is a dict from class id to .ClassLayout objects
 TreeContext = namedtuple("TreeContext", ["cim", "index", "cdcache", "clcache"])
 
@@ -91,9 +93,9 @@ class ObjectFetcherMixin(object):
             yield self.context.cim.getLogicalDataStore().getObjectBuffer(ref)
 
     def getClassDefinitionByQuery(self, query):
-        """ return the first cim.ClassDefinition matching the query """
+        """ return the first .ClassDefinition matching the query """
         buf = self.getObject(query)
-        return cimClassDefinition(buf)
+        return ClassDefinition(buf)
 
     def getClassDefinitionBuffer(self, namespace, classname):
         """ return the first raw class definition buffer matching the query """
@@ -110,9 +112,9 @@ class ObjectFetcherMixin(object):
         return self.getObject(q)
 
     def getClassDefinition(self, namespace, classname):
-        """ return the first cim.ClassDefinition matching the query """
+        """ return the first .ClassDefinition matching the query """
         # TODO: remove me
-        return cimClassDefinition(self.getClassDefinitionBuffer(namespace, classname))
+        return ClassDefinition(self.getClassDefinitionBuffer(namespace, classname))
 
 
 class FILETIME(vstruct.primitives.v_prim):
@@ -165,7 +167,7 @@ class ClassDefinitionHeader(vstruct.VStruct):
         self.unk0 = v_uint8()
         self.unk1 = v_uint32()
         self.offsetClassNameA = v_uint32()
-        self.unk2 = v_uint32()
+        self.junkLen = v_uint32()
         self.unk3 = v_uint32()
         self.superClassNameA = WMIString()  # not present if no superclass
         self.unk4 = v_uint32()  # not present if no superclass
@@ -434,60 +436,38 @@ class _ClassDefinition(vstruct.VStruct):
         self.header = ClassDefinitionHeader()
         self.qualifiers = QualifiersList()
         self.propertyReferences = PropertyReferenceList()
+        self.junk = v_bytes(size=0)
+        self.dataLen = v_uint32()
+        self.data = v_bytes(size=0)
 
     def pcb_header(self):
-        #g_logger.debug("CD: \n%s", self.header.tree())
-        pass
+        self["junk"].vsSetLength(self.header.junkLen)
 
-    def pcb_qualifiers(self):
-        #g_logger.debug("CD: \n%s", self.qualifiers.tree())
-        pass
+    def getDataLen(self):
+        return self.dataLen & 0x7FFFFFFF
 
-    def pcb_propertyReferences(self):
-        #g_logger.debug("CD: \n%s", self.propertyReferences.tree())
-        pass
+    def pcb_dataLen(self):
+        self["data"].vsSetLength(self.getDataLen())
 
 
 class ClassDefinition(LoggingObject):
-    # TODO: need to be able to fetch ancestor class info
-    #   namely, number of fields
     # This is not a "low level" class. Relies on the index,
     #   data store, current namespace, and query building logic.
     #   How do we make it simple?
-    def __init__(self, buf):
+    def __init__(self, buf, parentClassDefinition):
         super(ClassDefinition, self).__init__()
         self._buf = buf
+        self._parent = parentClassDefinition
         self._def = _ClassDefinition()
         self._def.vsParse(buf)
 
-        self._propDataOffset = self._findPropDataOffset()
-
-        # cache
-        self._data = None
-
-    def _findPropDataOffset(self):
-        # this is currently a hack.
-        # search for the last 0xFF in a big block
-        off = len(self._def)
-
-        while self._buf.find("\xFF" * 2, off, off + 0x10) != -1:
-            off = self._buf.find("\xFF" * 2, off, off + 0x10)
-            # scan past sequential 0xFF bytes until non-0xFF
-            while ord(self._buf[off]) == 0xFF:
-                off += 1
-            # break if not "FF FF" within 0x10 bytes
-
-        self.d("prop data offset: %s", h(off))
-        return off
+    def getPropertyCount(self):
+        if self._parent is not None:
+            return self._parent.getPropertyCount() + self._def.propertyReferences.count
+        return self._def.propertyReferences.count
 
     def getData(self):
-        if self._data is None:
-            o = self._findPropDataOffset()
-            dataLen = v_uint32()
-            dataLen.vsParse(self._buf, offset=o)
-            o += len(dataLen)
-            self._data = self._buf[o:o + dataLen]
-        return self._data
+        return self._def.data
 
     def getString(self, ref):
         s = WMIString()
@@ -567,11 +547,15 @@ class ClassDefinition(LoggingObject):
 
     def getProperties(self):
         """ get dict of str to Property instances """
-        ret = []
+        ret = {}
+        if self._parent is not None:
+            ret = self._parent.getProperties()
         for i in xrange(self._def.propertyReferences.count):
+            # TODO: check for name collisions
             propref = self._def.propertyReferences.refs[i]
-            ret.append(Property(self, propref))
-        return {p.getName(): p for p in ret}
+            prop = Property(self, propref)
+            ret[prop.getName()] = prop
+        return ret
 
 
 class _ClassInstance(vstruct.VStruct):
@@ -712,7 +696,7 @@ class ClassLayout(LoggingObject, QueryBuilderMixin, ObjectFetcherMixin):
     def __init__(self, context, namespace, classDefinition):
         """
         namespace is a string
-        classDefinition is a cim.ClassDefinition object
+        classDefinition is a .ClassDefinition object
         """
         super(ClassLayout, self).__init__()
         self.context = context
@@ -754,7 +738,7 @@ class ClassLayout(LoggingObject, QueryBuilderMixin, ObjectFetcherMixin):
         return self._properties[:]
 
     def parseInstance(self, data):
-        return cimClassInstance(self.properties, data)
+        return ClassInstance(self.properties, data)
 
 
 def getClassId(namespace, classname):
@@ -787,7 +771,7 @@ class Namespace(LoggingObject, QueryBuilderMixin, ObjectFetcherMixin):
         if namespaceCD is None:
             self.d("cdcache miss")
             q = self.getClassDefinitionQuery(SYSTEM_NAMESPACE_NAME, NAMESPACE_CLASS_NAME)
-            namespaceCD = cimClassDefinition(self.getObject(q))
+            namespaceCD = ClassDefinition(self.getObject(q))
             self.context.cdcache[namespaceClassId] = namespaceCD
 
         namespaceCL = self.context.clcache.get(namespaceClassId, None)
@@ -819,7 +803,8 @@ class Namespace(LoggingObject, QueryBuilderMixin, ObjectFetcherMixin):
             classDerivation.append(parentName)
             parentcdbuf = self.getClassDefinitionBuffer(namespace, parentName)
             header.vsParse(parentcdbuf)
-            self.d("parent of %s is %s", parentName, header.superClassNameW)
+            if header.superClassNameW != "":
+                self.d("parent of %s is %s", parentName, header.superClassNameW)
             parentName = header.superClassNameW
 
         # note, derivation now from parent to child
@@ -827,23 +812,25 @@ class Namespace(LoggingObject, QueryBuilderMixin, ObjectFetcherMixin):
         return classDerivation
 
     def parseClassDefinition(self, namespace, cdbuf):
-        """ get the cim.ClassDefinition by object buffer """
+        """ get the ClassDefinition by object buffer """
         # we pass in cdbuf here because we can't correctly parse the classname
         #  without knowing the number of properties. so some queries yield these
         #  buffers that we need to inspect and parse.
         derivation = self.parseClassDerivation(namespace, cdbuf)
 
+
         parentClassDef = None
         for derivClassName in derivation:
             derivClassBuf = self.getClassDefinitionBuffer(namespace, derivClassName)
-            derivClassDef = ClassDefinition(derivClassBuf, parentClassBuf)
+            derivClassDef = ClassDefinition(derivClassBuf, parentClassDef)
             parentClassDef = derivClassDef
 
         classDef = ClassDefinition(cdbuf, parentClassDef)
+        self.d("derivation of %s is: %s", classDef.getClassName(), derivation)
         return classDef
 
     def getClassDefinition(self, namespace, classname):
-        """ get the cim.ClassDefinition by name """
+        """ get the ClassDefinition by name """
         cdbuf = self.getClassDefinitionBuffer(namespace, classname)
         return self.parseClassDefinition(namespace, cdbuf)
 
@@ -856,12 +843,14 @@ class Namespace(LoggingObject, QueryBuilderMixin, ObjectFetcherMixin):
         self.d("classes query: %s", q)
 
         for cdbuf in self.getObjects(q):
-            yield self.parseClassDefinition(self._ns, cdbuf)
+            # TODO: this is pretty expensive
+            #   perhaps we can add a hacky API that enumerates classnames?
+            yield self.parseClassDefinition(self.name, cdbuf)
 
 
-class ClassDefinition(LoggingObject):
+class TreeClassDefinition(LoggingObject):
     def __init__(self, context, namespace, name):
-        super(ClassDefinition, self).__init__()
+        super(TreeClassDefinition, self).__init__()
         self.context = context
         self.ns = namespace
         self.name = name
@@ -903,7 +892,7 @@ class ClassInstance(LoggingObject):
 class Tree(LoggingObject):
     def __init__(self, cim):
         super(Tree, self).__init__()
-        self._context = TreeContext(cim, Index(cim), {}, {})
+        self._context = TreeContext(cim, Index(cim.getCimType(), cim.getLogicalIndexStore()), {}, {})
 
     def __repr__(self):
         return "Tree"
@@ -946,8 +935,13 @@ def main(type_, path):
 
     c = CIM(type_, path)
     t = Tree(c)
-    print(t.root)
-    rec_class(t.root)
+    g_logger.info(t.root)
+    for c in t.root.classes:
+        g_logger.info(c)
+        g_logger.info(c._def.tree())
+        g_logger.info(c.getProperties())
+        g_logger.info("*" * 80)
+        #break
 
 
 if __name__ == "__main__":
