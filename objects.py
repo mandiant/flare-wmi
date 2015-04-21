@@ -199,7 +199,8 @@ CIM_TYPE_SIZES = {
     CIM_TYPES.CIM_TYPE_UINT16: 2,
     CIM_TYPES.CIM_TYPE_UINT32: 4,
     CIM_TYPES.CIM_TYPE_UINT64: 8,
-    CIM_TYPES.CIM_TYPE_DATETIME: 8   # guess
+    # looks like: stringref to "\x00 00000000000030.000000:000"
+    CIM_TYPES.CIM_TYPE_DATETIME: 4
 }
 
 
@@ -266,7 +267,7 @@ class CimType(vstruct.VStruct):
         elif self._type == CIM_TYPES.CIM_TYPE_UINT64:
             return v_uint64
         elif self._type == CIM_TYPES.CIM_TYPE_DATETIME:
-            return FILETIME
+            return v_uint32
         else:
             raise RuntimeError("unknown qualifier type: %s", h(self._type))
 
@@ -325,16 +326,16 @@ class QualifiersList(vstruct.VStruct):
         self.qualifiers = vstruct.VArray()
 
     def vsParse(self, bytez, offset=0):
-        #g_logger.debug("QL: \n%s", hexdump.hexdump(bytez, result="return"))
+        g_logger.debug("QL: \n%s", hexdump.hexdump(bytez, result="return"))
         soffset = offset
-        #g_logger.debug("QL: soffset: %s", h(soffset))
+        g_logger.debug("QL: soffset: %s", h(soffset))
         offset = self["size"].vsParse(bytez, offset=offset)
         eoffset = soffset + self.size
-        #g_logger.debug("QL: eoffset: %s", h(eoffset))
+        g_logger.debug("QL: eoffset: %s", h(eoffset))
 
         self.count = 0
         while offset + QualifierReference.MIN_SIZE <= eoffset:
-            #g_logger.debug("QL: entry: %s", h(offset))
+            g_logger.debug("QL: entry: %s", h(offset))
             q = QualifierReference()
             offset = q.vsParse(bytez, offset=offset)
             self.qualifiers.vsAddElement(q)
@@ -362,46 +363,25 @@ class Property(LoggingObject):
         self._classDef = classDef
         self._propref = propref
 
-
-        # hack, fixme
-        """
-        HIGH_BIT = 1 << 31
-        def isHighBitSet(i):
-            return i & HIGH_BIT > 0
-        if isHighBitSet(self._propref.offsetPropertyName) or \
-                isHighBitSet(self._propref.offsetPropertyStruct):
-            self._prop = None
-            return
-        """
-
         # this is the raw struct, without references/strings resolved
         self._prop = _Property()
         offsetProperty = self._propref.offsetPropertyStruct
         self._prop.vsParse(self._classDef.getData(), offset=offsetProperty)
 
-    def isInherited(self):
-        # guess
-        return self._propref.offsetPropertyName & 0x80000000 > 0
+    def __repr__(self):
+        return "Property(type: {:s}, name: {:s})".format(
+            self.getName(), CIM_TYPES.vsReverseMapping(self.getType().getType()))
 
     def getName(self):
-        if self.isInherited():
-            return "INHERITED_%s" % h(self._propref.offsetPropertyName & 0x7FFFFFFF)
         return self._classDef.getString(self._propref.offsetPropertyName)
 
     def getType(self):
-        if self.isInherited():
-            # hack, fixme
-            return None
         return self._prop.type
 
     def getQualifiers(self):
         """ get dict of str to str """
         # TODO: can merge this will ClassDef.getQualifiers
         ret = {}
-        if self.isInherited():
-            # hack, fixme
-            # there can definitely be a struct here, so how do we find it?
-            return ret
         for i in xrange(self._prop.qualifiers.count):
             q = self._prop.qualifiers.qualifiers[i]
             self.d("%s", q)
@@ -456,8 +436,8 @@ class ClassDefinition(LoggingObject):
         self._def = _ClassDefinition()
         self._def.vsParse(buf)
 
-    def getPropertyCount(self):
-        return self._def.propertyReferences.count
+    def __repr__(self):
+        return "ClassDefinition(name: {:s})".format(self.getClassName())
 
     def getData(self):
         return self._def.data
@@ -551,6 +531,7 @@ class ClassDefinition(LoggingObject):
 class _ClassInstance(vstruct.VStruct):
     def __init__(self, properties):
         vstruct.VStruct.__init__(self)
+        self._properties = properties
         self.nameHash = v_wstr(size=0x40)
         self.ts1 = FILETIME()
         self.ts2 = FILETIME()
@@ -567,12 +548,14 @@ class _ClassInstance(vstruct.VStruct):
         self.propDataLen = v_uint32()  # high bit always set
         self.propData = v_bytes(size=0)
 
+    def pcb_toc(self):
+        g_logger.debug("instance: %s\n%s", self._properties, self.tree())
+
     def pcb_propDataLen(self):
         self["propData"].vsSetLength(self.propDataLen & 0x7FFFFFFF)
 
 
 class ClassInstance(LoggingObject):
-    # TODO: pass in the class definition here
     def __init__(self, properties, buf):
         """ properties is an ordered list of Property objects """
         super(ClassInstance, self).__init__()
@@ -621,6 +604,9 @@ class ClassInstance(LoggingObject):
 
         t = valueType.getType()
         if t == CIM_TYPES.CIM_TYPE_STRING:
+            return self.getString(value)
+        elif t == CIM_TYPES.CIM_TYPE_FILETIME:
+            # TODO: perhaps this should return a parsed datetime?
             return self.getString(value)
         elif t == CIM_TYPES.CIM_TYPE_BOOLEAN:
             return value != 0
@@ -688,6 +674,7 @@ class ClassLayout(LoggingObject, QueryBuilderMixin, ObjectFetcherMixin):
         classDefinition is a .ClassDefinition object
         """
         super(ClassLayout, self).__init__()
+        self.d("namespace: %s", namespace)
         self.context = context
         self._ns = namespace
         self._cd = classDefinition
@@ -734,9 +721,9 @@ def getClassId(namespace, classname):
     return namespace + ":" + classname
 
 
-class Namespace(LoggingObject, QueryBuilderMixin, ObjectFetcherMixin):
+class TreeNamespace(LoggingObject, QueryBuilderMixin, ObjectFetcherMixin):
     def __init__(self, context, name):
-        super(Namespace, self).__init__()
+        super(TreeNamespace, self).__init__()
         self.context = context
         self.name = name
 
@@ -780,26 +767,6 @@ class Namespace(LoggingObject, QueryBuilderMixin, ObjectFetcherMixin):
             # TODO: perhaps should test if this thing exists?
             yield Namespace(self.context, self.name + "\\" + nsName)
 
-    def getClassDerivation(self, namespace, classname):
-        """ get list of classnames from least to most specific """
-        header = ClassDefinitionHeader()
-        cdbuf = self.getClassDefinitionBuffer(namespace, classname)
-        header.vsParse(cdbuf)
-
-        parentName = header.superClassNameW
-        classDerivation = []  # initially, ordered from child to parent
-        while parentName != "":
-            classDerivation.append(parentName)
-            parentcdbuf = self.getClassDefinitionBuffer(namespace, parentName)
-            header.vsParse(parentcdbuf)
-            if header.superClassNameW != "":
-                self.d("parent of %s is %s", parentName, header.superClassNameW)
-            parentName = header.superClassNameW
-
-        # note, derivation now from parent to child
-        classDerivation.reverse()
-        return classDerivation
-
     @property
     def classes(self):
         """ get direct child class definitions """
@@ -809,15 +776,19 @@ class Namespace(LoggingObject, QueryBuilderMixin, ObjectFetcherMixin):
         self.d("classes query: %s", q)
 
         for cdbuf in self.getObjects(q):
-            yield ClassDefinition(cdbuf)
+            cd = ClassDefinition(cdbuf)
+            yield TreeClassDefinition(self.context, self.name, cd.getClassName(), defhint=cd)
 
 
-class TreeClassDefinition(LoggingObject):
-    def __init__(self, context, namespace, name):
+class TreeClassDefinition(LoggingObject, QueryBuilderMixin, ObjectFetcherMixin):
+    def __init__(self, context, namespace, name, defhint=None):
         super(TreeClassDefinition, self).__init__()
         self.context = context
         self.ns = namespace
         self.name = name
+
+        # cache
+        self._def = defhint
 
     def __repr__(self):
         return "ClassDefinition(namespace: {:s}, name: {:s})".format(self.ns, self.name)
@@ -825,19 +796,51 @@ class TreeClassDefinition(LoggingObject):
     @property
     def namespace(self):
         """ get parent namespace """
-        pass
+        return Namespace(self.context, self.ns)
 
     @property
     def instances(self):
         """ get instances of this class definition """
         pass
+        classId = getClassId(self.ns, self.name)
+        cd = self.context.cdcache.get(classId, None)
+        if cd is None:
+            self.d("cdcache miss")
+            q = self.getClassDefinitionQuery(self.ns, self.name)
+            cd = ClassDefinition(self.getObject(q))
+            self.context.cdcache[classId] = cd
+
+        cl = self.context.clcache.get(classId, None)
+        if cl is None:
+            self.d("clcache miss")
+            cl = ClassLayout(self.context, self.ns, cd)
+            self.context.clcache[classId] = cl
+
+        # CI or KI?
+        q = "{}/{}/{}".format(
+                self.NS(self.ns),
+                self.CI(self.name),
+                self.IL())
+
+        for ibuf in self.getObjects(q):
+            self.d("instance of %s:%s: \n%s", self.ns, self.name, hexdump.hexdump(ibuf, result="return"))
+            instance = cl.parseInstance(ibuf)
+            self.i("instance: %s", instance)
+            yield(instance)
+
+            #nsName = namespaceI.getPropertyValue("Name")
+            # TODO: perhaps should test if this thing exists?
+            #yield Namespace(self.context, self.name + "\\" + nsName)
 
 
-class ClassInstance(LoggingObject):
-    def __init__(self, context, name):
+class TreeClassInstance(LoggingObject):
+    def __init__(self, context, name, defhint=None):
         super(ClassInstance, self).__init__()
         self.context = context
         self.name = name
+
+        # cache
+        self._def = defhint
 
     def __repr__(self):
         return "ClassInstance(name: {:s})".format(self.name)
@@ -864,7 +867,7 @@ class Tree(LoggingObject):
     @property
     def root(self):
         """ get root namespace """
-        return Namespace(self._context, ROOT_NAMESPACE_NAME)
+        return TreeNamespace(self._context, ROOT_NAMESPACE_NAME)
 
 
 def formatKey(k):
@@ -877,20 +880,21 @@ def formatKey(k):
     return "/".join(ret)
 
 
+def rec_class(klass):
+    g_logger.info(klass)
+
+    for i in klass.instances:
+        g_logger.info(i)
+
+
 def rec_ns(ns):
-    g_logger.info(ns)
-    for c in ns.namespaces:
-        rec_ns(c)
-
-
-def rec_class(ns):
     g_logger.info(ns)
 
     for c in ns.classes:
-        g_logger.info(c)
+        rec_class(c)
 
     for c in ns.namespaces:
-        rec_class(c)
+        rec_ns(c)
 
 
 def main(type_, path):
@@ -899,6 +903,8 @@ def main(type_, path):
 
     c = CIM(type_, path)
     t = Tree(c)
+    rec_ns(t.root)
+    return
     g_logger.info(t.root)
     for c in t.root.classes:
         g_logger.info(c.getClassName())
