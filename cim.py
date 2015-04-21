@@ -481,29 +481,30 @@ class Property(LoggingObject):
         return ret
 
 
-class ClassDefinitionPropertyReference(vstruct.VStruct):
+class PropertyReference(vstruct.VStruct):
     def __init__(self):
         vstruct.VStruct.__init__(self)
         self.offsetPropertyName = v_uint32()
         self.offsetPropertyStruct = v_uint32()
 
 
-class ClassDefinitionPropertyReferences(vstruct.VStruct):
+class PropertyReferenceList(vstruct.VStruct):
     def __init__(self):
         vstruct.VStruct.__init__(self)
         self.count = v_uint32()
         self.refs = vstruct.VArray()
 
     def pcb_count(self):
-        self.refs.vsAddElements(self.count, ClassDefinitionPropertyReference)
+        self.refs.vsAddElements(self.count, PropertyReference)
 
 
 class _ClassDefinition(vstruct.VStruct):
     def __init__(self):
+        # TODO: need to know inherited properties
         vstruct.VStruct.__init__(self)
         self.header = ClassDefinitionHeader()
         self.qualifiers = QualifiersList()
-        self.propertyReferences = ClassDefinitionPropertyReferences()
+        self.propertyReferences = PropertyReferenceList()
 
     def pcb_header(self):
         #g_logger.debug("CD: \n%s", self.header.tree())
@@ -519,9 +520,13 @@ class _ClassDefinition(vstruct.VStruct):
 
 
 class ClassDefinition(LoggingObject):
+    # TODO: need to be able to fetch ancestor class info
+    #   namely, number of fields
+    # This is not a "low level" class. Relies on the index,
+    #   data store, current namespace, and query building logic.
+    #   How do we make it simple?
     def __init__(self, buf):
         super(ClassDefinition, self).__init__()
-        #self.d("hex: \n%s", hexdump.hexdump(buf))
         self._buf = buf
         self._def = _ClassDefinition()
         self._def.vsParse(buf)
@@ -536,12 +541,12 @@ class ClassDefinition(LoggingObject):
         # search for the last 0xFF in a big block
         off = len(self._def)
 
-        while self._buf.find("\xFF" * 3, off, off + 0x10) != -1:
-            off = self._buf.find("\xFF" * 3, off, off + 0x10)
+        while self._buf.find("\xFF" * 2, off, off + 0x10) != -1:
+            off = self._buf.find("\xFF" * 2, off, off + 0x10)
             # scan past sequential 0xFF bytes until non-0xFF
             while ord(self._buf[off]) == 0xFF:
                 off += 1
-            # break if not "FF FF FF" within 0x10 bytes
+            # break if not "FF FF" within 0x10 bytes
 
         self.d("prop data offset: %s", h(off))
         return off
@@ -664,6 +669,7 @@ class _ClassInstance(vstruct.VStruct):
 
 
 class ClassInstance(LoggingObject):
+    # TODO: pass in the class definition here
     def __init__(self, properties, buf):
         """ properties is an ordered list of Property objects """
         super(ClassInstance, self).__init__()
@@ -1009,6 +1015,7 @@ class LogicalDataStore(LoggingObject):
 
         i = 1
         while foundSize < targetSize:
+            # TODO: should simply foreach an iterable here
             nextPage = self.getPageBuffer(dataPage + i)
             if foundSize + len(nextPage) > targetSize:
                 # this is the last page containing data for this item
@@ -1101,150 +1108,11 @@ class LogicalIndexStore(LoggingObject):
         return self.getPage(self.getRootPageNumber())
 
 
-class CIM(LoggingObject):
-    def __init__(self, cim_type, directory):
-        super(CIM, self).__init__()
-        self._cim_type = cim_type
-        self._directory = directory
-        self._mappingClass = MAPPING_TYPES[self._cim_type]
-        self._mappingHeaderClass = MAPPING_HEADER_TYPES[self._cim_type]
-
-        # caches
-        self._currentMappingFile = None
-        self._currentDataMapping = None
-        self._currentIndexMapping = None
-        self._dataStore = None
-        self._indexStore = None
-
-    def _getDataFilePath(self):
-        return os.path.join(self._directory, "OBJECTS.DATA")
-
-    def _getIndexFilePath(self):
-        return os.path.join(self._directory, "INDEX.BTR")
-
-    def _getCurrentMappingFile(self):
-        if self._currentMappingFile is None:
-            self.d("finding current mapping file")
-            mappingFilePath = None
-            maxVersion = 0
-            for i in xrange(MAX_MAPPING_FILES):
-                fn = "MAPPING{:d}.MAP".format(i + 1)
-                fp = os.path.join(self._directory, fn)
-                if not os.path.exists(fp):
-                    continue
-                h = self._mappingHeaderClass()
-
-                with open(fp, "rb") as f:
-                    h.vsParseFd(f)
-
-                self.d("%s: version: %s", fn, hex(h.version))
-                if h.version > maxVersion:
-                    mappingFilePath = fp
-                    maxVersion = h.version
-            self._currentMappingFile = mappingFilePath
-            self.d("current mapping file: %s", self._currentMappingFile)
-        return self._currentMappingFile
-
-    def getCimType(self):
-        return self._cim_type
-
-    def getMappings(self):
-        if self._currentIndexMapping is None:
-            fp = self._getCurrentMappingFile()
-            dm = self._mappingClass()
-            im = self._mappingClass()
-            with open(fp, "rb") as f:
-                dm.vsParseFd(f)
-                im.vsParseFd(f)
-            self._currentDataMapping = dm
-            self._currentIndexMapping = im
-        return self._currentDataMapping, self._currentIndexMapping
-
-    def getDataMapping(self):
-        if self._currentDataMapping is None:
-            self._currentDataMapping, self._currentIndexMapping = self.getMappings()
-        return self._currentDataMapping
-
-    def getIndexMapping(self):
-        if self._currentIndexMapping is None:
-            self._currentDataMapping, self._currentIndexMapping = self.getMappings()
-        return self._currentIndexMapping
-
-    def getLogicalDataStore(self):
-        if self._dataStore is None:
-            self._dataStore = LogicalDataStore(self, self._getDataFilePath(), self.getDataMapping())
-        return self._dataStore
-
-    def getLogicalIndexStore(self):
-        if self._indexStore is None:
-            self._indexStore = LogicalIndexStore(self, self._getIndexFilePath(), self.getIndexMapping())
-        return self._indexStore
-
-
-class Moniker(LoggingObject):
-    def __init__(self, string):
-        super(Moniker, self).__init__()
-        self._string = string
-        self.hostname = None  # type: str
-        self.namespace = None  # type: str
-        self.klass = None  # type: str
-        self.instance = None  # type: dict of str to str
-        self._parse()
-
-    def __str__(self):
-        return self._string
-
-    def _parse(self):
-        """
-        supported schemas:
-            //./root/cimv2 --> namespace
-            //HOSTNAME/root/cimv2 --> namespace
-            winmgmts://./root/cimv2 --> namespace
-            //./root/cimv2:Win32_Service --> class
-            //./root/cimv2:Win32_Service.Name="Beep" --> instance
-            //./root/cimv2:Win32_Service.Name='Beep' --> instance
-
-        we'd like to support this, but can't differentiate this
-          from a class:
-            //./root/cimv2/Win32_Service --> class
-        """
-        s = self._string
-        s = s.replace("\\", "/")
-
-        if s.startswith("winmgmts:"):
-            s = s[len("winmgmts:"):]
-
-        if not s.startswith("//"):
-            raise RuntimeError("Moniker doesn't contain '//': %s" % (s))
-        s = s[len("//"):]
-
-        self.hostname, _, s = s.partition("/")
-        if self.hostname == ".":
-            self.hostname = "localhost"
-
-        s, _, keys = s.partition(".")
-        if keys == "":
-            keys = None
-        # s must now not contain any special characters
-        # we'll process the keys later
-
-        self.namespace, _, self.klass = s.partition(":")
-        if self.klass == "":
-            self.klass = None
-        self.namespace = self.namespace.replace("/", "\\")
-
-        if keys is not None:
-            self.instance = {}
-            for key in keys.split(","):
-                k, _, v = key.partition("=")
-                self.instance[k] = v.strip("\"'")
-
-
 class Index(LoggingObject):
-    def __init__(self, cim):
+    def __init__(self, cimType, indexStore):
         super(Index, self).__init__()
-        self._cim = cim
-        self._indexStore = cim.getLogicalIndexStore()
+        self._cimType = cimType
+        self._indexStore = indexStore
 
     LEFT_CHILD_DIRECTION = 0
     RIGHT_CHILD_DIRECTION = 1
@@ -1315,6 +1183,9 @@ class Index(LoggingObject):
         """
         return self._lookupKeys(key, self._indexStore.getRootPage())
 
+    # TODO: consider removing stuff from here down...
+    # --------------------------------------------------------------------------
+
     NAMESPACE_PREFIX = "NS_"
     CLASS_DEFINITION_PREFIX = "CD_"  # has data
     MAYBE_CLASS_REFERENCE_PREFIX = "CR_"
@@ -1325,10 +1196,9 @@ class Index(LoggingObject):
     UNK_INSTANCE_NAME_PREFIX = "I_"  # has data
 
     def _hash(self, s):
-        cimType = self._cim.getCimType()
-        if cimType == CIM_TYPE_XP:
+        if self.cimType == CIM_TYPE_XP:
             h = hashlib.md5()
-        elif cimType == CIM_TYPE_WIN7:
+        elif self.cimType == CIM_TYPE_WIN7:
             h = hashlib.sha256()
         h.update(s)
         return h.hexdigest().upper()
@@ -1384,6 +1254,151 @@ class Index(LoggingObject):
             return self._lookupMonikerNamespace(moniker)
         else:
             raise RuntimeError("Unsupported moniker lookup: %s" % (str(moniker)))
+
+
+class CIM(LoggingObject):
+    def __init__(self, cim_type, directory):
+        super(CIM, self).__init__()
+        self._cim_type = cim_type
+        self._directory = directory
+        self._mappingClass = MAPPING_TYPES[self._cim_type]
+        self._mappingHeaderClass = MAPPING_HEADER_TYPES[self._cim_type]
+
+        # caches
+        self._currentMappingFile = None
+        self._currentDataMapping = None
+        self._currentIndexMapping = None
+        self._dataStore = None
+        self._indexStore = None
+        self._index = None
+
+    def _getDataFilePath(self):
+        return os.path.join(self._directory, "OBJECTS.DATA")
+
+    def _getIndexFilePath(self):
+        return os.path.join(self._directory, "INDEX.BTR")
+
+    def _getCurrentMappingFile(self):
+        if self._currentMappingFile is None:
+            self.d("finding current mapping file")
+            mappingFilePath = None
+            maxVersion = 0
+            for i in xrange(MAX_MAPPING_FILES):
+                fn = "MAPPING{:d}.MAP".format(i + 1)
+                fp = os.path.join(self._directory, fn)
+                if not os.path.exists(fp):
+                    continue
+                h = self._mappingHeaderClass()
+
+                with open(fp, "rb") as f:
+                    h.vsParseFd(f)
+
+                self.d("%s: version: %s", fn, hex(h.version))
+                if h.version > maxVersion:
+                    mappingFilePath = fp
+                    maxVersion = h.version
+            self._currentMappingFile = mappingFilePath
+            self.d("current mapping file: %s", self._currentMappingFile)
+        return self._currentMappingFile
+
+    def getCimType(self):
+        return self._cim_type
+
+    def getMappings(self):
+        if self._currentIndexMapping is None:
+            fp = self._getCurrentMappingFile()
+            dm = self._mappingClass()
+            im = self._mappingClass()
+            with open(fp, "rb") as f:
+                dm.vsParseFd(f)
+                im.vsParseFd(f)
+            self._currentDataMapping = dm
+            self._currentIndexMapping = im
+        return self._currentDataMapping, self._currentIndexMapping
+
+    def getDataMapping(self):
+        if self._currentDataMapping is None:
+            self._currentDataMapping, self._currentIndexMapping = self.getMappings()
+        return self._currentDataMapping
+
+    def getIndexMapping(self):
+        if self._currentIndexMapping is None:
+            self._currentDataMapping, self._currentIndexMapping = self.getMappings()
+        return self._currentIndexMapping
+
+    def getLogicalDataStore(self):
+        if self._dataStore is None:
+            self._dataStore = LogicalDataStore(self, self._getDataFilePath(), self.getDataMapping())
+        return self._dataStore
+
+    def getLogicalIndexStore(self):
+        if self._indexStore is None:
+            self._indexStore = LogicalIndexStore(self, self._getIndexFilePath(), self.getIndexMapping())
+        return self._indexStore
+
+    def getIndex(self):
+        if self._index is None:
+            self._index = Index(self.getCimType(), self.getLogicalIndexStore())
+        return self._index
+
+
+class Moniker(LoggingObject):
+    def __init__(self, string):
+        super(Moniker, self).__init__()
+        self._string = string
+        self.hostname = None  # type: str
+        self.namespace = None  # type: str
+        self.klass = None  # type: str
+        self.instance = None  # type: dict of str to str
+        self._parse()
+
+    def __str__(self):
+        return self._string
+
+    def _parse(self):
+        """
+        supported schemas:
+            //./root/cimv2 --> namespace
+            //HOSTNAME/root/cimv2 --> namespace
+            winmgmts://./root/cimv2 --> namespace
+            //./root/cimv2:Win32_Service --> class
+            //./root/cimv2:Win32_Service.Name="Beep" --> instance
+            //./root/cimv2:Win32_Service.Name='Beep' --> instance
+
+        we'd like to support this, but can't differentiate this
+          from a class:
+            //./root/cimv2/Win32_Service --> class
+        """
+        s = self._string
+        s = s.replace("\\", "/")
+
+        if s.startswith("winmgmts:"):
+            s = s[len("winmgmts:"):]
+
+        if not s.startswith("//"):
+            raise RuntimeError("Moniker doesn't contain '//': %s" % (s))
+        s = s[len("//"):]
+
+        self.hostname, _, s = s.partition("/")
+        if self.hostname == ".":
+            self.hostname = "localhost"
+
+        s, _, keys = s.partition(".")
+        if keys == "":
+            keys = None
+        # s must now not contain any special characters
+        # we'll process the keys later
+
+        self.namespace, _, self.klass = s.partition(":")
+        if self.klass == "":
+            self.klass = None
+        self.namespace = self.namespace.replace("/", "\\")
+
+        if keys is not None:
+            self.instance = {}
+            for key in keys.split(","):
+                k, _, v = key.partition("=")
+                self.instance[k] = v.strip("\"'")
 
 
 def formatKey(k):
