@@ -151,6 +151,11 @@ struct ObjectClassDefinition {
         uint32_t qualifierListSize;
         uint8_t qualifierListData[qualifierListSize - sizeof(qualifierListSize)];
     } qualifierList;
+    uint32_t numProperties;
+    struct {
+        uint32_t nameRef;
+        uint32_t defRef;
+    } propertyRefs[numProperties];
 };
 
 enum <uint8_t> CIM_TYPES {
@@ -219,15 +224,6 @@ struct PropertyDef {
 };
 
 
-struct ObjectField {
-    uint8_t unk0[0x1B];
-    uint32_t offTypeString;
-    uint8_t unk1[0xB];
-    uint32_t offMappingStringsString;
-    uint8_t unk2[0x5];
-    uint32_t offInterpretationStruct;
-};
-
 struct InstanceData {
     wchar_t classNameHash[0x40];
     FILETIME ts1;
@@ -246,7 +242,7 @@ struct InstanceData {
     uint32_t dataSize;
 };
 
-FSeek(GetCursorPos());
+//FSeek(GetCursorPos());
 
 //struct MappingFileXP f;
 //struct MappingFileWin7 f;
@@ -258,10 +254,10 @@ FSeek(GetCursorPos());
 //FSeek(GetCursorPos());
 //struct BtrPage ph;
 
-//struct ObjectClassDefinition ocd;
+struct ObjectClassDefinition ocd;
 //struct ObjectField f;
 //struct Qualifier q;
 
 //struct InstanceData i;
 
-struct PropertyDef pd;
+//struct PropertyDef pd;
