@@ -431,7 +431,6 @@ class PropertyReferenceList(vstruct.VStruct):
 
 class _ClassDefinition(vstruct.VStruct):
     def __init__(self):
-        # TODO: need to know inherited properties
         vstruct.VStruct.__init__(self)
         self.header = ClassDefinitionHeader()
         self.qualifiers = QualifiersList()
@@ -451,19 +450,13 @@ class _ClassDefinition(vstruct.VStruct):
 
 
 class ClassDefinition(LoggingObject):
-    # This is not a "low level" class. Relies on the index,
-    #   data store, current namespace, and query building logic.
-    #   How do we make it simple?
-    def __init__(self, buf, parentClassDefinition):
+    def __init__(self, buf):
         super(ClassDefinition, self).__init__()
         self._buf = buf
-        self._parent = parentClassDefinition
         self._def = _ClassDefinition()
         self._def.vsParse(buf)
 
     def getPropertyCount(self):
-        if self._parent is not None:
-            return self._parent.getPropertyCount() + self._def.propertyReferences.count
         return self._def.propertyReferences.count
 
     def getData(self):
@@ -548,10 +541,7 @@ class ClassDefinition(LoggingObject):
     def getProperties(self):
         """ get dict of str to Property instances """
         ret = {}
-        if self._parent is not None:
-            ret = self._parent.getProperties()
         for i in xrange(self._def.propertyReferences.count):
-            # TODO: check for name collisions
             propref = self._def.propertyReferences.refs[i]
             prop = Property(self, propref)
             ret[prop.getName()] = prop
@@ -691,7 +681,6 @@ class ClassInstance(LoggingObject):
         raise NotImplementedError()
 
 
-
 class ClassLayout(LoggingObject, QueryBuilderMixin, ObjectFetcherMixin):
     def __init__(self, context, namespace, classDefinition):
         """
@@ -791,10 +780,10 @@ class Namespace(LoggingObject, QueryBuilderMixin, ObjectFetcherMixin):
             # TODO: perhaps should test if this thing exists?
             yield Namespace(self.context, self.name + "\\" + nsName)
 
-    def parseClassDerivation(self, namespace, cdbuf):
+    def getClassDerivation(self, namespace, classname):
         """ get list of classnames from least to most specific """
-        # we pass in cdbuf for the same reason as below (parseClassDefinition).
         header = ClassDefinitionHeader()
+        cdbuf = self.getClassDefinitionBuffer(namespace, classname)
         header.vsParse(cdbuf)
 
         parentName = header.superClassNameW
@@ -811,29 +800,6 @@ class Namespace(LoggingObject, QueryBuilderMixin, ObjectFetcherMixin):
         classDerivation.reverse()
         return classDerivation
 
-    def parseClassDefinition(self, namespace, cdbuf):
-        """ get the ClassDefinition by object buffer """
-        # we pass in cdbuf here because we can't correctly parse the classname
-        #  without knowing the number of properties. so some queries yield these
-        #  buffers that we need to inspect and parse.
-        derivation = self.parseClassDerivation(namespace, cdbuf)
-
-
-        parentClassDef = None
-        for derivClassName in derivation:
-            derivClassBuf = self.getClassDefinitionBuffer(namespace, derivClassName)
-            derivClassDef = ClassDefinition(derivClassBuf, parentClassDef)
-            parentClassDef = derivClassDef
-
-        classDef = ClassDefinition(cdbuf, parentClassDef)
-        self.d("derivation of %s is: %s", classDef.getClassName(), derivation)
-        return classDef
-
-    def getClassDefinition(self, namespace, classname):
-        """ get the ClassDefinition by name """
-        cdbuf = self.getClassDefinitionBuffer(namespace, classname)
-        return self.parseClassDefinition(namespace, cdbuf)
-
     @property
     def classes(self):
         """ get direct child class definitions """
@@ -843,9 +809,7 @@ class Namespace(LoggingObject, QueryBuilderMixin, ObjectFetcherMixin):
         self.d("classes query: %s", q)
 
         for cdbuf in self.getObjects(q):
-            # TODO: this is pretty expensive
-            #   perhaps we can add a hacky API that enumerates classnames?
-            yield self.parseClassDefinition(self.name, cdbuf)
+            yield ClassDefinition(cdbuf)
 
 
 class TreeClassDefinition(LoggingObject):
@@ -937,8 +901,8 @@ def main(type_, path):
     t = Tree(c)
     g_logger.info(t.root)
     for c in t.root.classes:
-        g_logger.info(c)
-        g_logger.info(c._def.tree())
+        g_logger.info(c.getClassName())
+        #g_logger.info(c._def.tree())
         g_logger.info(c.getProperties())
         g_logger.info("*" * 80)
         #break
