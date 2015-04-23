@@ -15,6 +15,8 @@ from vstruct.primitives import *
 logging.basicConfig(level=logging.DEBUG)
 g_logger = logging.getLogger("cim.objects")
 
+logging.getLogger("cim.Index").setLevel(logging.WARNING)
+
 
 ROOT_NAMESPACE_NAME = "root"
 SYSTEM_NAMESPACE_NAME = "__SystemClass"
@@ -168,8 +170,19 @@ class ClassDefinitionHeader(vstruct.VStruct):
         self.unk1 = v_uint32()
         self.offsetClassNameA = v_uint32()
         self.junkLen = v_uint32()
+
+        # junk type:
+        #   0x19 - has 0xC5000000 at after about 0x10 bytes of 0xFF
+        #     into `junk`
         self.unk3 = v_uint32()
         self.superClassNameA = WMIString()  # not present if no superclass
+
+        # has to do with junk
+        # if junk type:
+        #   0x19 - then 0x11
+        #   0x18 - then 0x10
+        #   0x17 - then 0x0F
+        # so they all add up to 0x
         self.unk4 = v_uint32()  # not present if no superclass
 
     def pcb_superClassNameWLen(self):
@@ -326,16 +339,16 @@ class QualifiersList(vstruct.VStruct):
         self.qualifiers = vstruct.VArray()
 
     def vsParse(self, bytez, offset=0):
-        g_logger.debug("QL: \n%s", hexdump.hexdump(bytez, result="return"))
+        #g_logger.debug("QL: \n%s", hexdump.hexdump(bytez, result="return"))
         soffset = offset
-        g_logger.debug("QL: soffset: %s", h(soffset))
+        #g_logger.debug("QL: soffset: %s", h(soffset))
         offset = self["size"].vsParse(bytez, offset=offset)
         eoffset = soffset + self.size
-        g_logger.debug("QL: eoffset: %s", h(eoffset))
+        #g_logger.debug("QL: eoffset: %s", h(eoffset))
 
         self.count = 0
         while offset + QualifierReference.MIN_SIZE <= eoffset:
-            g_logger.debug("QL: entry: %s", h(offset))
+            #g_logger.debug("QL: entry: %s", h(offset))
             q = QualifierReference()
             offset = q.vsParse(bytez, offset=offset)
             self.qualifiers.vsAddElement(q)
@@ -350,8 +363,8 @@ class QualifiersList(vstruct.VStruct):
 class _Property(vstruct.VStruct):
     def __init__(self):
         vstruct.VStruct.__init__(self)
-        self.type = CimType()
-        self.unk0 = v_uint16()
+        self.type = CimType()  # the on-disk type for this property's value
+        self.entryNumber = v_uint16()  # the on-disk order for this property
         self.unk1 = v_uint32()
         self.unk2 = v_uint32()
         self.qualifiers = QualifiersList()
@@ -369,8 +382,10 @@ class Property(LoggingObject):
         self._prop.vsParse(self._classDef.getData(), offset=offsetProperty)
 
     def __repr__(self):
-        return "Property(type: {:s}, name: {:s})".format(
-            self.getName(), CIM_TYPES.vsReverseMapping(self.getType().getType()))
+        return "Property(name: {:s}, type: {:s}, qualifiers: {:s})".format(
+            self.getName(),
+            CIM_TYPES.vsReverseMapping(self.getType().getType()),
+            ",".join("%s=%s" % (k, str(v)) for k, v in self.getQualifiers().iteritems()))
 
     def getName(self):
         return self._classDef.getString(self._propref.offsetPropertyName)
@@ -390,6 +405,9 @@ class Property(LoggingObject):
             ret[str(qk)] = str(qv)
             self.d("%s: %s", qk, qv)
         return ret
+
+    def getEntryNumber(self):
+        return self._prop.entryNumber
 
 
 class PropertyReference(vstruct.VStruct):
@@ -529,15 +547,16 @@ class ClassDefinition(LoggingObject):
 
 
 class _ClassInstance(vstruct.VStruct):
-    def __init__(self, properties):
+    def __init__(self, properties, extraPadding):
         vstruct.VStruct.__init__(self)
         self._properties = properties
         self.nameHash = v_wstr(size=0x40)
         self.ts1 = FILETIME()
         self.ts2 = FILETIME()
         self.dataLen = v_uint32()
-        self.unk0 = v_uint16()
         self.offsetClassNameA = v_uint32()
+        self.unk0 = v_uint16()
+        self.extraPadding = v_bytes(size=extraPadding)
 
         self.toc = vstruct.VArray()
         for prop in properties:
@@ -556,16 +575,20 @@ class _ClassInstance(vstruct.VStruct):
 
 
 class ClassInstance(LoggingObject):
-    def __init__(self, properties, buf):
+    def __init__(self, properties, buf, extraPadding):
         """ properties is an ordered list of Property objects """
         super(ClassInstance, self).__init__()
         self._props = properties
         self._buf = buf
-        self._def = _ClassInstance(self._props)
+        self._def = _ClassInstance(self._props, extraPadding)
         self._def.vsParse(buf)
 
         self._propIndexMap = {prop.getName(): i for i, prop in enumerate(self._props)}
         self._propTypeMap = {prop.getName(): prop.getType() for prop in self._props}
+
+    def __repr__(self):
+        # TODO: make this nice
+        return "ClassInstance(classhash: {:s})".format(self._def.nameHash)
 
     def getData(self):
         return self._def.propData
@@ -605,7 +628,7 @@ class ClassInstance(LoggingObject):
         t = valueType.getType()
         if t == CIM_TYPES.CIM_TYPE_STRING:
             return self.getString(value)
-        elif t == CIM_TYPES.CIM_TYPE_FILETIME:
+        elif t == CIM_TYPES.CIM_TYPE_DATETIME:
             # TODO: perhaps this should return a parsed datetime?
             return self.getString(value)
         elif t == CIM_TYPES.CIM_TYPE_BOOLEAN:
@@ -653,8 +676,17 @@ class ClassInstance(LoggingObject):
 
     def getProperties(self):
         """ get dict of str to Property instances """
-        # TODO
-        raise NotImplementedError()
+        # TODO: 
+        #raise NotImplementedError()
+        ret = []
+        for prop in self._props:
+            n = prop.getName()
+            i = self._propIndexMap[n]
+            t = self._propTypeMap[n]
+            v = self._def.toc[i]
+            ret.append(self.getValue(v, t))
+        return ret
+
 
     def getPropertyValue(self, name):
         i = self._propIndexMap[name]
@@ -678,6 +710,24 @@ class ClassLayout(LoggingObject, QueryBuilderMixin, ObjectFetcherMixin):
         self.context = context
         self._ns = namespace
         self._cd = classDefinition
+
+        self._extraPaddingLen = 0
+        if "\x55" in self._cd._def.junk:
+            for i in xrange(self._cd._def.junk.count("\x55"), 0, -1):
+                if self._cd._def.junk.startswith("\x55" * i):
+                    self._extraPaddingLen = i
+                    break
+
+        j = self._cd._def.junk
+        self.d("extraPaddingComp: %s %s %s %s %s %s %s %s",
+                h(len(j)),
+                h(4 * self._cd._def.propertyReferences.count),
+                h(self._cd._def.propertyReferences.count),
+                h(self._cd._def.header.unk1),
+                h(self._cd._def.header.unk3),
+                h(self._cd._def.header.unk4),
+                self._extraPaddingLen,
+                hexdump.binascii.b2a_hex(j))
 
         # cache
         self._properties = None
@@ -705,7 +755,7 @@ class ClassLayout(LoggingObject, QueryBuilderMixin, ObjectFetcherMixin):
         self._properties = []
         while len(classDerivation) > 0:
             cd = classDerivation.pop(0)
-            for prop in cd.getProperties().values():
+            for prop in sorted(cd.getProperties().values(), key=lambda p: p.getEntryNumber()):
                 self._properties.append(prop)
 
         self.d("%s property layout: %s",
@@ -714,7 +764,7 @@ class ClassLayout(LoggingObject, QueryBuilderMixin, ObjectFetcherMixin):
         return self._properties[:]
 
     def parseInstance(self, data):
-        return ClassInstance(self.properties, data)
+        return ClassInstance(self.properties, data, self._extraPaddingLen)
 
 
 def getClassId(namespace, classname):
@@ -765,7 +815,7 @@ class TreeNamespace(LoggingObject, QueryBuilderMixin, ObjectFetcherMixin):
             namespaceI = namespaceCL.parseInstance(namespaceInstance)
             nsName = namespaceI.getPropertyValue("Name")
             # TODO: perhaps should test if this thing exists?
-            yield Namespace(self.context, self.name + "\\" + nsName)
+            yield TreeNamespace(self.context, self.name + "\\" + nsName)
 
     @property
     def classes(self):
@@ -822,11 +872,17 @@ class TreeClassDefinition(LoggingObject, QueryBuilderMixin, ObjectFetcherMixin):
                 self.CI(self.name),
                 self.IL())
 
-        for ibuf in self.getObjects(q):
+        # HACK: TODO: fixme, use getObjects(q) instead
+        for ref in self.context.index.lookupKeys(q):
+            ibuf = self.getObject(ref)
             self.d("instance of %s:%s: \n%s", self.ns, self.name, hexdump.hexdump(ibuf, result="return"))
-            instance = cl.parseInstance(ibuf)
+            try:
+                instance = cl.parseInstance(ibuf)
+            except RuntimeError:
+                self.w("failed: %s", ref)
+                continue
             self.i("instance: %s", instance)
-            yield(instance)
+            yield instance
 
             #nsName = namespaceI.getPropertyValue("Name")
             # TODO: perhaps should test if this thing exists?
@@ -885,6 +941,11 @@ def rec_class(klass):
 
     for i in klass.instances:
         g_logger.info(i)
+
+        props = klass._def.getProperties()
+        for propname, prop in props.iteritems():
+            g_logger.info("%s=%s" % (
+                prop, str(i.getPropertyValue(prop.getName()))))
 
 
 def rec_ns(ns):

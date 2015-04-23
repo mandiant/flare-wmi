@@ -219,7 +219,7 @@ struct Qualifier {
 
 struct PropertyDef {
     struct CimType type;
-    uint16_t unk0;
+    uint16_t entryNumber;
     uint32_t unk1;
     uint32_t unk2;
     struct {
@@ -238,10 +238,14 @@ struct InstanceData {
     uint8_t unk0[0x6];
     struct {
         //uint8_t consumerToc[0xD];
-        uint32_t strRef;
+        uint32_t strRef[3];
+        uint64_t strRef2[2];
         //uint8_t unk1[0x5];
     } toc;
-    uint32_t nextSize;
+    struct {
+        uint32_t qualifierListSize;
+        uint8_t qualifierListData[qualifierListSize - sizeof(qualifierListSize)];
+    } qualifierList;
     
 
     uint32_t dataSize;
@@ -259,10 +263,19 @@ struct InstanceData {
 //FSeek(GetCursorPos());
 //struct BtrPage ph;
 
-struct ObjectClassDefinition ocd;
+//struct ObjectClassDefinition ocd;
 //struct ObjectField f;
 //struct Qualifier q;
 
 //struct InstanceData i;
 
 //struct PropertyDef pd;
+if (ReadWStringLength(FTell()) >= 70) {
+    // looks like an InstanceData
+    FSeek(0x0);
+    struct InstanceData i;
+} else {
+    // else assume ClassDefinition
+    FSeek(0x0);
+    struct ObjectClassDefinition ocd;
+}
