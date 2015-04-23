@@ -236,11 +236,46 @@ struct InstanceData {
     uint32_t dataLen;
     //uint8_t data[dataLen - sizeof(dataLen)];
     uint8_t unk0[0x6];
+    uint8_t b[0x6];
     struct {
-        //uint8_t consumerToc[0xD];
-        uint32_t strRef[3];
-        uint64_t strRef2[2];
-        //uint8_t unk1[0x5];
+        if (classNameHash[0] == 0x42 && classNameHash[1] == 0x42) {
+            // super
+            uint32_t MachineName;
+            uint32_t MaximumQueueSize;
+            uint32_t CreatorSID;
+            uint32_t Name;
+            // specific
+            uint32_t ExecutablePath;
+            uint32_t CommandLineTemplate;
+            uint16_t UseDefaultErrorMode;
+            uint16_t CreateNewConsole;
+            uint16_t CreateNewProcessGroup;
+            uint16_t CreateSeparateWowVdm;
+            uint16_t CreateSharedWowVdm;
+            uint32_t Priority;
+            uint32_t WorkingDirectory;
+            uint32_t DesktopName;
+            uint32_t WindowTitle;
+            uint32_t XCoordinate;
+            uint32_t YCoordinate;
+            uint32_t XSize;
+            uint32_t YSize;
+            uint32_t XNumCharacters;
+            uint32_t YNumCharacters;
+            uint32_t FillAttribute;
+        } else if (0) {
+            // LogFileEventConsumer
+            uint32_t MachineName;
+            uint32_t MaximumQueueSize;
+            uint32_t CreatorSID;
+            uint32_t Name;
+            uint32_t Filename;
+            uint32_t Text;
+            uint64_t MaximumFileSize;
+            uint16_t IsUnicode;
+        } else {
+
+        }
     } toc;
     struct {
         uint32_t qualifierListSize;
