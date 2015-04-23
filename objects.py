@@ -1,3 +1,12 @@
+# TODO:
+#   what is "DYNPROPS: True"?
+#   where do descriptions come from?
+#   how to determine start of TOC in class instance?
+#   optimize lookups
+#   clean up context silliness
+# BUGs:
+#   class instance: "root\\CIMV2" Microsoft_BDD_Info NS_68577372C66A7B20658487FBD959AA154EF54B5F935DCC5663E9228B44322805/CI_6FCB95E1CB11D0950DA7AE40A94D774F02DCD34701D9645E00AB9444DBCF640B/IL_EEC4121F2A07B61ABA16414812AA9AFC39AB0A136360A5ACE2240DC19B0464EB.1606.116085.3740
+
 import logging
 from datetime import datetime
 from collections import namedtuple
@@ -14,8 +23,6 @@ from vstruct.primitives import *
 
 logging.basicConfig(level=logging.DEBUG)
 g_logger = logging.getLogger("cim.objects")
-
-logging.getLogger("cim.Index").setLevel(logging.WARNING)
 
 
 ROOT_NAMESPACE_NAME = "root"
@@ -571,6 +578,12 @@ class _ClassInstance(vstruct.VStruct):
     def pcb_propDataLen(self):
         self["propData"].vsSetLength(self.propDataLen & 0x7FFFFFFF)
 
+    def pcb_unk1(self):
+        if self.unk1 != 0x1:
+            # seems that when this field is 0x0, then there is additional property data
+            # maybe this is DYNPROPS: True???
+            raise NotImplementedError("ClassInstance.unk1 != 0x1: %s" % h(self.unk1))
+
 
 class ClassInstance(LoggingObject):
     def __init__(self, classLayout, buf, extraPadding):
@@ -688,6 +701,7 @@ class ClassInstance(LoggingObject):
 
     def getString(self, ref):
         s = WMIString()
+        self.d("ref: %s", h(ref))
         s.vsParse(self.getData(), offset=int(ref))
         return str(s.s)
 
@@ -1088,6 +1102,8 @@ def rec_ns(ns):
 
     for c in ns.namespaces:
         rec_ns(c)
+    else:
+        g_logger.info("no classes")
 
 
 def main(type_, path):
