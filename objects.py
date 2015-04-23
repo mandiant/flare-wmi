@@ -29,13 +29,13 @@ NAMESPACE_CLASS_NAME = "__namespace"
 # index is a cim.Index object
 # cdcache is a dict from class id to .ClassDefinition object
 # clcache is a dict from class id to .ClassLayout objects
-TreeContext = namedtuple("TreeContext", ["cim", "index", "cdcache", "clcache"])
+CimContext = namedtuple("CimContext", ["cim", "index", "cdcache", "clcache"])
 
 
 class QueryBuilderMixin(object):
     def __init__(self):
         # self must have the following fields:
-        #   - context:TreeContext
+        #   - context:CimContext
         pass
 
     def _build(self, prefix, name=None):
@@ -75,7 +75,7 @@ class QueryBuilderMixin(object):
 class ObjectFetcherMixin(object):
     def __init__(self):
         # self must have the following fields:
-        #   - context:TreeContext
+        #   - context:CimContext
         pass
 
     def getObject(self, query):
@@ -554,8 +554,6 @@ class _ClassInstance(vstruct.VStruct):
         self.ts1 = FILETIME()
         self.ts2 = FILETIME()
         self.dataLen = v_uint32()
-        self.offsetClassNameA = v_uint32()
-        self.unk0 = v_uint16()
         self.extraPadding = v_bytes(size=extraPadding)
 
         self.toc = vstruct.VArray()
@@ -575,11 +573,15 @@ class _ClassInstance(vstruct.VStruct):
 
 
 class ClassInstance(LoggingObject):
-    def __init__(self, properties, buf, extraPadding):
+    def __init__(self, classLayout, buf, extraPadding):
         """ properties is an ordered list of Property objects """
         super(ClassInstance, self).__init__()
-        self._props = properties
+        self._cl = classLayout
+        self._props = classLayout.properties
         self._buf = buf
+
+        extraPadding = self.getExtraPaddingLen()
+
         self._def = _ClassInstance(self._props, extraPadding)
         self._def.vsParse(buf)
 
@@ -589,6 +591,97 @@ class ClassInstance(LoggingObject):
     def __repr__(self):
         # TODO: make this nice
         return "ClassInstance(classhash: {:s})".format(self._def.nameHash)
+
+    def getExtraPaddingLen(self):
+        HACK1 = True
+        if HACK1:
+            if self._cl.classDefinition._def.header.unk3 == 0x18:
+                return self._cl.classDefinition._def.header.unk1 + 0x6
+
+            # these are all the same, split up to be explicit
+            elif self._cl.classDefinition._def.header.unk3 == 0x19:
+                return self._cl.classDefinition._def.header.unk1 + 0x5
+            elif self._cl.classDefinition._def.header.unk3 == 0x17:
+                # do math. its a hack.
+                # try both 0x5 and 0x6 + CD.header.unk0, then seek
+                #  to find the qualifiers length and data length, and
+                #  see if they match the data size.
+                s = v_uint32()
+
+                tocLen = 0
+                for prop in self._props:
+                    if prop.getType().isArray():
+                        tocLen += 0x4
+                    else:
+                        tocLen += CIM_TYPE_SIZES[prop.getType().getType()]
+
+                self.d("aaaa: \n%s", hexdump.hexdump(self._buf, result="return"))
+                u1 = self._cl.classDefinition._def.header.unk1
+                for i in [5, 6]:
+                    self.d("trying i: %s", h(i))
+                    self.d("u1: %s", h(u1))
+                    possibleTocEnd = 0x94 + u1 + i + tocLen
+                    self.d("possible end: %s", h(possibleTocEnd))
+                    s.vsParse(self._buf, possibleTocEnd)
+                    o = int(s)
+                    qualifiersLen = o
+                    self.d("qualifiers len: %s", h(qualifiersLen))
+                    if o > len(self._buf):
+                        continue
+                    o = possibleTocEnd + qualifiersLen + 1
+                    s.vsParse(self._buf, o)
+                    p = int(s) & 0x7FFFFFFF
+                    self.d("data len: %s", h(p))
+                    self.d("%s", h(possibleTocEnd + qualifiersLen + 5 + p))
+                    self.d("%s", h(len(self._buf)))
+                    if possibleTocEnd + qualifiersLen + 5 + p != len(self._buf):
+                        continue
+                    self.d("found it: %s", h(i))
+                    return u1 + i
+                raise RuntimeError("Unable to determine extraPadding len")
+            else:
+                return self._cl.classDefinition._def.header.unk1 + 0x5
+        else:
+            possibleTocStart = 0x94  # minimal Instance header
+
+            tocLen = 0
+            for prop in self._props:
+                if prop.getType().isArray():
+                    tocLen += 0x4
+                else:
+                    tocLen += CIM_TYPE_SIZES[prop.getType().getType()]
+            # TODO: danger!
+            # this doesn't really work...
+            possibleTocEnd = possibleTocStart + tocLen + 0x5  # minimal qualifiers buf
+
+            self.d("instance: \n%s", hexdump.hexdump(self._buf, result="return"))
+            tocEnd = 0
+            while True:
+                self.d("possibleEnd: %s", h(possibleTocEnd))
+                e = self._buf.find("\x00\x00\x80\x00", possibleTocEnd)
+                if e == -1:
+                    raise RuntimeError("failed to find end of toc")
+                self.d("match: %s", h(e))
+                s = v_uint32()
+                s.vsParse(self._buf, offset=e - 1)
+                self.d("len: %s", h(int(s) & 0x7FFFFFFF))
+                self.d("len2: %s", h(len(self._buf) - e - 3))
+                if len(self._buf) - e - 3 == (int(s) & 0x7FFFFFFF):
+                    if self._buf[e - 6:e - 1] == "\x04\x00\x00\x00\x01":
+                        tocEnd = e - 6
+                        break
+                    else:
+                        raise RuntimeError("failed to match qualifiers")
+                else:
+                    possibleTocEnd = e + 1
+                    continue
+
+            extraPadding = (tocEnd - tocLen) - possibleTocStart
+            self.d("possibleTocStart: %s", h(possibleTocStart))
+            self.d("tocLen: %s", h(tocLen))
+            self.d("tocEnd: %s", h(tocEnd))
+            self.d("extraPadding: %s", h(extraPadding))
+            return extraPadding
 
     def getData(self):
         return self._def.propData
@@ -600,6 +693,12 @@ class ClassInstance(LoggingObject):
 
     def getArray(self, ref, itemType):
         self.d("ref: %s, type: %s", ref, itemType)
+
+        if ref == 0:
+            # seems a little fragile. can't have array as first element?
+            # empirically, the first element is the item type name, fortunately
+            return []
+
         Parser = itemType.getValueParser()
         data = self.getData()
 
@@ -719,15 +818,15 @@ class ClassLayout(LoggingObject, QueryBuilderMixin, ObjectFetcherMixin):
                     break
 
         j = self._cd._def.junk
-        self.d("extraPaddingComp: %s %s %s %s %s %s %s %s",
-                h(len(j)),
-                h(4 * self._cd._def.propertyReferences.count),
-                h(self._cd._def.propertyReferences.count),
-                h(self._cd._def.header.unk1),
-                h(self._cd._def.header.unk3),
-                h(self._cd._def.header.unk4),
-                self._extraPaddingLen,
-                hexdump.binascii.b2a_hex(j))
+        #self.d("extraPaddingComp: %s %s %s %s %s %s %s %s",
+        #        h(len(j)),
+        #        h(4 * self._cd._def.propertyReferences.count),
+        #        h(self._cd._def.propertyReferences.count),
+        #        h(self._cd._def.header.unk1),
+        #        h(self._cd._def.header.unk3),
+        #        h(self._cd._def.header.unk4),
+        #        self._extraPaddingLen,
+        #        hexdump.binascii.b2a_hex(j))
 
         # cache
         self._properties = None
@@ -764,7 +863,21 @@ class ClassLayout(LoggingObject, QueryBuilderMixin, ObjectFetcherMixin):
         return self._properties[:]
 
     def parseInstance(self, data):
-        return ClassInstance(self.properties, data, self._extraPaddingLen)
+        return ClassInstance(self, data, self._extraPaddingLen)
+
+    @property
+    def propertiesTocLength(self):
+        off = 0
+        for prop in self.properties:
+            if prop.getType().isArray():
+                off += 0x4
+            else:
+                off += CIM_TYPE_SIZES[prop.getType().getType()]
+        return off
+
+    @property
+    def classDefinition(self):
+        return self._cd
 
 
 def getClassId(namespace, classname):
@@ -812,7 +925,12 @@ class TreeNamespace(LoggingObject, QueryBuilderMixin, ObjectFetcherMixin):
                 self.IL())
 
         for namespaceInstance in self.getObjects(q):
-            namespaceI = namespaceCL.parseInstance(namespaceInstance)
+            try:
+                namespaceI = namespaceCL.parseInstance(namespaceInstance)
+            except ZeroDivisionError:
+            #except RuntimeError:
+                # TODO: removeme!!!
+                continue
             nsName = namespaceI.getPropertyValue("Name")
             # TODO: perhaps should test if this thing exists?
             yield TreeNamespace(self.context, self.name + "\\" + nsName)
@@ -878,6 +996,9 @@ class TreeClassDefinition(LoggingObject, QueryBuilderMixin, ObjectFetcherMixin):
             self.d("instance of %s:%s: \n%s", self.ns, self.name, hexdump.hexdump(ibuf, result="return"))
             try:
                 instance = cl.parseInstance(ibuf)
+            # TODO
+            except ZeroDivisionError:
+                pass
             except RuntimeError:
                 self.w("failed: %s", ref)
                 continue
@@ -915,7 +1036,7 @@ class TreeClassInstance(LoggingObject):
 class Tree(LoggingObject):
     def __init__(self, cim):
         super(Tree, self).__init__()
-        self._context = TreeContext(cim, Index(cim.getCimType(), cim.getLogicalIndexStore()), {}, {})
+        self._context = CimContext(cim, Index(cim.getCimType(), cim.getLogicalIndexStore()), {}, {})
 
     def __repr__(self):
         return "Tree"
@@ -941,11 +1062,20 @@ def rec_class(klass):
 
     for i in klass.instances:
         g_logger.info(i)
+        g_logger.debug("ep: %s %s-%s %s %s",
+                h(klass._def._def.header.unk1),
+                h(klass._def._def.header.unk3),
+                h(klass._def._def.header.unk4),
+                h(i.getExtraPaddingLen()),
+                h(i.getExtraPaddingLen() - klass._def._def.header.unk1))
 
+ 
         props = klass._def.getProperties()
         for propname, prop in props.iteritems():
             g_logger.info("%s=%s" % (
                 prop, str(i.getPropertyValue(prop.getName()))))
+    else:
+        g_logger.info("no instances")
 
 
 def rec_ns(ns):
@@ -953,6 +1083,8 @@ def rec_ns(ns):
 
     for c in ns.classes:
         rec_class(c)
+    else:
+        g_logger.info("no classes")
 
     for c in ns.namespaces:
         rec_ns(c)
