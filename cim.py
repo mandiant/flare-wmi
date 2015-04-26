@@ -340,6 +340,9 @@ class IndexPage(LoggingObject):
         self._page = _IndexPage()
         self._page.vsParse(buf)
 
+        # cache
+        self._keys = {}
+
     def _getStringPart(self, stringIndex):
         self.d("stringIndex: %s", hex(stringIndex))
 
@@ -375,10 +378,11 @@ class IndexPage(LoggingObject):
 
     def getKey(self, keyIndex):
         self.d("keyIndex: %s", hex(keyIndex))
-
-        stringDefIndex = self._page.keys[keyIndex]
-        self.d("stringDefIndex: %s", hex(stringDefIndex))
-        return Key(self._getString(stringDefIndex))
+        if keyIndex not in self._keys:
+            stringDefIndex = self._page.keys[keyIndex]
+            self.d("stringDefIndex: %s", hex(stringDefIndex))
+            self._keys[keyIndex] = Key(self._getString(stringDefIndex))
+        return self._keys[keyIndex]
 
     def getChildByIndex(self, childIndex):
         return self._page.children[childIndex]
@@ -526,11 +530,37 @@ class LogicalIndexStore(LoggingObject):
         return self.getPage(self.getRootPageNumber())
 
 
+class CachedLogicalIndexStore(LoggingObject):
+    def __init__(self, indexStore):
+        super(CachedLogicalIndexStore, self).__init__()
+        self._indexStore = indexStore
+
+        # cache
+        self._pages = {}
+
+    def getPhysicalPageBuffer(self, index):
+        return self._indexStore.getPhysicalPageBuffer(index)
+
+    def getPageBuffer(self, index):
+        return self._indexStore.getPageBuffer(index)
+
+    def getPage(self, index):
+        if index not in self._pages:
+            self._pages[index] = self._indexStore.getPage(index)
+        return self._pages[index]
+
+    def getRootPageNumber(self):
+        return self._indexStore.getRootPageNumber()
+
+    def getRootPage(self):
+        return self.getPage(self.getRootPageNumber())
+
+
 class Index(LoggingObject):
     def __init__(self, cimType, indexStore):
         super(Index, self).__init__()
         self._cimType = cimType
-        self._indexStore = indexStore
+        self._indexStore = CachedLogicalIndexStore(indexStore)
 
     LEFT_CHILD_DIRECTION = 0
     RIGHT_CHILD_DIRECTION = 1
