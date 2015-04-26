@@ -981,9 +981,7 @@ class TreeClassDefinition(LoggingObject, QueryBuilderMixin, ObjectFetcherMixin):
         return Namespace(self.context, self.ns)
 
     @property
-    def instances(self):
-        """ get instances of this class definition """
-        pass
+    def cd(self):
         classId = getClassId(self.ns, self.name)
         cd = self.context.cdcache.get(classId, None)
         if cd is None:
@@ -991,12 +989,23 @@ class TreeClassDefinition(LoggingObject, QueryBuilderMixin, ObjectFetcherMixin):
             q = self.getClassDefinitionQuery(self.ns, self.name)
             cd = ClassDefinition(self.getObject(q))
             self.context.cdcache[classId] = cd
+        return cd
 
+    @property
+    def cl(self):
+        classId = getClassId(self.ns, self.name)
         cl = self.context.clcache.get(classId, None)
         if cl is None:
             self.d("clcache miss")
-            cl = ClassLayout(self.context, self.ns, cd)
+            cl = ClassLayout(self.context, self.ns, self.cd)
             self.context.clcache[classId] = cl
+        return cl
+
+    @property
+    def instances(self):
+        """ get instances of this class definition """
+        cd = self.cd
+        cl = self.cl
 
         # CI or KI?
         q = "{}/{}/{}".format(
