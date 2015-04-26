@@ -28,60 +28,12 @@ from objects import TreeClassInstance
 from common import h
 from common import one
 from common import LoggingObject
+from ui.tree import Item
+from ui.tree import TreeModel
+from ui.hexview import HexViewWidget
 
 
 Context = namedtuple("Context", ["cim", "index", "cdcache", "clcache", "querier"])
-
-
-class Item(object):
-    """ interface """
-
-    def __init__(self):
-        pass
-
-    def __repr__(self):
-        raise NotImplementedError()
-
-    @property
-    def children(self):
-        return []
-
-    @property
-    def type(self):
-        raise NotImplementedError()
-
-    @property
-    def name(self):
-        raise NotImplementedError()
-
-
-class ListItem(Item):
-    """ a node in a list of nodes whose children will be dynamically loaded """
-    def __init__(self, name, getter):
-        super(ListItem, self).__init__()
-        self._name = name
-        self._getter = getter
-        self._children = None
-
-    def __repr__(self):
-        return "ListItem(numChildren: {:s})".format(str(len(self.children)))
-
-    def _getChildren(self):
-        if self._children is None:
-            self._children = sorted(self._getter(), key=lambda i: i.getName())
-        return self._children
-
-    @property
-    def children(self):
-        return self._getChildren()
-
-    @property
-    def type(self):
-        return ""
-
-    @property
-    def name(self):
-        return self._name
 
 
 class Querier(LoggingObject, QueryBuilderMixin, ObjectFetcherMixin):
@@ -512,163 +464,17 @@ class CimRootItem(Item):
         return "CIM"
 
 
-class TestItem(Item):
-    def __init__(self, name):
-        super(TestItem, self).__init__()
-        self._name = name
 
-    @property
-    def children(self):
-        return [
-            TestItem(self._name + "1"),
-            TestItem(self._name + "2"),
-            TestItem(self._name + "3"),
-            TestItem(self._name + "4"),
-        ]
-
-    @property
-    def type(self):
-        return "Test"
-
-    @property
-    def name(self):
-        return self._name
+VstructItem = namedtuple("VstructItem", ["offset", "struct"])
 
 
-class TreeNode(object):
-    """ adapter from Item to QAbstractItemModel interface """
-    def __init__(self, parent, data):
-        super(TreeNode, self).__init__()
-        self._parent = parent
-        self._data = data
-        self._children = None
-
-    @property
-    def parent(self):
-        return self._parent
-
-    @property
-    def children(self):
-        if self._children is None:
-            self._children = [TreeNode(self, c) for c in self._data.children]
-        return self._children
-
-    @property
-    def data(self):
-        return self._data
-
-    @property
-    def row(self):
-        if self._parent:
-            return self._parent.children.index(self)
-        return 0
-
-
-class TreeModel(QAbstractItemModel):
-    """ adapter from Item to QAbstractItemModel interface """
-    def __init__(self, root, parent=None):
-        super(TreeModel, self).__init__(parent)
-        self._root = TreeNode(None, root)
-        self._indexItems = {}  # int to Item
-        self._counter = 0
-
-    # index.internalPointer() is not working for me consistently,
-    # so we keep track of live objects ourselves
-    def _addIndexItem(self, index, item):
-        self._indexItems[index.internalId()] = item
-
-    def _getIndexItem(self, id_):
-        return self._indexItems[id_]
-
-    def _createIndex(self, row, column, item):
-        i = self.createIndex(row, column, item)
-        self._addIndexItem(i, item)
-        return i
-
-    def columnCount(self, parent):
-        return 2
-
-    def flags(self, index):
-        if not index.isValid():
-            return Qt.NoItemFlags
-        return Qt.ItemIsEnabled | Qt.ItemIsSelectable
-
-    def headerData(self, section, orientation, role):
-        if orientation == Qt.Horizontal and role == Qt.DisplayRole:
-            if section == self.COLUMN_INDEX_NAME:
-                return "Name"
-            if section == self.COLUMN_INDEX_TYPE:
-                return "Type"
-        return None
-
-    COLUMN_INDEX_NAME = 0
-    COLUMN_INDEX_TYPE = 1
-    def data(self, index, role):
-        if not index.isValid():
-            return None
-
-        if role != Qt.DisplayRole:
-            return None
-
-        item = self._getIndexItem(index.internalId())
-        if index.column() == self.COLUMN_INDEX_NAME:
-            return item.data.name
-        if index.column() == self.COLUMN_INDEX_TYPE:
-            return item.data.type
-        return None
-
-    def index(self, row, column, parent):
-        if not self.hasIndex(row, column, parent):
-            return QModelIndex()
-
-        if not parent.isValid():
-            parentItem = self._root
-        else:
-            parentItem = self._getIndexItem(parent.internalId())
-
-        childItem = parentItem.children[row]
-        if childItem:
-            return self._createIndex(row, column, childItem)
-        else:
-            return QModelIndex()
-
-    def parent(self, index):
-        if not index.isValid():
-            return QModelIndex()
-
-        childItem = self._getIndexItem(index.internalId())
-        parentItem = childItem.parent
-
-        if parentItem == self._root:
-            return QModelIndex()
-
-        return self._createIndex(parentItem.row, 0, parentItem)
-
-    def rowCount(self, parent):
-        if parent.column() > 0:
-            return 0
-
-        if not parent.isValid():
-            parentItem = self._root
-        else:
-            parentItem = self._getIndexItem(parent.internalId())
-
-        return len(parentItem.children)
-
-    def getIndexData(self, itemIndex):
-        """
-        since we're hacking at the index data storage,
-          need to provide an accessor.
-        bad design to force the receiver of the index to have
-          a reference to the model :-(.
-        """
-        return self._getIndexItem(itemIndex.internalId()).data
-
-
-class HexViewWidget(QWidget, LoggingObject):
-    def __init__(self, buf, parent=None):
-        super(HexViewWidget, self).__init__(parent)
+class VstructViewWidget(QWidget, LoggingObject):
+    def __init__(self, items, buf, parent=None):
+        """ items is a list of VstructItem """
+        super(VstructViewWidget, self).__init__(parent)
+        self._items = items
         self._buf = buf
+
         layout = QGridLayout()
         te = QTextEdit()
         te.setReadOnly(True)
@@ -681,35 +487,36 @@ class HexViewWidget(QWidget, LoggingObject):
         self.setLayout(layout)
 
 
-class IndexKeyItemView(QWidget, LoggingObject):
+class IndexKeyItemView(QTabWidget, LoggingObject):
     def __init__(self, keyItem, parent=None):
         super(IndexKeyItemView, self).__init__(parent)
         self._keyItem = keyItem
-
-        layout = QGridLayout()
         if self._keyItem.isDataReference:
             hv = HexViewWidget(self._keyItem.data)
-            layout.addWidget(hv, 0, 0)
-        self.setLayout(layout)
+            self.addTab(hv, "Target hex view")
 
 
-class DataPageView(QWidget, LoggingObject):
+class DataPageView(QTabWidget, LoggingObject):
     def __init__(self, pageItem, parent=None):
         super(DataPageView, self).__init__(parent)
         self._pageItem = pageItem
-
-        layout = QGridLayout()
         hv = HexViewWidget(self._pageItem.data)
-        layout.addWidget(hv, 0, 0)
-        self.setLayout(layout)
+        self.addTab(hv, "Hex view")
 
 
-class ClassDefinitionItemView(QWidget, LoggingObject):
+class LogicalDataPageItemView(QTabWidget, LoggingObject):
+    def __init__(self, pageItem, parent=None):
+        super(LogicalDataPageItemView, self).__init__(parent)
+        self._pageItem = pageItem
+        hv = HexViewWidget(self._pageItem.data)
+        self.addTab(hv, "Hex view")
+
+
+class ClassDefinitionItemView(QTabWidget, LoggingObject):
     def __init__(self, cdItem, parent=None):
         super(ClassDefinitionItemView, self).__init__(parent)
         self._cdItem = cdItem
 
-        layout = QGridLayout()
         te = QTextEdit()
         te.setReadOnly(True)
         f = QFontDatabase.systemFont(QFontDatabase.FixedFont)
@@ -717,8 +524,8 @@ class ClassDefinitionItemView(QWidget, LoggingObject):
         td.setDefaultFont(f)
         td.setPlainText(self._classDescription)
         te.setDocument(td)
-        layout.addWidget(te, 0, 0)
-        self.setLayout(layout)
+
+        self.addTab(te, "Class details")
 
     @property
     def _classDescription(self):
@@ -751,23 +558,27 @@ class ClassDefinitionItemView(QWidget, LoggingObject):
         return "\n".join(ret)
 
 
+def emptyLayout(layout):
+    for i in reversed(range(layout.count())):
+        layout.itemAt(i).widget().setParent(None)
+
+
 class Form(QWidget, LoggingObject):
     def __init__(self, ctx, parent=None):
         super(Form, self).__init__(parent)
         self._ctx = ctx
         self._treeModel = TreeModel(CimRootItem(ctx))
 
-        self._ui = uic.loadUi("ui.ui")
-        self._ui.browseTreeView.setModel(self._treeModel)
-
-        self._ui.browseDetailsTabWidget.clear()
-        #self._ui.browseTreeView.header().setSectionResizeMode(QHeaderView.Stretch)
-        self._ui.browseTreeView.header().setSectionResizeMode(QHeaderView.Interactive)
-        self._ui.browseTreeView.header().resizeSection(0, 250)
-
-        self._ui.browseTreeView.activated.connect(self._handleBrowseItemActivated)
-
         # TODO: maybe subclass the loaded .ui and use that instance directly
+        self._ui = uic.loadUi("ui/ui.ui")
+        emptyLayout(self._ui.browseDetailsLayout)
+
+        tv = self._ui.browseTreeView
+        tv.setModel(self._treeModel)
+        tv.header().setSectionResizeMode(QHeaderView.Interactive)
+        tv.header().resizeSection(0, 250)  # chosen empirically
+        tv.activated.connect(self._handleBrowseItemActivated)
+
         mainLayout = QGridLayout()
         mainLayout.addWidget(self._ui, 0, 0)
 
@@ -776,30 +587,29 @@ class Form(QWidget, LoggingObject):
 
     def _handleBrowseItemActivated(self, itemIndex):
         item = self._treeModel.getIndexData(itemIndex)
-        tabs = self._ui.browseDetailsTabWidget
-        tabs.clear()
+        details = self._ui.browseDetails
+        detailsLayout = self._ui.browseDetailsLayout
+        emptyLayout(detailsLayout)
 
         if isinstance(item, PhysicalDataPageItem):
-            v = DataPageView(item, tabs)
-            tabs.addTab(v, "Details")
+            v = DataPageView(item, details)
+            detailsLayout.addWidget(v)
 
         elif isinstance(item, LogicalDataPageItem):
-            v = DataPageView(item, tabs)
-            tabs.addTab(v, "Details")
+            v = DataPageView(item, details)
+            detailsLayout.addWidget(v)
 
         elif isinstance(item, IndexNodeItem):
-            v = DataPageView(item, tabs)
-            tabs.addTab(v, "Details")
+            v = DataPageView(item, details)
+            detailsLayout.addWidget(v)
 
         elif isinstance(item, IndexKeyItem):
-            v = IndexKeyItemView(item, tabs)
-            tabs.addTab(v, "Target details")
+            v = IndexKeyItemView(item, details)
+            detailsLayout.addWidget(v)
 
         elif isinstance(item, ClassDefinitionItem):
-            v = ClassDefinitionItemView(item, tabs)
-            tabs.addTab(v, "Target details")
-
-
+            v = ClassDefinitionItemView(item, details)
+            detailsLayout.addWidget(v)
 
 
 def main(type_, path):

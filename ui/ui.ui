@@ -6,8 +6,8 @@
    <rect>
     <x>0</x>
     <y>0</y>
-    <width>1071</width>
-    <height>720</height>
+    <width>1046</width>
+    <height>729</height>
    </rect>
   </property>
   <property name="windowTitle">
@@ -24,7 +24,7 @@
        <attribute name="title">
         <string>Browse</string>
        </attribute>
-       <layout class="QVBoxLayout" name="verticalLayout">
+       <layout class="QHBoxLayout" name="horizontalLayout_3">
         <item>
          <widget class="QSplitter" name="splitter">
           <property name="orientation">
@@ -33,31 +33,29 @@
           <widget class="QTreeView" name="browseTreeView">
            <property name="minimumSize">
             <size>
-             <width>400</width>
+             <width>350</width>
              <height>0</height>
             </size>
            </property>
           </widget>
-          <widget class="QTabWidget" name="browseDetailsTabWidget">
+          <widget class="QFrame" name="browseDetails">
            <property name="minimumSize">
             <size>
-             <width>625</width>
+             <width>650</width>
              <height>0</height>
             </size>
            </property>
-           <property name="currentIndex">
-            <number>0</number>
+           <property name="frameShape">
+            <enum>QFrame::StyledPanel</enum>
            </property>
-           <widget class="QWidget" name="detailsTab1">
-            <attribute name="title">
-             <string>Tab 1</string>
-            </attribute>
-           </widget>
-           <widget class="QWidget" name="detailsTab2">
-            <attribute name="title">
-             <string>Tab 2</string>
-            </attribute>
-           </widget>
+           <property name="frameShadow">
+            <enum>QFrame::Raised</enum>
+           </property>
+           <layout class="QVBoxLayout" name="verticalLayout_5">
+            <item>
+             <layout class="QVBoxLayout" name="browseDetailsLayout"/>
+            </item>
+           </layout>
           </widget>
          </widget>
         </item>
@@ -186,7 +184,7 @@
     <rect>
      <x>0</x>
      <y>0</y>
-     <width>1071</width>
+     <width>1046</width>
      <height>23</height>
     </rect>
    </property>
