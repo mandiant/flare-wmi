@@ -1,3 +1,5 @@
+from collections import namedtuple
+
 from PyQt5.QtCore import Qt
 from PyQt5.QtCore import QModelIndex
 from PyQt5.QtCore import QAbstractItemModel
@@ -106,11 +108,17 @@ class TreeNode(object):
         return 0
 
 
+_ColumnDef = namedtuple("ColumnDef", ["displayName", "attributeName", "formatter"])
+def ColumnDef(displayName, attributeName, formatter=str):
+    return _ColumnDef(displayName, attributeName, formatter)
+
+
 class TreeModel(QAbstractItemModel):
     """ adapter from Item to QAbstractItemModel interface """
-    def __init__(self, root, parent=None):
+    def __init__(self, root, columns, parent=None):
         super(TreeModel, self).__init__(parent)
         self._root = TreeNode(None, root)
+        self._columns = columns
         self._indexItems = {}  # int to Item
         self._counter = 0
 
@@ -128,7 +136,7 @@ class TreeModel(QAbstractItemModel):
         return i
 
     def columnCount(self, parent):
-        return 2
+        return len(self._columns)
 
     def flags(self, index):
         if not index.isValid():
@@ -137,14 +145,9 @@ class TreeModel(QAbstractItemModel):
 
     def headerData(self, section, orientation, role):
         if orientation == Qt.Horizontal and role == Qt.DisplayRole:
-            if section == self.COLUMN_INDEX_NAME:
-                return "Name"
-            if section == self.COLUMN_INDEX_TYPE:
-                return "Type"
+            return self._columns[section].displayName
         return None
 
-    COLUMN_INDEX_NAME = 0
-    COLUMN_INDEX_TYPE = 1
     def data(self, index, role):
         if not index.isValid():
             return None
@@ -153,11 +156,8 @@ class TreeModel(QAbstractItemModel):
             return None
 
         item = self._getIndexItem(index.internalId())
-        if index.column() == self.COLUMN_INDEX_NAME:
-            return item.data.name
-        if index.column() == self.COLUMN_INDEX_TYPE:
-            return item.data.type
-        return None
+        coldef = self._columns[index.column()]
+        return coldef.formatter(getattr(item.data, coldef.attributeName))
 
     def index(self, row, column, parent):
         if not self.hasIndex(row, column, parent):

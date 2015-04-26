@@ -30,7 +30,12 @@ from common import one
 from common import LoggingObject
 from ui.tree import Item
 from ui.tree import TreeModel
+from ui.tree import ColumnDef
+from ui.uicommon import StructItem
+from ui.uicommon import emptyLayout
 from ui.hexview import HexViewWidget
+from ui.vstructui import VstructViewWidget
+from vstruct.primitives import v_bytes
 
 
 Context = namedtuple("Context", ["cim", "index", "cdcache", "clcache", "querier"])
@@ -132,6 +137,18 @@ class LogicalDataPageItem(Item):
     @property
     def data(self):
         return self._ctx.cim.getLogicalDataStore().getPageBuffer(self.index)
+
+    @property
+    def structs(self):
+        page = self._ctx.cim.getLogicalDataStore().getPage(self.index)
+        ret = [
+            StructItem(0x0, "tocs", page.tocs),
+        ]
+        for i, data in enumerate(page.objects):
+            vbuf = v_bytes(size=len(data.buffer))
+            vbuf.vsParse(data.buffer)
+            ret.append(StructItem(data.offset, "Object {:s}".format(h(i)), vbuf))
+        return ret
 
 
 class LogicalDataPagesItem(Item):
@@ -464,29 +481,6 @@ class CimRootItem(Item):
         return "CIM"
 
 
-
-VstructItem = namedtuple("VstructItem", ["offset", "struct"])
-
-
-class VstructViewWidget(QWidget, LoggingObject):
-    def __init__(self, items, buf, parent=None):
-        """ items is a list of VstructItem """
-        super(VstructViewWidget, self).__init__(parent)
-        self._items = items
-        self._buf = buf
-
-        layout = QGridLayout()
-        te = QTextEdit()
-        te.setReadOnly(True)
-        f = QFontDatabase.systemFont(QFontDatabase.FixedFont)
-        td = QTextDocument()
-        td.setDefaultFont(f)
-        td.setPlainText(hexdump.hexdump(buf, result="return"))
-        te.setDocument(td)
-        layout.addWidget(te, 0, 0)
-        self.setLayout(layout)
-
-
 class IndexKeyItemView(QTabWidget, LoggingObject):
     def __init__(self, keyItem, parent=None):
         super(IndexKeyItemView, self).__init__(parent)
@@ -508,8 +502,12 @@ class LogicalDataPageItemView(QTabWidget, LoggingObject):
     def __init__(self, pageItem, parent=None):
         super(LogicalDataPageItemView, self).__init__(parent)
         self._pageItem = pageItem
+
         hv = HexViewWidget(self._pageItem.data)
         self.addTab(hv, "Hex view")
+
+        vv = VstructViewWidget(self._pageItem.structs, self._pageItem.data)
+        self.addTab(vv, "Structures")
 
 
 class ClassDefinitionItemView(QTabWidget, LoggingObject):
@@ -558,16 +556,16 @@ class ClassDefinitionItemView(QTabWidget, LoggingObject):
         return "\n".join(ret)
 
 
-def emptyLayout(layout):
-    for i in reversed(range(layout.count())):
-        layout.itemAt(i).widget().setParent(None)
-
-
 class Form(QWidget, LoggingObject):
     def __init__(self, ctx, parent=None):
         super(Form, self).__init__(parent)
         self._ctx = ctx
-        self._treeModel = TreeModel(CimRootItem(ctx))
+        self._treeModel = TreeModel(
+                CimRootItem(ctx),
+                [
+                    ColumnDef("Name", "name"),
+                    ColumnDef("Type", "type"),
+                ])
 
         # TODO: maybe subclass the loaded .ui and use that instance directly
         self._ui = uic.loadUi("ui/ui.ui")
@@ -596,7 +594,7 @@ class Form(QWidget, LoggingObject):
             detailsLayout.addWidget(v)
 
         elif isinstance(item, LogicalDataPageItem):
-            v = DataPageView(item, details)
+            v = LogicalDataPageItemView(item, details)
             detailsLayout.addWidget(v)
 
         elif isinstance(item, IndexNodeItem):

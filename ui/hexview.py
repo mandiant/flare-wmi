@@ -1,9 +1,9 @@
 import hexdump
 from PyQt5.QtGui import QFontDatabase
 from PyQt5.QtGui import QTextDocument
-from PyQt5.QtWidgets import QGridLayout
 from PyQt5.QtWidgets import QWidget
 from PyQt5.QtWidgets import QTextEdit
+from PyQt5.QtWidgets import QGridLayout
 
 from common import LoggingObject
 
