@@ -5,6 +5,7 @@ import os
 import hashlib
 import logging
 from datetime import datetime
+from collections import namedtuple
 
 import hexdump
 import vstruct
@@ -253,6 +254,16 @@ class DataPage(LoggingObject):
                             str(key), hex(targetSize))
                 return self._buf[toc.offset:toc.offset + toc.size]
         raise RuntimeError("record ID not found: %s", hex(targetId))
+
+    @property
+    def objects(self):
+        ObjectItem = namedtuple("ObjectItem", ["offset", "buffer"])
+        ret = []
+        for i in xrange(self.tocs.count):
+            toc = self.tocs[i]
+            buf = self._buf[toc.offset:toc.offset + toc.size]
+            ret.append(ObjectItem(toc.offset, buf))
+        return ret
 
 
 class IndexPageHeader(vstruct.VStruct):
