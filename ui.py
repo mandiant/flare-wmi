@@ -352,6 +352,19 @@ class ClassDefinitionItem(Item):
     def cl(self):
         return TreeClassDefinition(self._ctx, self._ns, self._name).cl
 
+    @property
+    def data(self):
+        # TODO: don't reach
+        return TreeClassDefinition(self._ctx, self._ns, self._name).cd._buf
+
+    @property
+    def structs(self):
+        cd = TreeClassDefinition(self._ctx, self._ns, self._name).cd
+        ret = [
+            StructItem(0x0, "definition", cd._def),
+        ]
+        return ret
+
 
 class ClassDefinitionListItem(Item):
     def __init__(self, ctx, namespace):
@@ -503,11 +516,11 @@ class LogicalDataPageItemView(QTabWidget, LoggingObject):
         super(LogicalDataPageItemView, self).__init__(parent)
         self._pageItem = pageItem
 
-        hv = HexViewWidget(self._pageItem.data)
-        self.addTab(hv, "Hex view")
-
         vv = VstructViewWidget(self._pageItem.structs, self._pageItem.data)
         self.addTab(vv, "Structures")
+
+        hv = HexViewWidget(self._pageItem.data)
+        self.addTab(hv, "Hex view")
 
 
 class ClassDefinitionItemView(QTabWidget, LoggingObject):
@@ -524,6 +537,13 @@ class ClassDefinitionItemView(QTabWidget, LoggingObject):
         te.setDocument(td)
 
         self.addTab(te, "Class details")
+
+        vv = VstructViewWidget(self._cdItem.structs, self._cdItem.data)
+        self.addTab(vv, "Structures")
+
+        hv = HexViewWidget(self._cdItem.data)
+        self.addTab(hv, "Hex view")
+
 
     @property
     def _classDescription(self):
