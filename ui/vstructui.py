@@ -161,13 +161,15 @@ class VstructViewWidget(QWidget, LoggingObject):
         self._ui = uic.loadUi("ui/vstruct.ui")
         emptyLayout(self._ui.detailsLayout)
 
-        hv = HexViewWidget(self._buf, self._ui.detailsFrame)
-        self._ui.detailsLayout.addWidget(hv)
+        self._hv = HexViewWidget(self._buf, self._ui.detailsFrame)
+        self._ui.detailsLayout.addWidget(self._hv)
 
         tv = self._ui.treeView
         tv.setModel(self._model)
         tv.header().setSectionResizeMode(QHeaderView.Interactive)
         tv.header().resizeSection(0, 250)  # chosen empirically
+        tv.entered.connect(self._handleItemActivated)
+        tv.clicked.connect(self._handleItemActivated)
         tv.activated.connect(self._handleItemActivated)
 
         mainLayout = QGridLayout()
@@ -175,6 +177,10 @@ class VstructViewWidget(QWidget, LoggingObject):
         self.setLayout(mainLayout)
 
     def _handleItemActivated(self, itemIndex):
-        pass
+        item = self._model.getIndexData(itemIndex)
+        start = item.start
+        end = start + item.length
+        self._hv.colorRange(start, end)
+        self._hv.scrollTo(start)
 
 

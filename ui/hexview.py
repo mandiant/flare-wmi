@@ -1,9 +1,12 @@
 import hexdump
 
 from PyQt5 import uic
+from PyQt5.QtGui import QBrush
+from PyQt5.QtGui import QPalette
 from PyQt5.QtGui import QFontDatabase
 from PyQt5.QtGui import QTextDocument
 from PyQt5.QtCore import Qt
+from PyQt5.QtCore import pyqtSignal
 from PyQt5.QtCore import QAbstractTableModel
 from PyQt5.QtCore import QIdentityProxyModel
 from PyQt5.QtCore import QItemSelection
@@ -20,26 +23,14 @@ from common import h
 from common import LoggingObject
 
 
-class HexViewWidget(QWidget, LoggingObject):
-    def __init__(self, buf, parent=None):
-        super(HexViewWidget, self).__init__(parent)
-        self._buf = buf
-        layout = QGridLayout()
-        te = QTextEdit()
-        te.setReadOnly(True)
-        f = QFontDatabase.systemFont(QFontDatabase.FixedFont)
-        td = QTextDocument()
-        td.setDefaultFont(f)
-        td.setPlainText(hexdump.hexdump(buf, result="return"))
-        te.setDocument(td)
-        layout.addWidget(te, 0, 0)
-        self.setLayout(layout)
-
-
 class HexTableModel(QAbstractTableModel):
+    FILTER = ''.join([(len(repr(chr(x)))==3) and chr(x) or '.' for x in range(256)])
+    colorChanged = pyqtSignal()
     def __init__(self, buf, parent=None, *args):
         super(HexTableModel, self).__init__(parent, *args)
         self._buf = buf
+        self._colorStart = None
+        self._colorEnd = None
 
     def rowCount(self, parent):
         if len(self._buf) % 0x10 != 0:
@@ -48,55 +39,94 @@ class HexTableModel(QAbstractTableModel):
             return (len(self._buf) // 0x10)
 
     def columnCount(self, parent):
-        return 0x10
+        return 0x21
 
     def data(self, index, role):
         if not index.isValid():
             return None
-        elif role != Qt.DisplayRole:
-            return None
-        return ord(self._buf[(index.row() * 0x10) + index.column()])
+        elif role == Qt.BackgroundRole:
+            if self._colorStart is None or self._colorEnd is None:
+                return None
+            elif self._colorStart <= self.qindex2index(index) < self._colorEnd:
+                # BUG: need to highlight char entries, too
+                color = QApplication.palette().color(QPalette.Highlight)
+                return QBrush(color)
+            else:
+                return None
+        elif role == Qt.DisplayRole:
+            if index.column() == 0x10:
+                return ""
+            if index.column() > 0x10:
+                c = self._buf[self.qindex2index(index)]
+                return chr(ord(c)).translate(HexTableModel.FILTER)
+            else:
+                c = ord(self._buf[self.qindex2index(index)])
+                return "%02x" % (c)
 
     def headerData(self, section, orientation, role):
         if role != Qt.DisplayRole:
             return None
         elif orientation == Qt.Horizontal:
-            return "%01X" % (section)
+            if section < 0x10:
+                return "%01X" % (section)
+            else:
+                return ""
         elif orientation == Qt.Vertical:
             return "%04X" % (section * 0x10)
         else:
             return None
 
+    def colorRange(self, start, end):
+        self.clearColor()
+        self._colorStart = start
+        self._colorEnd = end
+        for i in xrange(start, end):
+            qib = self.index2qindexb(i)
+            qic = self.index2qindexb(i)
+            self.dataChanged.emit(qib, qib)
+            self.dataChanged.emit(qic, qic)
+        self.colorChanged.emit()
 
-class ByteProxyModel(QIdentityProxyModel):
-    def data(self, index, role):
-        c = self.sourceModel().data(index, role)
-        if c is None:
-            return None
-        else:
-            return "%02x" % (c)
+    def clearColor(self):
+        oldstart = self._colorStart
+        oldend = self._colorEnd
+        self._colorStart = None
+        self._colorEnd = None
+        if oldstart is not None and oldend is not None:
+            for i in xrange(oldstart, oldend):
+                qib = self.index2qindexb(i)
+                qic = self.index2qindexb(i)
+                self.dataChanged.emit(qib, qib)
+                self.dataChanged.emit(qic, qic)
+        self.colorChanged.emit()
 
-
-class CharProxyModel(QIdentityProxyModel):
-    FILTER = ''.join([(len(repr(chr(x)))==3) and chr(x) or '.' for x in range(256)])
-    def data(self, index, role):
-        c = self.sourceModel().data(index, role)
-        if c is None:
-            return None
-        else:
-            return chr(c).translate(CharProxyModel.FILTER)
-
-class RollingItemSelectionModel(QItemSelectionModel):
     def qindex2index(self, index):
-        m = self.model()
-        return (m.columnCount() * index.row()) + index.column()
+        if index.row() > 0x10:
+            return (0x10 * index.row() - 0x11) + index.column()
+        else:
+            return (0x10 * index.row()) + index.column()
 
-    def index2qindex(self, index):
-        m = self.model()
-        r = index // m.columnCount()
-        c = index % m.columnCount()
-        return m.index(r, c)
+    def index2qindexb(self, index):
+        """ for the byte side """
+        r = index // 0x10
+        c = index % 0x10
+        return self.index(r, c)
 
+    def index2qindexc(self, index):
+        """ for the char side """
+        r = (index // 0x10)
+        c = index % 0x10 + 0x11
+        return self.index(r, c)
+
+
+class HexItemSelectionModel(QItemSelectionModel):
+    def isInBytesSide(self, qindex):
+        return qindex.column() < 0x10
+
+    def isInCharsSide(self, qindex):
+        return qindex.column() > 0x10
+
+    # TODO: currently ignoring selectionFlags...
     def select(self, selection, selectionFlags):
         """
         selects items like this:
@@ -131,109 +161,83 @@ class RollingItemSelectionModel(QItemSelectionModel):
         if isinstance(selection, QItemSelection):
             # This is the overload with the QItemSelection passed to arg 0
             qindexes = selection.indexes()
+
+            bSideCount = sum([1 for i in qindexes if self.isInBytesSide(i)])
+            cSideCount = sum([1 for i in qindexes if self.isInCharsSide(i)])
+
+            m = self.model()
             indices = []
+            if bSideCount >= cSideCount:
+                # we assume the main select in on the left side.
+                for qindex in qindexes:
+                    if not self.isInBytesSide(qindex):
+                        continue
+                    indices.append(m.qindex2index(qindex))
 
-            for i in xrange(len(qindexes)):
-                qindex = qindexes[i]
-                indices.append(self.qindex2index(qindex))
+            else:
+                # we assume the main select in on the left side.
+                for qindex in qindexes:
+                    if not self.isInCharsSide(qindex):
+                        continue
+                    indices.append(m.qindex2index(qindex))
 
-            if indices:
-                low = min(indices)
-                high = max(indices)
+            if not indices:
+                super(HexItemSelectionModel, self).select(QItemSelection(),
+                                                        selectionFlags)
+                return
+            low = min(indices)
+            high = max(indices)
+            selection = QItemSelection()
+            for i in xrange(low, high):
+                qib = m.index2qindexb(i)
+                selection.select(qib, qib)
+                qic = m.index2qindexc(i)
+                selection.select(qic, qic)
+            super(HexItemSelectionModel, self).select(selection,
+                                                    selectionFlags)
 
-                selection = QItemSelection()
-                for i in xrange(low, high):
-                    qi = self.index2qindex(i)
-                    selection.select(qi, qi)
+
         elif isinstance(selection, QModelIndex):
             # This is the overload with the QModelIndex passed to arg 0
-            pass
+            super(HexItemSelectionModel, self).select(selection,
+                                                        selectionFlags)
 
         else:  # Just in case
             raise Exception("Unexpected type for arg 0: '%s'" % type(selection))
 
-        # Fall through. Select as normal
-        super(RollingItemSelectionModel, self).select(selection, selectionFlags)
 
-
-class HexViewWidget2(QWidget, LoggingObject):
+class HexViewWidget(QWidget, LoggingObject):
     def __init__(self, buf, parent=None):
-        super(HexViewWidget2, self).__init__(parent)
+        super(HexViewWidget, self).__init__(parent)
         self._buf = buf
         self._model = HexTableModel(self._buf)
 
-        self._cp = CharProxyModel()
-        self._cp.setSourceModel(self._model)
-
-        self._bp = ByteProxyModel()
-        self._bp.setSourceModel(self._model)
-
         # TODO: maybe subclass the loaded .ui and use that instance directly
         self._ui = uic.loadUi("ui/hexview.ui")
-        self._ui.byteView.setModel(self._bp)
-        self._ui.charView.setModel(self._cp)
+        self._ui.view.setModel(self._model)
+        for i in xrange(0x10):
+            self._ui.view.setColumnWidth(i, 25)
+        self._ui.view.setColumnWidth(0x10, 12)
+        for i in xrange(0x11, 0x22):
+            self._ui.view.setColumnWidth(i, 10)
 
-        bvsb = self._ui.byteView.verticalScrollBar()
-        cvsb = self._ui.charView.verticalScrollBar()
+        self._hsm = HexItemSelectionModel(self._model)
+        self._ui.view.setSelectionModel(self._hsm)
 
-        bvsb.valueChanged.connect(cvsb.setValue)
-        cvsb.valueChanged.connect(bvsb.setValue)
-
-        self._bsm = RollingItemSelectionModel(self._bp)
-        self._csm = RollingItemSelectionModel(self._cp)
-        self._bsm.selectionChanged.connect(self._handleByteSelectionChanged)
-        self._csm.selectionChanged.connect(self._handleCharSelectionChanged)
-
-        self._ui.byteView.setSelectionModel(self._bsm)
-        self._ui.charView.setSelectionModel(self._csm)
+        f = QFontDatabase.systemFont(QFontDatabase.FixedFont)
+        self._ui.view.setFont(f)
 
         mainLayout = QGridLayout()
         mainLayout.addWidget(self._ui, 0, 0)
         self.setLayout(mainLayout)
 
-    def _handleSelectionChanged(self, selected, deselected):
-        self._bsm.select(selected, QItemSelectionModel.SelectCurrent)
-        self._csm.select(selected, QItemSelectionModel.SelectCurrent)
+    def colorRange(self, start, end):
+        """ highlight by buffer indices """
+        self._model.colorRange(start, end)
 
-    def _handleByteSelectionChanged(self, selected, deselected):
-        bytesSelectedIndices = set([])
-        for qi in selected.indexes():
-            bytesSelectedIndices.add(self._bsm.qindex2index(qi))
-
-        charsSelectedIndices = set([])
-        for qi in self._csm.selection().indexes():
-            charsSelectedIndices.add(self._csm.qindex2index(qi))
-
-        if bytesSelectedIndices == charsSelectedIndices:
-            print("breaking cycle")
-            return
-
-        selection = QItemSelection()
-        for i in bytesSelectedIndices:
-            qi = self._bsm.index2qindex(i)
-            selection.select(qi, qi)
-        print("updating chars from bytes selection update")
-        self._csm.select(selection, QItemSelectionModel.Select)
-
-    def _handleCharSelectionChanged(self, selected, deselected):
-        charsSelectedIndices = set([])
-        for qi in selected.indexes():
-            charsSelectedIndices.add(self._csm.qindex2index(qi))
-
-        bytesSelectedIndices = set([])
-        for qi in self._bsm.selection().indexes():
-            bytesSelectedIndices.add(self._bsm.qindex2index(qi))
-
-        if bytesSelectedIndices == charsSelectedIndices:
-            print("breaking cycle")
-            return
-
-        selection = QItemSelection()
-        for i in bytesSelectedIndices:
-            qi = self._bsm.index2qindex(i)
-            selection.select(qi, qi)
-        print("updating bytes from char selection update")
-        self._bsm.select(selection, QItemSelectionModel.Select)
+    def scrollTo(self, index):
+        qi = self._model.index2qindexb(index)
+        self._ui.view.scrollTo(qi)
 
 
 def main():

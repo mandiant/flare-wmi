@@ -6,8 +6,8 @@
    <rect>
     <x>0</x>
     <y>0</y>
-    <width>1046</width>
-    <height>778</height>
+    <width>1195</width>
+    <height>784</height>
    </rect>
   </property>
   <property name="windowTitle">
@@ -41,7 +41,7 @@
           <widget class="QWidget" name="browseDetails" native="true">
            <property name="minimumSize">
             <size>
-             <width>650</width>
+             <width>670</width>
              <height>650</height>
             </size>
            </property>
@@ -111,9 +111,15 @@
              </property>
              <widget class="QListView" name="queryResultsList"/>
              <widget class="QFrame" name="queryResultsHexViewFrame">
+              <property name="sizePolicy">
+               <sizepolicy hsizetype="Minimum" vsizetype="Preferred">
+                <horstretch>0</horstretch>
+                <verstretch>0</verstretch>
+               </sizepolicy>
+              </property>
               <property name="minimumSize">
                <size>
-                <width>625</width>
+                <width>760</width>
                 <height>0</height>
                </size>
               </property>
@@ -178,7 +184,7 @@
     <rect>
      <x>0</x>
      <y>0</y>
-     <width>1046</width>
+     <width>1195</width>
      <height>23</height>
     </rect>
    </property>
