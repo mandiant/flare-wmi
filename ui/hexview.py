@@ -44,11 +44,12 @@ class HexTableModel(QAbstractTableModel):
     def data(self, index, role):
         if not index.isValid():
             return None
+        elif self.qindex2index(index) >= len(self._buf):
+            return None
         elif role == Qt.BackgroundRole:
             if self._colorStart is None or self._colorEnd is None:
                 return None
             elif self._colorStart <= self.qindex2index(index) < self._colorEnd:
-                # BUG: need to highlight char entries, too
                 color = QApplication.palette().color(QPalette.Highlight)
                 return QBrush(color)
             else:
@@ -81,8 +82,9 @@ class HexTableModel(QAbstractTableModel):
         self._colorStart = start
         self._colorEnd = end
         for i in xrange(start, end):
+            # mark data changed to encourage re-rendering of cell
             qib = self.index2qindexb(i)
-            qic = self.index2qindexb(i)
+            qic = self.index2qindexc(i)
             self.dataChanged.emit(qib, qib)
             self.dataChanged.emit(qic, qic)
         self.colorChanged.emit()
@@ -93,16 +95,17 @@ class HexTableModel(QAbstractTableModel):
         self._colorStart = None
         self._colorEnd = None
         if oldstart is not None and oldend is not None:
+            # mark data changed to encourage re-rendering of cell
             for i in xrange(oldstart, oldend):
                 qib = self.index2qindexb(i)
-                qic = self.index2qindexb(i)
+                qic = self.index2qindexc(i)
                 self.dataChanged.emit(qib, qib)
                 self.dataChanged.emit(qic, qic)
         self.colorChanged.emit()
 
     def qindex2index(self, index):
-        if index.row() > 0x10:
-            return (0x10 * index.row() - 0x11) + index.column()
+        if index.column() > 0x10:
+            return (0x10 * index.row()) + index.column() - 0x11
         else:
             return (0x10 * index.row()) + index.column()
 
