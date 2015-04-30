@@ -139,7 +139,7 @@ class TreeModel(QAbstractItemModel):
         return len(self._columns)
 
     def flags(self, index):
-        if not index.isValid():
+        if not index.is_valid():
             return Qt.NoItemFlags
         return Qt.ItemIsEnabled | Qt.ItemIsSelectable
 
@@ -149,7 +149,7 @@ class TreeModel(QAbstractItemModel):
         return None
 
     def data(self, index, role):
-        if not index.isValid():
+        if not index.is_valid():
             return None
 
         if role != Qt.DisplayRole:
@@ -163,7 +163,7 @@ class TreeModel(QAbstractItemModel):
         if not self.hasIndex(row, column, parent):
             return QModelIndex()
 
-        if not parent.isValid():
+        if not parent.is_valid():
             parentItem = self._root
         else:
             parentItem = self._getIndexItem(parent.internalId())
@@ -175,7 +175,7 @@ class TreeModel(QAbstractItemModel):
             return QModelIndex()
 
     def parent(self, index):
-        if not index.isValid():
+        if not index.is_valid():
             return QModelIndex()
 
         childItem = self._getIndexItem(index.internalId())
@@ -190,7 +190,7 @@ class TreeModel(QAbstractItemModel):
         if parent.column() > 0:
             return 0
 
-        if not parent.isValid():
+        if not parent.is_valid():
             parentItem = self._root
         else:
             parentItem = self._getIndexItem(parent.internalId())

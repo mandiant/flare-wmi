@@ -38,6 +38,7 @@ from ui.vstructui import VstructViewWidget
 from vstruct.primitives import v_bytes
 
 
+
 Context = namedtuple("Context", ["cim", "index", "cdcache", "clcache", "querier"])
 
 
@@ -87,7 +88,7 @@ class PhysicalDataPageItem(Item):
 
     @property
     def data(self):
-        return self._ctx.cim.getLogicalDataStore().getPhysicalPageBuffer(self.index)
+        return self._ctx.cim.logical_data_store().get_physical_page_buffer(self.index)
 
 
 class PhysicalDataPagesItem(Item):
@@ -102,7 +103,7 @@ class PhysicalDataPagesItem(Item):
     @cached_property
     def children(self):
         return [PhysicalDataPageItem(self._ctx, i) for i in
-                    xrange(self._ctx.cim.getDataMapping().header.physicalPages)]
+                    xrange(self._ctx.cim.data_mapping().header.physicalPages)]
 
     @property
     def type(self):
@@ -136,11 +137,11 @@ class LogicalDataPageItem(Item):
 
     @property
     def data(self):
-        return self._ctx.cim.getLogicalDataStore().getPageBuffer(self.index)
+        return self._ctx.cim.logical_data_store().get_logical_page_buffer(self.index)
 
     @property
     def structs(self):
-        page = self._ctx.cim.getLogicalDataStore().getPage(self.index)
+        page = self._ctx.cim.logical_data_store().get_page(self.index)
         ret = [
             StructItem(0x0, "tocs", page.tocs),
         ]
@@ -163,7 +164,7 @@ class LogicalDataPagesItem(Item):
     @cached_property
     def children(self):
         return [LogicalDataPageItem(self._ctx, i) for i in
-                    xrange(self._ctx.cim.getDataMapping().header.mappingEntries)]
+                    xrange(self._ctx.cim.data_mapping().header.mappingEntries)]
 
     @property
     def type(self):
@@ -201,7 +202,7 @@ class IndexKeyItem(Item):
 
     @property
     def isDataReference(self):
-        return self._key.isDataReference()
+        return self._key.is_data_reference()
 
 
 class IndexNodeItem(Item):
@@ -219,12 +220,12 @@ class IndexNodeItem(Item):
 
     @cached_property
     def children(self):
-        page = self._ctx.cim.getLogicalIndexStore().getPage(self._pageNumber)
+        page = self._ctx.cim.logical_index_store().get_page(self._pageNumber)
         ret = []
-        for i in xrange(page.getKeyCount()):
-            ret.append(IndexNodeItem(self._ctx, page.getChildByIndex(i)))
-            ret.append(IndexKeyItem(self._ctx, page.getKey(i)))
-        ret.append(IndexNodeItem(self._ctx, page.getChildByIndex(page.getKeyCount())))
+        for i in xrange(page.key_count()):
+            ret.append(IndexNodeItem(self._ctx, page.get_child(i)))
+            ret.append(IndexKeyItem(self._ctx, page.get_key(i)))
+        ret.append(IndexNodeItem(self._ctx, page.get_child(page.key_count())))
         return ret
 
     @property
@@ -237,7 +238,7 @@ class IndexNodeItem(Item):
 
     @property
     def data(self):
-        return self._ctx.cim.getLogicalIndexStore().getPageBuffer(self._pageNumber)
+        return self._ctx.cim.logical_index_store().get_logical_page_buffer(self._pageNumber)
 
 
 class IndexRootItem(Item):
@@ -252,7 +253,7 @@ class IndexRootItem(Item):
     def children(self):
         return [
             IndexNodeItem(self._ctx,
-                self._ctx.cim.getLogicalIndexStore().getRootPageNumber()),
+                self._ctx.cim.logical_index_store().root_page_number()),
         ]
 
     @property
@@ -498,7 +499,7 @@ class IndexKeyItemView(QTabWidget, LoggingObject):
     def __init__(self, keyItem, parent=None):
         super(IndexKeyItemView, self).__init__(parent)
         self._keyItem = keyItem
-        if self._keyItem.isDataReference:
+        if self._keyItem.is_data_reference:
             hv = HexViewWidget(self._keyItem.data)
             self.addTab(hv, "Target hex view")
 
@@ -640,7 +641,7 @@ def main(type_, path):
     # yuck.
     cimctx = CimContext(
             c,
-            Index(c.getCimType(), c.getLogicalIndexStore()),
+            Index(c.getCimType(), c.logical_index_store()),
             {}, {})
     ctx = Context(cimctx.cim, cimctx.index, cimctx.cdcache, cimctx.clcache,
                   Querier(cimctx))

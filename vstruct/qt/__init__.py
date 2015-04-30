@@ -67,7 +67,7 @@ class VQStructSelectDialog(QtGui.QDialog):
         self.resize(500, 500)
 
     def dialog_activated(self, idx):
-        if idx.isValid():
+        if idx.is_valid():
             pnode = idx.internalPointer()
             self.structname = pnode.structname
         self.accept()
@@ -150,7 +150,7 @@ class VQStructNamespaceDialog(QtGui.QDialog):
         self.resize(500, 500)
 
     def dialog_activated(self, idx):
-        if idx.isValid():
+        if idx.is_valid():
             pnode = idx.internalPointer()
             self.modinfo = getattr(pnode, 'modinfo', None)
         self.accept()

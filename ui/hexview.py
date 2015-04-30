@@ -42,7 +42,7 @@ class HexTableModel(QAbstractTableModel):
         return 0x21
 
     def data(self, index, role):
-        if not index.isValid():
+        if not index.is_valid():
             return None
         elif self.qindex2index(index) >= len(self._buf):
             return None

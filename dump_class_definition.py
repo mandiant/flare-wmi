@@ -81,7 +81,7 @@ def main(type_, path, namespaceName, className):
     c = CIM(type_, path)
     ctx = CimContext(
             c,
-            Index(c.getCimType(), c.getLogicalIndexStore()),
+            Index(c.getCimType(), c.logical_index_store()),
             {}, {})
     q = Querier(ctx)
 

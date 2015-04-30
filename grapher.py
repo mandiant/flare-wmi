@@ -3,7 +3,7 @@ import logging
 from common import h
 from common import LoggingObject
 from cim import CIM
-from cim import isIndexPageNumberValid
+from cim import is_index_page_number_valid
 
 
 logging.basicConfig(level=logging.DEBUG)
@@ -30,13 +30,13 @@ class Grapher(LoggingObject):
         ret.append("<header> logical page: {:s} | physical page: {:s} | count: {:s}".format(
             h(page.logicalPage),
             h(page.physicalPage),
-            h(page.getKeyCount())))
-        for i in xrange(page.getKeyCount()):
-            key = page.getKey(i)
+            h(page.key_count())))
+        for i in xrange(page.key_count()):
+            key = page.get_key(i)
             ret.append(" | {{ {key:s} | <child_{i:s}> {child:s} }}".format(
                 key=formatKey(key),
                 i=h(i),
-                child=h(page.getChildByIndex(i))))
+                child=h(page.get_child(i))))
         return "".join(ret)
 
     def _graphIndexPageRec(self, page):
@@ -45,25 +45,25 @@ class Grapher(LoggingObject):
         print("     shape = \"record\"")
         print("  ];")
 
-        keyCount = page.getKeyCount()
+        keyCount = page.key_count()
         for i in xrange(keyCount + 1):
-            childIndex = page.getChildByIndex(i)
-            if not isIndexPageNumberValid(childIndex):
+            childIndex = page.get_child(i)
+            if not is_index_page_number_valid(childIndex):
                 continue
-            i = self._cim.getLogicalIndexStore()
-            self._graphIndexPageRec(i.getPage(childIndex))
+            i = self._cim.logical_index_store()
+            self._graphIndexPageRec(i.get_page(childIndex))
 
         for i in xrange(keyCount):
-            childIndex = page.getChildByIndex(i)
-            if not isIndexPageNumberValid(childIndex):
+            childIndex = page.get_child(i)
+            if not is_index_page_number_valid(childIndex):
                 continue
             print("  \"node{num:s}\":child_{i:s} -> \"node{child:s}\"".format(
                 num=h(page.logicalPage),
                 i=h(i),
                 child=h(childIndex)))
         # last entry has two links, to both less and greater children nodes
-        finalChildIndex = page.getChildByIndex(keyCount)
-        if isIndexPageNumberValid(finalChildIndex):
+        finalChildIndex = page.get_child(keyCount)
+        if is_index_page_number_valid(finalChildIndex):
             print("  \"node{num:s}\":child_{i:s} -> \"node{child:s}\"".format(
                 num=h(page.logicalPage),
                 i=h(keyCount - 1),
@@ -83,8 +83,8 @@ class Grapher(LoggingObject):
         print("}")
 
     def graphIndex(self):
-        i = self._cim.getLogicalIndexStore()
-        self.graphIndexFromPage(i.getRootPage())
+        i = self._cim.logical_index_store()
+        self.graphIndexFromPage(i.root_page())
 
 def main(type_, path, pageNum=None):
     if type_ not in ("xp", "win7"):
@@ -96,8 +96,8 @@ def main(type_, path, pageNum=None):
         g.graphIndex()
     else:
         pageNum = int(pageNum)
-        i = c.getLogicalIndexStore()
-        p = i.getPage(pageNum)
+        i = c.logical_index_store()
+        p = i.get_page(pageNum)
         g.graphIndexFromPage(p)
 
 

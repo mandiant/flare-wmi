@@ -11,7 +11,7 @@ def main(type_, path, key):
 
     c = CIM(type_, path)
     k = Key("a." + key)
-    sys.stdout.write(c.getLogicalDataStore().getObjectBuffer(k))
+    sys.stdout.write(c.logical_data_store().get_object_buffer(k))
     sys.stdout.flush()
 
 

@@ -88,18 +88,18 @@ class ObjectFetcherMixin(object):
     def getObject(self, query):
         """ fetch the first object buffer matching the query """
         self.d("query: {:s}".format(query))
-        ref = one(self.context.index.lookupKeys(query))
+        ref = one(self.context.index.lookup_keys(query))
         self.d("result: {:s}".format(ref))
-        return self.context.cim.getLogicalDataStore().getObjectBuffer(ref)
+        return self.context.cim.logical_data_store().get_object_buffer(ref)
 
     def getObjects(self, query):
         """ return a generator of object buffers matching the query """
         self.d("query: {:s}".format(query))
-        refs = self.context.index.lookupKeys(query)
+        refs = self.context.index.lookup_keys(query)
         self.d("result: {:d} objects".format(len(refs)))
-        for ref in self.context.index.lookupKeys(query):
+        for ref in self.context.index.lookup_keys(query):
             self.d("result: {:s}".format(ref))
-            yield self.context.cim.getLogicalDataStore().getObjectBuffer(ref)
+            yield self.context.cim.logical_data_store().get_object_buffer(ref)
 
     def getClassDefinitionByQuery(self, query):
         """ return the first .ClassDefinition matching the query """
@@ -109,7 +109,7 @@ class ObjectFetcherMixin(object):
     def getClassDefinitionBuffer(self, namespace, classname):
         """ return the first raw class definition buffer matching the query """
         q = self.getClassDefinitionQuery(namespace, classname)
-        ref = one(self.context.index.lookupKeys(q))
+        ref = one(self.context.index.lookup_keys(q))
 
         # some standard class definitions (like __NAMESPACE) are not in the
         #   current NS, but in the __SystemClass NS. So we try that one, too.
@@ -515,10 +515,10 @@ class ClassDefinition(LoggingObject):
 
     def getQualifierKey(self, qualifier):
         self.d("%s", qualifier)
-        self.d("%s", qualifier.getKey())
+        self.d("%s", qualifier.get_key())
         if qualifier.isBuiltinKey():
-            return BUILTIN_QUALIFIERS.vsReverseMapping(qualifier.getKey())
-        return self.getString(qualifier.getKey())
+            return BUILTIN_QUALIFIERS.vsReverseMapping(qualifier.get_key())
+        return self.getString(qualifier.get_key())
 
     def getClassName(self):
         """ return string """
@@ -757,8 +757,8 @@ class ClassInstance(LoggingObject):
 
     def getQualifierKey(self, qualifier):
         if qualifier.isBuiltinKey():
-            return BUILTIN_QUALIFIERS.vsReverseMapping(qualifier.getKey())
-        return self.getString(qualifier.getKey())
+            return BUILTIN_QUALIFIERS.vsReverseMapping(qualifier.get_key())
+        return self.getString(qualifier.get_key())
 
     def getClassName(self):
         """ return string """
@@ -1014,7 +1014,7 @@ class TreeClassDefinition(LoggingObject, QueryBuilderMixin, ObjectFetcherMixin):
                 self.IL())
 
         # HACK: TODO: fixme, use getObjects(q) instead
-        for ref in self.context.index.lookupKeys(q):
+        for ref in self.context.index.lookup_keys(q):
             ibuf = self.getObject(ref)
             self.d("instance of %s:%s: \n%s", self.ns, self.name, hexdump.hexdump(ibuf, result="return"))
             try:
@@ -1059,7 +1059,7 @@ class TreeClassInstance(LoggingObject):
 class Tree(LoggingObject):
     def __init__(self, cim):
         super(Tree, self).__init__()
-        self._context = CimContext(cim, Index(cim.getCimType(), cim.getLogicalIndexStore()), {}, {})
+        self._context = CimContext(cim, Index(cim.getCimType(), cim.logical_index_store()), {}, {})
 
     def __repr__(self):
         return "Tree"

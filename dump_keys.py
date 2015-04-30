@@ -3,7 +3,7 @@ import logging
 from common import h
 from common import LoggingObject
 from cim import CIM
-from cim import isIndexPageNumberValid
+from cim import is_index_page_number_valid
 
 
 logging.basicConfig(level=logging.DEBUG)
@@ -26,22 +26,22 @@ class Printer(LoggingObject):
         self._cim = cim
 
     def _printPageRec(self, page):
-        for i in xrange(page.getKeyCount()):
-            key = page.getKey(i)
+        for i in xrange(page.key_count()):
+            key = page.get_key(i)
             print(formatKey(key))
 
-        keyCount = page.getKeyCount()
+        keyCount = page.key_count()
         for i in xrange(keyCount + 1):
-            childIndex = page.getChildByIndex(i)
-            if not isIndexPageNumberValid(childIndex):
+            childIndex = page.get_child(i)
+            if not is_index_page_number_valid(childIndex):
                 continue
-            i = self._cim.getLogicalIndexStore()
-            i = self._cim.getLogicalIndexStore()
-            self._printPageRec(i.getPage(childIndex))
+            i = self._cim.logical_index_store()
+            i = self._cim.logical_index_store()
+            self._printPageRec(i.get_page(childIndex))
 
     def printKeys(self):
-        i = self._cim.getLogicalIndexStore()
-        self._printPageRec(i.getRootPage())
+        i = self._cim.logical_index_store()
+        self._printPageRec(i.root_page())
 
 def main(type_, path, pageNum=None):
     if type_ not in ("xp", "win7"):
