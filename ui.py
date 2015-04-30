@@ -16,7 +16,7 @@ from cim import Index
 from cim import formatKey
 from cim import DATA_PAGE_SIZE
 from objects import CimContext
-from objects import getClassId
+from objects import get_class_id
 from objects import ClassLayout
 from objects import CIM_TYPE_SIZES
 from objects import ClassDefinition
@@ -51,7 +51,7 @@ class Querier(LoggingObject, QueryBuilderMixin, ObjectFetcherMixin):
         return "Querier()"
 
     def get_class_definition(self, namespace, classname):
-        classId = getClassId(namespace, classname)
+        classId = get_class_id(namespace, classname)
         cd = self.context.cdcache.get(classId, None)
         if cd is None:
             self.d("cdcache miss")

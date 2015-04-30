@@ -767,7 +767,86 @@ class ClassLayout(LoggingObject, QueryBuilderMixin, ObjectFetcherMixin):
         return off
 
 
-def getClassId(namespace, classname):
+class Index(LoggingObject):
+    def __init__(self, context):
+        self.context = context
+
+    @property
+    def root_namespace(self):
+        pass
+
+    @property
+    def ns_cd(self):
+        return self.ns_cd(SYSTEM_NAMESPACE_NAME, NAMESPACE_CLASS_NAME)
+
+    @property
+    def ns_cl(self):
+        return self.ns_cl(SYSTEM_NAMESPACE_NAME, NAMESPACE_CLASS_NAME)
+
+    def get_ns_children_ns(self, namespace_name):
+        # TODO: method
+        q = "{}/{}/{}".format(
+                self.NS(namespace_name),
+                self.CI(NAMESPACE_CLASS_NAME),
+                self.IL())
+
+        # TODO: method
+        for ns_i in self.get_objects(q):
+            i = self.ns_cl.instance.vsParse(ns_i)
+            yield namespace_name + "\\" + i.get_property_value("Name")
+
+    def get_ns_children_cd(self, namespace_name):
+        q = "{}/{}".format(
+                self.NS(namespace_name),
+                self.CD())
+
+        # TODO: method
+        for cdbuf in self.get_objects(q):
+            cd = ClassDefinition(cdbuf)
+            # TODO: namedtuple
+            yield namespace_name, cd.class_name
+
+    def get_cd_children_ci(self, namespace_name, class_name):
+        # CI or KI?
+        q = "{}/{}/{}".format(
+                self.NS(namespace_name),
+                self.CI(class_name),
+                self.IL())
+
+        # HACK: TODO: fixme, use getObjects(q) instead
+        for ref in self.context.index.lookup_keys(q):
+            # TODO: method
+            ibuf = self.get_object(ref)
+            instance = self.get_cl(namespace_name, class_name).instance.vsParse(ibuf)
+            # TODO: need to parse key here, don't assume its "Name"
+            yield instance.get_property_value("Name")
+
+    def get_cd(self, namespace_name, class_name):
+        c_id = get_class_id(namespace_name, class_name)
+        c_cd = self.context.cdcache.get(c_id, None)
+        if c_cd is None:
+            self.d("cdcache miss")
+            # TODO: do this
+            raise NotImplementedError()
+            c_cd = ""
+            self.context.cdcache[c_id] = c_cd
+        return c_cd
+
+    def get_cl(self, namespace_name, class_name):
+        c_id = get_class_id(namespace_name, class_name)
+        c_cl = self.context.clcache.get(c_id, None)
+        if not c_cl:
+            self.d("clcache miss")
+            c_cd = self.get_cd(namespace_name, class_name)
+            c_cl = ClassLayout(self.context, namespace_name, c_cd)
+            self.context.clcache[c_id] = c_cl
+        return c_cl
+
+    def get_ci(self, namespace_name, class_name, instance_name):
+        pass
+
+
+def get_class_id(namespace, classname):
     return namespace + ":" + classname
 
 
@@ -792,19 +871,19 @@ class TreeNamespace(LoggingObject, QueryBuilderMixin, ObjectFetcherMixin):
     @property
     def namespaces(self):
         """ return a generator direct child namespaces """
-        namespaceClassId = getClassId(SYSTEM_NAMESPACE_NAME, NAMESPACE_CLASS_NAME)
-        namespaceCD = self.context.cdcache.get(namespaceClassId, None)
-        if namespaceCD is None:
+        ns_id = get_class_id(SYSTEM_NAMESPACE_NAME, NAMESPACE_CLASS_NAME)
+        ns_cd = self.context.cdcache.get(ns_id, None)
+        if ns_cd is None:
             self.d("cdcache miss")
             q = self.get_class_definition_query(SYSTEM_NAMESPACE_NAME, NAMESPACE_CLASS_NAME)
-            namespaceCD = ClassDefinition(self.get_object(q))
-            self.context.cdcache[namespaceClassId] = namespaceCD
+            ns_cd = ClassDefinition(self.get_object(q))
+            self.context.cdcache[ns_id] = ns_cd
 
-        namespaceCL = self.context.clcache.get(namespaceClassId, None)
+        namespaceCL = self.context.clcache.get(ns_id, None)
         if namespaceCL is None:
             self.d("clcache miss")
-            namespaceCL = ClassLayout(self.context, self.name, namespaceCD)
-            self.context.clcache[namespaceClassId] = namespaceCL
+            namespaceCL = ClassLayout(self.context, self.name, ns_cd)
+            self.context.clcache[ns_id] = namespaceCL
 
         q = "{}/{}/{}".format(
                 self.NS(self.name),
@@ -855,7 +934,7 @@ class TreeClassDefinition(LoggingObject, QueryBuilderMixin, ObjectFetcherMixin):
 
     @property
     def cd(self):
-        classId = getClassId(self.ns, self.name)
+        classId = get_class_id(self.ns, self.name)
         cd = self.context.cdcache.get(classId, None)
         if cd is None:
             self.d("cdcache miss")
@@ -866,7 +945,7 @@ class TreeClassDefinition(LoggingObject, QueryBuilderMixin, ObjectFetcherMixin):
 
     @property
     def cl(self):
-        classId = getClassId(self.ns, self.name)
+        classId = get_class_id(self.ns, self.name)
         cl = self.context.clcache.get(classId, None)
         if cl is None:
             self.d("clcache miss")
