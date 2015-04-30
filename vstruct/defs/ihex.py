@@ -91,7 +91,7 @@ class IHexFile(vstruct.VArray):
 
             if ctype == IHEX_REC_DATA:
                 addr = chunk.getAddress() + baseaddr
-                memparts.append( (addr, chunk.getData()) )
+                memparts.append( (addr, chunk.data()) )
                 continue
 
             if ctype == IHEX_REC_EXSEG:

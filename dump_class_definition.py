@@ -34,44 +34,44 @@ class Querier(LoggingObject, QueryBuilderMixin, ObjectFetcherMixin):
     def __repr__(self):
         return "Querier()"
 
-    def getClassDefinition(self, namespace, classname):
+    def get_class_definition(self, namespace, classname):
         classId = getClassId(namespace, classname)
         cd = self.context.cdcache.get(classId, None)
         if cd is None:
             self.d("cdcache miss")
-            buf = self.getClassDefinitionBuffer(namespace, classname)
+            buf = self.get_class_definition_buffer(namespace, classname)
             cd = ClassDefinition(buf)
             self.context.cdcache[classId] = cd
         return cd
 
     def getClassLayout(self, namespace, classname):
-        cd = self.getClassDefinition(namespace, classname)
+        cd = self.get_class_definition(namespace, classname)
         return ClassLayout(self.context, namespace, cd)
 
 
 def dump_class_def(cd, cl):
-    print("classname: %s" % cd.getClassName())
-    print("super: %s" % cd.getSuperClassName())
-    print("ts: %s" % cd.getTimestamp().isoformat("T"))
+    print("classname: %s" % cd.class_name())
+    print("super: %s" % cd.super_class_name())
+    print("ts: %s" % cd.timestamp().isoformat("T"))
     print("qualifiers:")
-    for k, v in cd.getQualifiers().iteritems():
+    for k, v in cd.qualifiers().iteritems():
         print("  %s: %s" % (k, str(v)))
     print("properties:")
-    for propname, prop in cd.getProperties().iteritems():
-        print("  name: %s" % prop.getName())
-        print("    type: %s" % prop.getType())
-        print("    order: %s" % prop.getEntryNumber())
+    for propname, prop in cd.properties().iteritems():
+        print("  name: %s" % prop.name())
+        print("    type: %s" % prop.type())
+        print("    order: %s" % prop.entry_number())
         print("    qualifiers:")
-        for k, v in prop.getQualifiers().iteritems():
+        for k, v in prop.qualifiers().iteritems():
             print("      %s: %s" % (k, str(v)))
     print("layout:")
     off = 0
     for prop in cl.properties:
-        print("  (%s)   %s %s" % (h(off), prop.getType(), prop.getName()))
-        if prop.getType().isArray():
+        print("  (%s)   %s %s" % (h(off), prop.type(), prop.name()))
+        if prop.type().is_array():
             off += 0x4
         else:
-            off += CIM_TYPE_SIZES[prop.getType().getType()]
+            off += CIM_TYPE_SIZES[prop.type().type()]
 
 
 def main(type_, path, namespaceName, className):
@@ -88,14 +88,14 @@ def main(type_, path, namespaceName, className):
     while className != "":
         print("%s" % "=" * 80)
         print("namespace: %s" % namespaceName)
-        cd = q.getClassDefinition(namespaceName, className)
+        cd = q.get_class_definition(namespaceName, className)
         cl = q.getClassLayout(namespaceName, className)
         try:
             dump_class_def(cd, cl)
         except:
             print("ERROR: failed to dump class definition!")
             print traceback.format_exc()
-        className = cd.getSuperClassName()
+        className = cd.super_class_name()
 
 
 if __name__ == "__main__":

@@ -50,18 +50,18 @@ class Querier(LoggingObject, QueryBuilderMixin, ObjectFetcherMixin):
     def __repr__(self):
         return "Querier()"
 
-    def getClassDefinition(self, namespace, classname):
+    def get_class_definition(self, namespace, classname):
         classId = getClassId(namespace, classname)
         cd = self.context.cdcache.get(classId, None)
         if cd is None:
             self.d("cdcache miss")
-            buf = self.getClassDefinitionBuffer(namespace, classname)
+            buf = self.get_class_definition_buffer(namespace, classname)
             cd = ClassDefinition(buf)
             self.context.cdcache[classId] = cd
         return cd
 
     def getClassLayout(self, namespace, classname):
-        cd = self.getClassDefinition(namespace, classname)
+        cd = self.get_class_definition(namespace, classname)
         return ClassLayout(self.context, namespace, cd)
 
 
@@ -198,7 +198,7 @@ class IndexKeyItem(Item):
 
     @property
     def data(self):
-        return self._ctx.querier.getObject(self._key)
+        return self._ctx.querier.get_object(self._key)
 
     @property
     def isDataReference(self):
@@ -552,28 +552,28 @@ class ClassDefinitionItemView(QTabWidget, LoggingObject):
         cl = self._cdItem.cl
 
         ret = []
-        ret.append("classname: %s" % cd.getClassName())
-        ret.append("super: %s" % cd.getSuperClassName())
-        ret.append("ts: %s" % cd.getTimestamp().isoformat("T"))
+        ret.append("classname: %s" % cd.class_name())
+        ret.append("super: %s" % cd.super_class_name())
+        ret.append("ts: %s" % cd.timestamp().isoformat("T"))
         ret.append("qualifiers:")
-        for k, v in cd.getQualifiers().iteritems():
+        for k, v in cd.qualifiers().iteritems():
             ret.append("  %s: %s" % (k, str(v)))
         ret.append("properties:")
-        for propname, prop in cd.getProperties().iteritems():
-            ret.append("  name: %s" % prop.getName())
-            ret.append("    type: %s" % prop.getType())
-            ret.append("    order: %s" % prop.getEntryNumber())
+        for propname, prop in cd.properties().iteritems():
+            ret.append("  name: %s" % prop.name())
+            ret.append("    type: %s" % prop.type())
+            ret.append("    order: %s" % prop.entry_number())
             ret.append("    qualifiers:")
-            for k, v in prop.getQualifiers().iteritems():
+            for k, v in prop.qualifiers().iteritems():
                 ret.append("      %s: %s" % (k, str(v)))
         ret.append("layout:")
         off = 0
         for prop in cl.properties:
-            ret.append("  (%s)   %s %s" % (h(off), prop.getType(), prop.getName()))
-            if prop.getType().isArray():
+            ret.append("  (%s)   %s %s" % (h(off), prop.type(), prop.name()))
+            if prop.type().is_array():
                 off += 0x4
             else:
-                off += CIM_TYPE_SIZES[prop.getType().getType()]
+                off += CIM_TYPE_SIZES[prop.type().type()]
         return "\n".join(ret)
 
 

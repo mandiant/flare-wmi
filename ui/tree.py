@@ -40,7 +40,7 @@ class ListItem(Item):
 
     def _getChildren(self):
         if self._children is None:
-            self._children = sorted(self._getter(), key=lambda i: i.getName())
+            self._children = sorted(self._getter(), key=lambda i: i.name())
         return self._children
 
     @property
