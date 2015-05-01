@@ -738,9 +738,9 @@ class Moniker(LoggingObject):
         super(Moniker, self).__init__()
         self._string = string
         self.hostname = None  # type: str
-        self.namespace = None  # type: str
-        self.klass = None  # type: str
-        self.instance = None  # type: dict of str to str
+        self.namespace_name = None  # type: str
+        self.class_name = None  # type: str
+        self.instance_name = None  # type: dict of str to str
         self._parse()
 
     def __str__(self):
@@ -757,7 +757,7 @@ class Moniker(LoggingObject):
             //./root/cimv2:Win32_Service.Name='Beep' --> instance
 
         we'd like to support this, but can't differentiate this
-          from a class:
+          from a namespace:
             //./root/cimv2/Win32_Service --> class
         """
         s = self._string
@@ -780,16 +780,16 @@ class Moniker(LoggingObject):
         # s must now not contain any special characters
         # we'll process the keys later
 
-        self.namespace, _, self.klass = s.partition(":")
-        if self.klass == "":
-            self.klass = None
-        self.namespace = self.namespace.replace("/", "\\")
+        self.namespace_name, _, self.class_name = s.partition(":")
+        if self.class_name == "":
+            self.class_name = None
+        self.namespace_name = self.namespace_name.replace("/", "\\")
 
         if keys is not None:
-            self.instance = {}
+            self.instance_name = {}
             for key in keys.split(","):
                 k, _, v = key.partition("=")
-                self.instance[k] = v.strip("\"'")
+                self.instance_name[k] = v.strip("\"'")
 
 
 def main(type_, path):

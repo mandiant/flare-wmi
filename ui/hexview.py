@@ -1,5 +1,3 @@
-import hexdump
-
 from PyQt5 import uic
 from PyQt5.QtGui import QBrush
 from PyQt5.QtGui import QPalette
@@ -16,7 +14,6 @@ from PyQt5.QtWidgets import QApplication
 
 import os.path, sys
 sys.path.append(os.path.join(os.path.dirname(os.path.realpath(__file__)), os.pardir))
-from common import h
 from common import LoggingObject
 
 

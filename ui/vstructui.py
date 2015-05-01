@@ -1,10 +1,6 @@
 import binascii
-from collections import namedtuple
 
 from PyQt5 import uic
-from PyQt5.QtCore import Qt
-from PyQt5.QtCore import QModelIndex
-from PyQt5.QtCore import QAbstractItemModel
 from PyQt5.QtWidgets import QWidget
 from PyQt5.QtWidgets import QHeaderView
 from PyQt5.QtWidgets import QGridLayout
@@ -15,10 +11,8 @@ from vstruct import VStruct
 from vstruct.primitives import v_prim
 from vstruct.primitives import v_number
 from vstruct.primitives import v_bytes
-from ui.tree import TreeNode
 from ui.tree import TreeModel
 from ui.tree import ColumnDef
-from ui.uicommon import StructItem
 from ui.uicommon import emptyLayout
 from ui.hexview import HexViewWidget
 
@@ -167,7 +161,6 @@ class VstructViewWidget(QWidget, LoggingObject):
         tv = self._ui.treeView
         tv.setModel(self._model)
         tv.header().setSectionResizeMode(QHeaderView.Interactive)
-        tv.header().resizeSection(0, 250)  # chosen empirically
         tv.entered.connect(self._handleItemActivated)
         tv.clicked.connect(self._handleItemActivated)
         tv.activated.connect(self._handleItemActivated)
@@ -182,5 +175,3 @@ class VstructViewWidget(QWidget, LoggingObject):
         end = start + item.length
         self._hv.colorRange(start, end)
         self._hv.scrollTo(start)
-
-

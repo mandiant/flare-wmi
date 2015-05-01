@@ -23,11 +23,10 @@ from ui.uicommon import emptyLayout
 from ui.hexview import HexViewWidget
 from ui.vstructui import VstructViewWidget
 from vstruct.primitives import v_bytes
-
+from vstruct.primitives import v_zstr
 
 
 Context = namedtuple("Context", ["cim", "index", "object_resolver"])
-
 
 
 class PhysicalDataPageItem(Item):
@@ -204,6 +203,28 @@ class IndexNodeItem(Item):
     @property
     def data(self):
         return self._ctx.cim.logical_index_store.get_logical_page_buffer(self._page_number)
+
+    @property
+    def structs(self):
+        page = self._ctx.cim.logical_index_store.get_page(self._page_number)
+        ret = [
+            StructItem(0x0, "node", page),
+        ]
+
+        data_offset = page.vsGetOffset("data")
+        for i in xrange(page.key_count):
+            string_part_count = page.string_definition_table[i]
+
+            for j in range(string_part_count):
+                string_part_index = page.string_definition_table[i + 1 + j]
+
+                s = v_zstr()
+                string_offset = page.string_table[string_part_index]
+                s.vsParse(page.data, offset=string_offset)
+
+                ret.append(StructItem(data_offset + string_offset, "String {:s}, fragment {:s}".format(h(i), h(j)), s))
+
+        return ret
 
 
 class IndexRootItem(Item):
@@ -490,6 +511,18 @@ class LogicalDataPageItemView(QTabWidget, LoggingObject):
         self.addTab(hv, "Hex view")
 
 
+class IndexNodeItemView(QTabWidget, LoggingObject):
+    def __init__(self, node_item, parent=None):
+        super(IndexNodeItemView, self).__init__(parent)
+        self._node_item = node_item
+
+        vv = VstructViewWidget(self._node_item.structs, self._node_item.data)
+        self.addTab(vv, "Structures")
+
+        hv = HexViewWidget(self._node_item.data)
+        self.addTab(hv, "Hex view")
+
+
 class ClassDefinitionItemView(QTabWidget, LoggingObject):
     def __init__(self, cd_item, parent=None):
         super(ClassDefinitionItemView, self).__init__(parent)
@@ -586,7 +619,7 @@ class Form(QWidget, LoggingObject):
             details_layout.addWidget(v)
 
         elif isinstance(item, IndexNodeItem):
-            v = DataPageView(item, details)
+            v = IndexNodeItemView(item, details)
             details_layout.addWidget(v)
 
         elif isinstance(item, IndexKeyItem):
