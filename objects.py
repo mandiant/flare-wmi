@@ -348,7 +348,7 @@ class ClassDefinition(vstruct.VStruct, LoggingObject):
         self.qualifiers_list = QualifiersList()
         self.property_references = PropertyReferenceList()
         self.junk = v_bytes(size=0)
-        self.data_length = v_uint32()
+        self._data_length = v_uint32()
         self.data = v_bytes(size=0)
 
     def pcb_header(self):
@@ -356,7 +356,7 @@ class ClassDefinition(vstruct.VStruct, LoggingObject):
 
     @property
     def data_length(self):
-        return self.data_length & 0x7FFFFFFF
+        return self._data_length & 0x7FFFFFFF
 
     def pcb_data_length(self):
         self["data"].vsSetLength(self.data_length)
@@ -620,7 +620,7 @@ class ClassInstance(vstruct.VStruct, LoggingObject):
         raise NotImplementedError()
 
 
-class ClassLayout(LoggingObject, QueryBuilderMixin, ObjectFetcherMixin):
+class ClassLayout(LoggingObject):
     def __init__(self, object_resolver, namespace, class_definition):
         """
         namespace is a string
@@ -636,7 +636,7 @@ class ClassLayout(LoggingObject, QueryBuilderMixin, ObjectFetcherMixin):
         className = self.class_definition.class_name()
         classDerivation = []  # initially, ordered from child to parent
         while className != "":
-            cd = self.get_class_definition(self.namespace, className)
+            cd = self.object_resolver.get_cd(self.namespace, className)
             classDerivation.append(cd)
             self.d("parent of %s is %s", className, cd.super_class_name)
             className = cd.super_class_name
@@ -842,7 +842,7 @@ class TreeNamespace(LoggingObject):
 
     @property
     def classes(self):
-        for cd in self._object_resolver.get_ns_children_cds(self.name):
+        for cd in self._object_resolver.get_ns_children_cd(self.name):
             yield TreeClassDefinition(self._object_resolver, self.name, cd.class_name)
 
 

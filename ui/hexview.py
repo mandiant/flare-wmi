@@ -4,16 +4,13 @@ from PyQt5 import uic
 from PyQt5.QtGui import QBrush
 from PyQt5.QtGui import QPalette
 from PyQt5.QtGui import QFontDatabase
-from PyQt5.QtGui import QTextDocument
 from PyQt5.QtCore import Qt
 from PyQt5.QtCore import pyqtSignal
 from PyQt5.QtCore import QAbstractTableModel
-from PyQt5.QtCore import QIdentityProxyModel
 from PyQt5.QtCore import QItemSelection
 from PyQt5.QtCore import QModelIndex
 from PyQt5.QtCore import QItemSelectionModel
 from PyQt5.QtWidgets import QWidget
-from PyQt5.QtWidgets import QTextEdit
 from PyQt5.QtWidgets import QGridLayout
 from PyQt5.QtWidgets import QApplication
 
@@ -42,7 +39,7 @@ class HexTableModel(QAbstractTableModel):
         return 0x21
 
     def data(self, index, role):
-        if not index.is_valid():
+        if not index.isValid():
             return None
         elif self.qindex2index(index) >= len(self._buf):
             return None

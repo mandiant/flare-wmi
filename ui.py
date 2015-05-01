@@ -108,7 +108,7 @@ class LogicalDataPageItem(Item):
     def structs(self):
         page = self._ctx.cim.logical_data_store.get_page(self.index)
         ret = [
-            StructItem(0x0, "tocs", page.tocs),
+            StructItem(0x0, "toc", page.toc),
         ]
         for i, data in enumerate(page.objects):
             vbuf = v_bytes(size=len(data.buffer))
@@ -348,7 +348,7 @@ class ClassDefinitionListItem(Item):
         ret = []
         ns = TreeNamespace(self._ctx, self._name)
         for cd in ns.classes:
-            ret.append(ClassDefinitionItem(self._ctx, cd.ns, cd.name))
+            ret.append(ClassDefinitionItem(self._ctx.object_resolver, cd.ns, cd.name))
         return ret
 
     @property

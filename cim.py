@@ -84,7 +84,7 @@ MAPPING_HEADER_TYPES = {
 class EntryWin7(vstruct.VStruct):
     def __init__(self):
         vstruct.VStruct.__init__(self)
-        self.page_number = v_uint32()
+        self._page_number = v_uint32()
         self.page_crc = v_uint32()
         self.free_space = v_uint32()
         self.used_space = v_uint32()
@@ -94,7 +94,7 @@ class EntryWin7(vstruct.VStruct):
     @property
     def page_number(self):
         # TODO: add lookup against header.physicalPages to ensure range
-        return self.page_number & MAPPING_PAGE_ID_MASK
+        return self._page_number & MAPPING_PAGE_ID_MASK
 
 
 class MappingWin7(vstruct.VStruct):
@@ -118,7 +118,7 @@ class MappingWin7(vstruct.VStruct):
         for i in xrange(self.header.mapping_entry_count):
             self.entries.vsAddElement(EntryWin7())
 
-    def pcb_numFreeDwords(self):
+    def pcb_free_dword_count(self):
         self["free"].vsSetLength(self.free_dword_count * 0x4)
 
     def _build_reverse_mapping(self):
@@ -167,7 +167,7 @@ class MappingXP(vstruct.VStruct):
         for i in xrange(self.header.mapping_entries_count):
             self.entries.vsAddElement(EntryXP())
 
-    def pcb_numFreeDwords(self):
+    def pcb_free_dword_count(self):
         self["free"].vsSetLength(self.free_dword_count * 0x4)
 
     def _build_reverse_mapping(self):
@@ -440,14 +440,14 @@ class LogicalDataStore(LoggingObject):
             return f.read(DATA_PAGE_SIZE)
 
     def get_logical_page_buffer(self, index):
-        physical_page_number = self._mapping.entries[index].page_number()
+        physical_page_number = self._mapping.entries[index].page_number
         return self.get_physical_page_buffer(physical_page_number)
 
     def get_page(self, index):
         """
         return: DataPage instance
         """
-        physical_page_number = self._mapping.entries[index].page_number()
+        physical_page_number = self._mapping.entries[index].page_number
         return DataPage(self.get_logical_page_buffer(index), index, physical_page_number)
 
     def get_object_buffer(self, key):
@@ -473,7 +473,7 @@ class LogicalDataStore(LoggingObject):
         i = 1
         while found_length < target_length:
             # TODO: should simply foreach an iterable here
-            next_page_buffer = self.get_logical_page_buffer(dataPage + i)
+            next_page_buffer = self.get_logical_page_buffer(key.data_page + i)
             if found_length + len(next_page_buffer) > target_length:
                 # this is the last page containing data for this item
                 chunk_size = target_length - found_length
@@ -515,7 +515,7 @@ class LogicalIndexStore(LoggingObject):
 
     @property
     def _root_page_number_win7(self):
-        return int(self._mapping.entries[0x0].usedSpace)
+        return int(self._mapping.entries[0x0].used_space)
 
     @property
     def _root_page_number(self):
@@ -714,16 +714,13 @@ class CIM(LoggingObject):
 
     @cached_property
     def mappings(self):
-        if self._current_index_mapping is None:
-            fp = self._current_mapping_file()
-            dm = self._mapping_class()
-            im = self._mapping_class()
-            with open(fp, "rb") as f:
-                dm.vsParseFd(f)
-                im.vsParseFd(f)
-            self._current_data_mapping = dm
-            self._current_index_mapping = im
-        return self._current_data_mapping, self._current_index_mapping
+        fp = self._current_mapping_file
+        dm = self._mapping_class()
+        im = self._mapping_class()
+        with open(fp, "rb") as f:
+            dm.vsParseFd(f)
+            im.vsParseFd(f)
+        return dm, im
 
     @property
     def data_mapping(self):
