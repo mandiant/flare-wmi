@@ -1,32 +1,18 @@
-import sys
 import logging
-import hexdump
 from collections import namedtuple
 
 from funcy.objects import cached_property
 from PyQt5.QtGui import *
-from PyQt5.QtCore import *
 from PyQt5.QtWidgets import *
-from PyQt5.QtCore import QAbstractItemModel, QFile, QIODevice, QModelIndex, Qt
-from PyQt5.QtWidgets import QApplication, QTreeView
+from PyQt5.QtWidgets import QApplication
 from PyQt5 import uic
 
 from cim import CIM
 from cim import Index
-from cim import formatKey
-from cim import DATA_PAGE_SIZE
-from objects import CimContext
-from objects import get_class_id
-from objects import ClassLayout
 from objects import CIM_TYPE_SIZES
-from objects import ClassDefinition
-from objects import QueryBuilderMixin
-from objects import ObjectFetcherMixin
 from objects import TreeNamespace
 from objects import TreeClassDefinition
-from objects import TreeClassInstance
 from common import h
-from common import one
 from common import LoggingObject
 from ui.tree import Item
 from ui.tree import TreeModel
@@ -39,30 +25,8 @@ from vstruct.primitives import v_bytes
 
 
 
-Context = namedtuple("Context", ["cim", "index", "cdcache", "clcache", "querier"])
+Context = namedtuple("Context", ["cim", "index", "object_resolver"])
 
-
-class Querier(LoggingObject, QueryBuilderMixin, ObjectFetcherMixin):
-    def __init__(self, context):
-        super(Querier, self).__init__()
-        self.context = context
-
-    def __repr__(self):
-        return "Querier()"
-
-    def get_class_definition(self, namespace, classname):
-        classId = get_class_id(namespace, classname)
-        cd = self.context.cdcache.get(classId, None)
-        if cd is None:
-            self.d("cdcache miss")
-            buf = self.get_class_definition_buffer(namespace, classname)
-            cd = ClassDefinition(buf)
-            self.context.cdcache[classId] = cd
-        return cd
-
-    def getClassLayout(self, namespace, classname):
-        cd = self.get_class_definition(namespace, classname)
-        return ClassLayout(self.context, namespace, cd)
 
 
 class PhysicalDataPageItem(Item):
