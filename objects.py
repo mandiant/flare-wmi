@@ -2,8 +2,6 @@
 #   what is "DYNPROPS: True"?
 #   where do descriptions come from?
 #   how to determine start of TOC in class instance?
-#   optimize lookups
-#   clean up context silliness
 # BUGs:
 #   class instance: "root\\CIMV2" Microsoft_BDD_Info NS_68577372C66A7B20658487FBD959AA154EF54B5F935DCC5663E9228B44322805/CI_6FCB95E1CB11D0950DA7AE40A94D774F02DCD34701D9645E00AB9444DBCF640B/IL_EEC4121F2A07B61ABA16414812AA9AFC39AB0A136360A5ACE2240DC19B0464EB.1606.116085.3740
 
@@ -29,97 +27,6 @@ g_logger = logging.getLogger("cim.objects")
 ROOT_NAMESPACE_NAME = "root"
 SYSTEM_NAMESPACE_NAME = "__SystemClass"
 NAMESPACE_CLASS_NAME = "__namespace"
-
-
-# usually I'd avoid a "context", but its useful here to
-#   maintain multiple caches and shared objects.
-# cim is a cim.CIM object
-# index is a cim.Index object
-# cdcache is a dict from class id to .ClassDefinition object
-# clcache is a dict from class id to .ClassLayout objects
-CimContext = namedtuple("CimContext", ["cim", "index", "cdcache", "clcache"])
-
-
-class QueryBuilderMixin(object):
-    def __init__(self):
-        # self must have the following fields:
-        #   - context:CimContext
-        pass
-
-    def _build(self, prefix, name=None):
-        if name is None:
-            return prefix
-        else:
-            return prefix + self.context.index.hash(name.upper().encode("UTF-16LE"))
-
-    def NS(self, name=None):
-        return self._build("NS_", name)
-
-    def CD(self, name=None):
-        return self._build("CD_", name)
-
-    def CR(self, name=None):
-        return self._build("CR_", name)
-
-    def R(self, name=None):
-        return self._build("R_", name)
-
-    def CI(self, name=None):
-        return self._build("CI_", name)
-
-    def KI(self, name=None):
-        return self._build("KI_", name)
-
-    def IL(self, name=None):
-        return self._build("IL_", name)
-
-    def I(self, name=None):
-        return self._build("I_", name)
-
-    def get_class_definition_query(self, ns, name):
-        return "{}/{}".format(self.NS(ns), self.CD(name))
-
-
-class ObjectFetcherMixin(object):
-    def __init__(self):
-        # self must have the following fields:
-        #   - context:CimContext
-        pass
-
-    def get_object(self, query):
-        """ fetch the first object buffer matching the query """
-        self.d("query: {:s}".format(query))
-        ref = one(self.context.index.lookup_keys(query))
-        self.d("result: {:s}".format(ref))
-        return self.context.cim.logical_data_store().get_object_buffer(ref)
-
-    def get_objects(self, query):
-        """ return a generator of object buffers matching the query """
-        self.d("query: {:s}".format(query))
-        refs = self.context.index.lookup_keys(query)
-        self.d("result: {:d} objects".format(len(refs)))
-        for ref in self.context.index.lookup_keys(query):
-            self.d("result: {:s}".format(ref))
-            yield self.context.cim.logical_data_store().get_object_buffer(ref)
-
-    def get_class_definition_buffer(self, namespace, classname):
-        """ return the first raw class definition buffer matching the query """
-        q = self.get_class_definition_query(namespace, classname)
-        ref = one(self.context.index.lookup_keys(q))
-
-        # some standard class definitions (like __NAMESPACE) are not in the
-        #   current NS, but in the __SystemClass NS. So we try that one, too.
-
-        if ref is None:
-            self.d("didn't find %s in %s, retrying in %s",
-                    classname, namespace, SYSTEM_NAMESPACE_NAME)
-            q = self.get_class_definition_query(SYSTEM_NAMESPACE_NAME, classname)
-        return self.get_object(q)
-
-    def get_class_definition(self, namespace, classname):
-        """ return the first .ClassDefinition matching the query """
-        # TODO: remove me
-        return ClassDefinition(self.get_class_definition_buffer(namespace, classname))
 
 
 class FILETIME(vstruct.primitives.v_prim):
@@ -188,7 +95,7 @@ class ClassDefinitionHeader(vstruct.VStruct):
         # so they all add up to 0x
         self.unk4 = v_uint32()  # not present if no superclass
 
-    def pcb_superClassNameWLen(self):
+    def pcb_super_class_unicode_length(self):
         self["super_class_unicode"].vsSetLength(self.super_class_unicode_length * 2)
         if self.super_class_unicode_length == 0:
             self.vsSetField("super_class_ascii", v_str(size=0))
@@ -374,9 +281,9 @@ class _Property(vstruct.VStruct):
 
 
 class Property(LoggingObject):
-    def __init__(self, classDef, propref):
+    def __init__(self, class_def, propref):
         super(Property, self).__init__()
-        self._class_definition = classDef
+        self._class_definition = class_def
         self._propref = propref
 
         # this is the raw struct, without references/strings resolved
@@ -714,13 +621,13 @@ class ClassInstance(vstruct.VStruct, LoggingObject):
 
 
 class ClassLayout(LoggingObject, QueryBuilderMixin, ObjectFetcherMixin):
-    def __init__(self, context, namespace, class_definition):
+    def __init__(self, object_resolver, namespace, class_definition):
         """
         namespace is a string
         classDefinition is a .ClassDefinition object
         """
         super(ClassLayout, self).__init__()
-        self.context = context
+        self.object_resolver = object_resolver
         self.namespace = namespace
         self.class_definition = class_definition
 
@@ -767,45 +674,129 @@ class ClassLayout(LoggingObject, QueryBuilderMixin, ObjectFetcherMixin):
         return off
 
 
-class Index(LoggingObject):
-    def __init__(self, context):
-        self.context = context
+class ObjectResolver(LoggingObject):
+    def __init__(self, cim, index):
+        super(ObjectResolver, self).__init__()
+        self._cim = cim
+        self._index = index
+        self._cdcache = {}
+        self._clcache = {}
+
+    def _build(self, prefix, name=None):
+        if name is None:
+            return prefix
+        else:
+            return prefix + self._index.hash(name.upper().encode("UTF-16LE"))
+
+    def NS(self, name=None):
+        return self._build("NS_", name)
+
+    def CD(self, name=None):
+        return self._build("CD_", name)
+
+    def CR(self, name=None):
+        return self._build("CR_", name)
+
+    def R(self, name=None):
+        return self._build("R_", name)
+
+    def CI(self, name=None):
+        return self._build("CI_", name)
+
+    def KI(self, name=None):
+        return self._build("KI_", name)
+
+    def IL(self, name=None):
+        return self._build("IL_", name)
+
+    def I(self, name=None):
+        return self._build("I_", name)
+
+    def get_object(self, query):
+        """ fetch the first object buffer matching the query """
+        ref = one(self._index.lookup_keys(query))
+        # TODO: should ensure this query has a unique result
+        return self._cim.logical_data_store.get_object_buffer(ref)
+
+    def get_objects(self, query):
+        """ return a generator of object buffers matching the query """
+        refs = self._index.lookup_keys(query)
+        for ref in refs:
+            yield self._cim.logical_data_store.get_object_buffer(ref)
 
     @property
     def root_namespace(self):
+        return SYSTEM_NAMESPACE_NAME
+
+    def get_cd(self, namespace_name, class_name):
+        c_id = get_class_id(namespace_name, class_name)
+        c_cd = self._cdcache.get(c_id, None)
+        if c_cd is None:
+            self.d("cdcache miss")
+
+            q = "{}/{}".format(
+                self.NS(namespace_name),
+                self.CD(class_name))
+            # TODO: should ensure this query has a unique result
+            ref = one(self._index.lookup_keys(q))
+
+            # some standard class definitions (like __NAMESPACE) are not in the
+            #   current NS, but in the __SystemClass NS. So we try that one, too.
+
+            if ref is None:
+                self.d("didn't find %s in %s, retrying in %s", class_name, namespace_name, SYSTEM_NAMESPACE_NAME)
+                q = "{}/{}".format(
+                    self.NS(SYSTEM_NAMESPACE_NAME),
+                    self.CD(class_name))
+            c_cdbuf = self.get_object(q)
+            c_cd = ClassDefinition()
+            c_cd.vsParse(c_cdbuf)
+            self._cdcache[c_id] = c_cd
+        return c_cd
+
+    def get_cl(self, namespace_name, class_name):
+        c_id = get_class_id(namespace_name, class_name)
+        c_cl = self._clcache.get(c_id, None)
+        if not c_cl:
+            self.d("clcache miss")
+            c_cd = self.get_cd(namespace_name, class_name)
+            c_cl = ClassLayout(self, namespace_name, c_cd)
+            self._clcache[c_id] = c_cl
+        return c_cl
+
+    def get_ci(self, namespace_name, class_name, instance_name):
         pass
 
     @property
     def ns_cd(self):
-        return self.ns_cd(SYSTEM_NAMESPACE_NAME, NAMESPACE_CLASS_NAME)
+        return self.get_cd(SYSTEM_NAMESPACE_NAME, NAMESPACE_CLASS_NAME)
 
     @property
     def ns_cl(self):
-        return self.ns_cl(SYSTEM_NAMESPACE_NAME, NAMESPACE_CLASS_NAME)
+        return self.get_cl(SYSTEM_NAMESPACE_NAME, NAMESPACE_CLASS_NAME)
 
+    NamespaceSpecifier = namedtuple("NamespaceSpecifier", ["namespace_name"])
     def get_ns_children_ns(self, namespace_name):
-        # TODO: method
         q = "{}/{}/{}".format(
                 self.NS(namespace_name),
                 self.CI(NAMESPACE_CLASS_NAME),
                 self.IL())
 
-        # TODO: method
         for ns_i in self.get_objects(q):
             i = self.ns_cl.instance.vsParse(ns_i)
-            yield namespace_name + "\\" + i.get_property_value("Name")
+            yield self.NamespaceSpecifier(namespace_name + "\\" + i.get_property_value("Name"))
 
+    ClassDefinitionSpecifier = namedtuple("ClassDefintionSpecifier", ["namespace_name", "class_name"])
     def get_ns_children_cd(self, namespace_name):
         q = "{}/{}".format(
                 self.NS(namespace_name),
                 self.CD())
 
-        # TODO: method
         for cdbuf in self.get_objects(q):
             cd = ClassDefinition(cdbuf)
-            # TODO: namedtuple
-            yield namespace_name, cd.class_name
+            yield self.ClassDefinitionSpecifier(namespace_name, cd.class_name)
 
+    ClassInstanceSpecifier = namedtuple("ClassInstanceSpecifier", ["namespace_name", "class_name", "instance_name"])
     def get_cd_children_ci(self, namespace_name, class_name):
         # CI or KI?
         q = "{}/{}/{}".format(
@@ -814,46 +805,21 @@ class Index(LoggingObject):
                 self.IL())
 
         # HACK: TODO: fixme, use getObjects(q) instead
-        for ref in self.context.index.lookup_keys(q):
-            # TODO: method
+        for ref in self._index.lookup_keys(q):
             ibuf = self.get_object(ref)
             instance = self.get_cl(namespace_name, class_name).instance.vsParse(ibuf)
             # TODO: need to parse key here, don't assume its "Name"
-            yield instance.get_property_value("Name")
-
-    def get_cd(self, namespace_name, class_name):
-        c_id = get_class_id(namespace_name, class_name)
-        c_cd = self.context.cdcache.get(c_id, None)
-        if c_cd is None:
-            self.d("cdcache miss")
-            # TODO: do this
-            raise NotImplementedError()
-            c_cd = ""
-            self.context.cdcache[c_id] = c_cd
-        return c_cd
-
-    def get_cl(self, namespace_name, class_name):
-        c_id = get_class_id(namespace_name, class_name)
-        c_cl = self.context.clcache.get(c_id, None)
-        if not c_cl:
-            self.d("clcache miss")
-            c_cd = self.get_cd(namespace_name, class_name)
-            c_cl = ClassLayout(self.context, namespace_name, c_cd)
-            self.context.clcache[c_id] = c_cl
-        return c_cl
-
-    def get_ci(self, namespace_name, class_name, instance_name):
-        pass
+            yield self.ClassInstanceSpecifier(namespace_name, class_name, instance.get_property_value("Name"))
 
 
 def get_class_id(namespace, classname):
     return namespace + ":" + classname
 
 
-class TreeNamespace(LoggingObject, QueryBuilderMixin, ObjectFetcherMixin):
-    def __init__(self, context, name):
+class TreeNamespace(LoggingObject):
+    def __init__(self, object_resolver, name):
         super(TreeNamespace, self).__init__()
-        self.context = context
+        self._object_resolver = object_resolver
         self.name = name
 
     def __repr__(self):
@@ -871,58 +837,21 @@ class TreeNamespace(LoggingObject, QueryBuilderMixin, ObjectFetcherMixin):
     @property
     def namespaces(self):
         """ return a generator direct child namespaces """
-        ns_id = get_class_id(SYSTEM_NAMESPACE_NAME, NAMESPACE_CLASS_NAME)
-        ns_cd = self.context.cdcache.get(ns_id, None)
-        if ns_cd is None:
-            self.d("cdcache miss")
-            q = self.get_class_definition_query(SYSTEM_NAMESPACE_NAME, NAMESPACE_CLASS_NAME)
-            ns_cd = ClassDefinition(self.get_object(q))
-            self.context.cdcache[ns_id] = ns_cd
-
-        namespaceCL = self.context.clcache.get(ns_id, None)
-        if namespaceCL is None:
-            self.d("clcache miss")
-            namespaceCL = ClassLayout(self.context, self.name, ns_cd)
-            self.context.clcache[ns_id] = namespaceCL
-
-        q = "{}/{}/{}".format(
-                self.NS(self.name),
-                self.CI(NAMESPACE_CLASS_NAME),
-                self.IL())
-
-        for namespaceInstance in self.get_objects(q):
-            try:
-                namespaceI = namespaceCL.instance.vsParse(namespaceInstance)
-            except ZeroDivisionError:
-            #except RuntimeError:
-                # TODO: removeme!!!
-                continue
-            nsName = namespaceI.get_property_value("Name")
-            # TODO: perhaps should test if this thing exists?
-            yield TreeNamespace(self.context, self.name + "\\" + nsName)
+        for ns in self._object_resolver.get_ns_children_ns(self.name):
+            yield TreeNamespace(self._object_resolver, ns.namespace_name)
 
     @property
     def classes(self):
-        """ get direct child class definitions """
-        q = "{}/{}".format(
-                self.NS(self.name),
-                self.CD())
-        self.d("classes query: %s", q)
-
-        for cdbuf in self.get_objects(q):
-            cd = ClassDefinition(cdbuf)
-            yield TreeClassDefinition(self.context, self.name, cd.class_name(), defhint=cd)
+        for cd in self._object_resolver.get_ns_children_cds(self.name):
+            yield TreeClassDefinition(self._object_resolver, self.name, cd.class_name)
 
 
-class TreeClassDefinition(LoggingObject, QueryBuilderMixin, ObjectFetcherMixin):
-    def __init__(self, context, namespace, name, defhint=None):
+class TreeClassDefinition(LoggingObject):
+    def __init__(self, object_resolver, namespace, name):
         super(TreeClassDefinition, self).__init__()
-        self.context = context
+        self._object_resolver = object_resolver
         self.ns = namespace
         self.name = name
-
-        # cache
-        self._def = defhint
 
     def __repr__(self):
         return "ClassDefinition(namespace: {:s}, name: {:s})".format(self.ns, self.name)
@@ -930,69 +859,30 @@ class TreeClassDefinition(LoggingObject, QueryBuilderMixin, ObjectFetcherMixin):
     @property
     def namespace(self):
         """ get parent namespace """
-        return TreeNamespace(self.context, self.ns)
+        return TreeNamespace(self._object_resolver, self.ns)
 
     @property
     def cd(self):
-        classId = get_class_id(self.ns, self.name)
-        cd = self.context.cdcache.get(classId, None)
-        if cd is None:
-            self.d("cdcache miss")
-            q = self.get_class_definition_query(self.ns, self.name)
-            cd = ClassDefinition(self.get_object(q))
-            self.context.cdcache[classId] = cd
-        return cd
+        return self._object_resolver.get_cd(self.ns, self.name)
 
     @property
     def cl(self):
-        classId = get_class_id(self.ns, self.name)
-        cl = self.context.clcache.get(classId, None)
-        if cl is None:
-            self.d("clcache miss")
-            cl = ClassLayout(self.context, self.ns, self.cd)
-            self.context.clcache[classId] = cl
-        return cl
+        return self._object_resolver.get_cl(self.ns, self.name)
 
     @property
     def instances(self):
         """ get instances of this class definition """
-        cd = self.cd
-        cl = self.cl
-
-        # CI or KI?
-        q = "{}/{}/{}".format(
-                self.NS(self.ns),
-                self.CI(self.name),
-                self.IL())
-
-        # HACK: TODO: fixme, use getObjects(q) instead
-        for ref in self.context.index.lookup_keys(q):
-            ibuf = self.get_object(ref)
-            self.d("instance of %s:%s: \n%s", self.ns, self.name, hexdump.hexdump(ibuf, result="return"))
-            try:
-                instance = cl.instance.vsParse(ibuf)
-            # TODO
-            except ZeroDivisionError:
-                pass
-            except RuntimeError:
-                self.w("failed: %s", ref)
-                continue
-            self.i("instance: %s", instance)
-            yield instance
-
-            #nsName = namespaceI.getPropertyValue("Name")
-            # TODO: perhaps should test if this thing exists?
-            #yield Namespace(self.context, self.name + "\\" + nsName)
+        for ci in self._object_resolver.get_cd_children_cis(self.ns, self.name):
+            yield TreeClassInstance(self._object_resolver, self.name, ci.class_name, ci.instance_name)
 
 
 class TreeClassInstance(LoggingObject):
-    def __init__(self, context, name, defhint=None):
-        super(ClassInstance, self).__init__()
-        self.context = context
-        self.name = name
-
-        # cache
-        self._def = defhint
+    def __init__(self, object_resolver, namespace_name, class_name, instance_name):
+        super(TreeClassInstance, self).__init__()
+        self._object_resolver = object_resolver
+        self.ns = namespace_name
+        self.class_name = class_name
+        self.instance_name = instance_name
 
     def __repr__(self):
         return "ClassInstance(name: {:s})".format(self.name)
@@ -1000,18 +890,18 @@ class TreeClassInstance(LoggingObject):
     @property
     def klass(self):
         """ get class definition """
-        pass
+        return TreeClassDefinition(self._object_resolver, self.ns, self.class_name)
 
     @property
     def namespace(self):
         """ get parent namespace """
-        pass
+        return TreeNamespace(self._object_resolver, self.ns)
 
 
 class Tree(LoggingObject):
     def __init__(self, cim):
         super(Tree, self).__init__()
-        self._context = CimContext(cim, Index(cim.getCimType(), cim.logical_index_store()), {}, {})
+        self._object_resolver = ObjectResolver(cim, Index(cim.getCimType, cim.logical_index_store))
 
     def __repr__(self):
         return "Tree"
@@ -1019,72 +909,4 @@ class Tree(LoggingObject):
     @property
     def root(self):
         """ get root namespace """
-        return TreeNamespace(self._context, ROOT_NAMESPACE_NAME)
-
-
-def formatKey(k):
-    ret = []
-    for part in str(k).split("/"):
-        if "." in part:
-            ret.append(part[:7] + "..." + part.partition(".")[2])
-        else:
-            ret.append(part[:7])
-    return "/".join(ret)
-
-
-def rec_class(klass):
-    g_logger.info(klass)
-
-    for i in klass.instances:
-        g_logger.info(i)
-        g_logger.debug("ep: %s %s-%s %s %s",
-                h(klass._def._def.header.unk1),
-                h(klass._def._def.header.unk3),
-                h(klass._def._def.header.unk4),
-                h(i.extra_padding_length()),
-                h(i.extra_padding_length() - klass._def._def.header.unk1))
-
- 
-        props = klass._def.properties()
-        for propname, prop in props.iteritems():
-            g_logger.info("%s=%s" % (
-                prop, str(i.get_property_value(prop.name()))))
-    else:
-        g_logger.info("no instances")
-
-
-def rec_ns(ns):
-    g_logger.info(ns)
-
-    for c in ns.classes:
-        rec_class(c)
-    else:
-        g_logger.info("no classes")
-
-    for c in ns.namespaces:
-        rec_ns(c)
-    else:
-        g_logger.info("no classes")
-
-
-def main(type_, path):
-    if type_ not in ("xp", "win7"):
-        raise RuntimeError("Invalid mapping type: {:s}".format(type_))
-
-    c = CIM(type_, path)
-    t = Tree(c)
-    rec_ns(t.root)
-    return
-    g_logger.info(t.root)
-    for c in t.root.classes:
-        g_logger.info(c.class_name())
-        #g_logger.info(c._def.tree())
-        g_logger.info(c.properties())
-        g_logger.info("*" * 80)
-        #break
-
-
-if __name__ == "__main__":
-    logging.basicConfig(level=logging.INFO)
-    import sys
-    main(*sys.argv[1:])
+        return TreeNamespace(self._object_resolver, ROOT_NAMESPACE_NAME)
