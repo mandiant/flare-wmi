@@ -15,7 +15,7 @@ from funcy.objects import cached_property
 from common import h
 from common import one
 from common import LoggingObject
-from cim import CIM
+from cim import Key
 from cim import Index
 import vstruct
 from vstruct.primitives import *
@@ -289,13 +289,13 @@ class Property(LoggingObject):
         # this is the raw struct, without references/strings resolved
         self._prop = _Property()
         property_offset = self._propref.offset_property_struct
-        self._prop.vsParse(self._class_definition.data(), offset=property_offset)
+        self._prop.vsParse(self._class_definition.data, offset=property_offset)
 
     def __repr__(self):
         return "Property(name: {:s}, type: {:s}, qualifiers: {:s})".format(
-            self.name(),
-            CIM_TYPES.vsReverseMapping(self.type().getType()),
-            ",".join("%s=%s" % (k, str(v)) for k, v in self.qualifiers().iteritems()))
+            self.name,
+            CIM_TYPES.vsReverseMapping(self.type.getType),
+            ",".join("%s=%s" % (k, str(v)) for k, v in self.qualifiers.iteritems()))
 
     @property
     def name(self):
@@ -390,10 +390,10 @@ class ClassDefinition(vstruct.VStruct, LoggingObject):
         value: is a parsed value, might need dereferencing
         value_type: is a CimType
         """
-        if value_type.is_array():
+        if value_type.is_array:
             return self.get_array(value, value_type.base_type_clone)
 
-        t = value_type.type()
+        t = value_type.type
         if t == CIM_TYPES.CIM_TYPE_STRING:
             return self.get_string(value)
         elif t == CIM_TYPES.CIM_TYPE_BOOLEAN:
@@ -463,7 +463,7 @@ class ClassInstance(vstruct.VStruct, LoggingObject):
 
         self.toc = vstruct.VArray()
         for prop in self.class_layout.properties:
-            self.toc.vsAddElement(prop.type().value_parser())
+            self.toc.vsAddElement(prop.type.value_parser)
 
         self.qualifiers_list = QualifiersList()
         self.unk1 = v_uint8()
@@ -622,10 +622,6 @@ class ClassInstance(vstruct.VStruct, LoggingObject):
 
 class ClassLayout(LoggingObject):
     def __init__(self, object_resolver, namespace, class_definition):
-        """
-        namespace is a string
-        classDefinition is a .ClassDefinition object
-        """
         super(ClassLayout, self).__init__()
         self.object_resolver = object_resolver
         self.namespace = namespace
@@ -633,7 +629,7 @@ class ClassLayout(LoggingObject):
 
     @property
     def properties(self):
-        className = self.class_definition.class_name()
+        className = self.class_definition.class_name
         classDerivation = []  # initially, ordered from child to parent
         while className != "":
             cd = self.object_resolver.get_cd(self.namespace, className)
@@ -645,7 +641,7 @@ class ClassLayout(LoggingObject):
         classDerivation.reverse()
 
         self.d("%s derivation: %s",
-                self.class_definition.class_name(),
+                self.class_definition.class_name,
                 map(lambda c: c.class_name, classDerivation))
 
         ret = []
@@ -734,9 +730,9 @@ class ObjectResolver(LoggingObject):
         if c_cd is None:
             self.d("cdcache miss")
 
-            q = "{}/{}".format(
-                self.NS(namespace_name),
-                self.CD(class_name))
+            q = Key("{}/{}".format(
+                    self.NS(namespace_name),
+                    self.CD(class_name)))
             # TODO: should ensure this query has a unique result
             ref = one(self._index.lookup_keys(q))
 
@@ -777,10 +773,10 @@ class ObjectResolver(LoggingObject):
 
     NamespaceSpecifier = namedtuple("NamespaceSpecifier", ["namespace_name"])
     def get_ns_children_ns(self, namespace_name):
-        q = "{}/{}/{}".format(
-                self.NS(namespace_name),
-                self.CI(NAMESPACE_CLASS_NAME),
-                self.IL())
+        q = Key("{}/{}/{}".format(
+                    self.NS(namespace_name),
+                    self.CI(NAMESPACE_CLASS_NAME),
+                    self.IL()))
 
         for ns_i in self.get_objects(q):
             i = self.ns_cl.instance.vsParse(ns_i)
@@ -788,9 +784,9 @@ class ObjectResolver(LoggingObject):
 
     ClassDefinitionSpecifier = namedtuple("ClassDefintionSpecifier", ["namespace_name", "class_name"])
     def get_ns_children_cd(self, namespace_name):
-        q = "{}/{}".format(
-                self.NS(namespace_name),
-                self.CD())
+        q = Key("{}/{}".format(
+                    self.NS(namespace_name),
+                    self.CD()))
 
         for cdbuf in self.get_objects(q):
             cd = ClassDefinition(cdbuf)
@@ -799,10 +795,10 @@ class ObjectResolver(LoggingObject):
     ClassInstanceSpecifier = namedtuple("ClassInstanceSpecifier", ["namespace_name", "class_name", "instance_name"])
     def get_cd_children_ci(self, namespace_name, class_name):
         # CI or KI?
-        q = "{}/{}/{}".format(
-                self.NS(namespace_name),
-                self.CI(class_name),
-                self.IL())
+        q = Key("{}/{}/{}".format(
+                    self.NS(namespace_name),
+                    self.CI(class_name),
+                    self.IL()))
 
         # HACK: TODO: fixme, use getObjects(q) instead
         for ref in self._index.lookup_keys(q):

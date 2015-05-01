@@ -100,7 +100,7 @@ class EntryWin7(vstruct.VStruct):
 class MappingWin7(vstruct.VStruct):
     """
     lookup via:
-      m.entries[0x101].getPageNumber()
+      m.entries[0x101].page_number
     """
     def __init__(self):
         vstruct.VStruct.__init__(self)
@@ -149,7 +149,7 @@ class EntryXP(vstruct.primitives.v_uint32):
 class MappingXP(vstruct.VStruct):
     """
     lookup via:
-      m.entries[0x101].getPageNumber()
+      m.entries[0x101].page_number
     """
     def __init__(self):
         vstruct.VStruct.__init__(self)
@@ -251,8 +251,8 @@ class DataPage(LoggingObject):
 
         key: Key instance
         """
-        target_id = key.data_id()
-        target_size = key.data_length()
+        target_id = key.data_id
+        target_size = key.data_length
         for i in xrange(self.toc.count):
             toc = self.toc[i]
             if toc.record_id == target_id:
@@ -294,36 +294,6 @@ class IndexPageHeader(vstruct.VStruct):
         self.zero0 = v_uint32()
         self.zero1 = v_uint32()
         self.record_count = v_uint32()
-
-
-class _IndexPage(vstruct.VStruct):
-    def __init__(self):
-        vstruct.VStruct.__init__(self)
-        self.header = IndexPageHeader()
-        self.unk0 = vstruct.VArray()
-        self.children = vstruct.VArray()
-        self.keys = vstruct.VArray()
-        self.string_definition_table_length = v_uint16()
-        self.string_definition_table = vstruct.VArray()
-        self.string_table_length = v_uint16()
-        self.string_table = vstruct.VArray()
-
-    def pcb_header(self):
-        self.unk0.vsAddElements(self.header.record_count, v_uint32)
-        self.children.vsAddElements(self.header.record_count + 1, v_uint32)
-        self.keys.vsAddElements(self.header.record_count, v_uint16)
-
-    def pcb_stringDefTableSize(self):
-        self.string_definition_table.vsAddElements(self.string_definition_table_length, v_uint16)
-
-    def pcb_stringTableSize(self):
-        self.string_table.vsAddElements(self.string_table_length + 1, v_uint16)
-
-    @property
-    def is_valid(self):
-        return self.header.sig == INDEX_PAGE_TYPES.PAGE_TYPE_ACTIVE
-
-
 
 
 class Key(LoggingObject):
@@ -372,32 +342,55 @@ class Key(LoggingObject):
         return int(self._get_data_part(self.KEY_INDEX_DATA_SIZE))
 
 
-class IndexPage(LoggingObject):
-    def __init__(self, buf, logical_page_number, physical_page_number):
-        super(IndexPage, self).__init__()
-        self._buf = buf
+class IndexPage(vstruct.VStruct, LoggingObject):
+    def __init__(self, logical_page_number, physical_page_number):
+        vstruct.VStruct.__init__(self)
+        LoggingObject.__init__(self)
+
         self.logical_page_number = logical_page_number
         self.physical_page_number = physical_page_number
-        self._page = _IndexPage()
-        self._page.vsParse(buf)
+
+        self.header = IndexPageHeader()
+        self.unk0 = vstruct.VArray()
+        self.children = vstruct.VArray()
+        self.keys = vstruct.VArray()
+        self.string_definition_table_length = v_uint16()
+        self.string_definition_table = vstruct.VArray()
+        self.string_table_length = v_uint16()
+        self.string_table = vstruct.VArray()
+        self.data = v_bytes(size=0)
 
         # cache
         self._keys = {}
 
-    def _get_string_part(self, string_index):
-        string_offset = self._page.string_table[string_index]
-        string_page_offset = len(self._page) + string_offset
+    def pcb_header(self):
+        self.unk0.vsAddElements(self.header.record_count, v_uint32)
+        self.children.vsAddElements(self.header.record_count + 1, v_uint32)
+        self.keys.vsAddElements(self.header.record_count, v_uint16)
 
-        string_page_end_offset = self._buf.find("\x00", string_page_offset)
-        string = self._buf[string_page_offset:string_page_end_offset].decode("utf-8")
-        return string
+    def pcb_string_definition_table_length(self):
+        self.string_definition_table.vsAddElements(self.string_definition_table_length, v_uint16)
+
+    def pcb_string_table_length(self):
+        self.string_table.vsAddElements(self.string_table_length + 1, v_uint16)
+
+    def pcb_string_table(self):
+        self["data"].vsSetLength(INDEX_PAGE_SIZE - len(self))
+
+    @property
+    def is_valid(self):
+        return self.header.sig == INDEX_PAGE_TYPES.PAGE_TYPE_ACTIVE
+
+    def _get_string_part(self, string_index):
+        string_offset = self.string_table[string_index]
+        return self.data[string_offset:self.data.find("\x00", string_offset)].decode("utf-8")
 
     def _get_string(self, string_def_index):
-        stringPartCount = self._page.string_definition_table[string_def_index]
+        string_part_count = self.string_definition_table[string_def_index]
 
         parts = []
-        for i in range(stringPartCount):
-            stringPartIndex = self._page.string_definition_table[string_def_index + 1 + i]
+        for i in range(string_part_count):
+            stringPartIndex = self.string_definition_table[string_def_index + 1 + i]
 
             part = self._get_string_part(stringPartIndex)
             parts.append(part)
@@ -407,20 +400,16 @@ class IndexPage(LoggingObject):
 
     @property
     def key_count(self):
-        return self._page.header.record_count
+        return self.header.record_count
 
     def get_key(self, key_index):
         if key_index not in self._keys:
-            string_def_index = self._page.keys[key_index]
+            string_def_index = self.keys[key_index]
             self._keys[key_index] = Key(self._get_string(string_def_index))
         return self._keys[key_index]
 
     def get_child(self, child_index):
-        return self._page.children[child_index]
-
-    @property
-    def is_valid(self):
-        return self._page.is_valid
+        return self.children[child_index]
 
 
 class LogicalDataStore(LoggingObject):
@@ -506,12 +495,15 @@ class LogicalIndexStore(LoggingObject):
             return f.read(INDEX_PAGE_SIZE)
 
     def get_logical_page_buffer(self, index):
-        physical_page_number = self._mapping.entries[index].page_number()
+        physical_page_number = self._mapping.entries[index].page_number
         return self.get_physical_page_buffer(physical_page_number)
 
     def get_page(self, index):
-        physical_page_number = self._mapping.entries[index].page_number()
-        return IndexPage(self.get_logical_page_buffer(index), index, physical_page_number)
+        physical_page_number = self._mapping.entries[index].page_number
+        pagebuf = self.get_logical_page_buffer(index)
+        p = IndexPage(index, physical_page_number)
+        p.vsParse(pagebuf)
+        return p
 
     @property
     def _root_page_number_win7(self):
@@ -617,7 +609,7 @@ class Index(LoggingObject):
         skey = str(key)
         key_count = page.key_count
 
-        self.d("index lookup: %s: page: %s", key.human_format, h(page.logical_page))
+        self.d("index lookup: %s: page: %s", key.human_format, h(page.logical_page_number))
 
         matches = []
         for i in xrange(key_count):
@@ -657,7 +649,7 @@ class Index(LoggingObject):
         """
         get keys that match the given key prefix
         """
-        return self._lookup_keys(key, self._index_store.root_page())
+        return self._lookup_keys(key, self._index_store.root_page)
 
     def hash(self, s):
         if self.cim_type == CIM_TYPE_XP:

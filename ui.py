@@ -159,7 +159,7 @@ class IndexKeyItem(Item):
 
     @property
     def name(self):
-        return "{:s}".format(self._key.human_format())
+        return "{:s}".format(self._key.human_format)
 
     @property
     def data(self):
@@ -321,7 +321,7 @@ class ClassDefinitionItem(Item):
     @property
     def data(self):
         # TODO: don't reach
-        return TreeClassDefinition(self._ctx, self._ns, self._name).cd._buf
+        return TreeClassDefinition(self._ctx.object_resolver, self._ns, self._name).cd._buf
 
     @cached_property
     def structs(self):
@@ -346,7 +346,7 @@ class ClassDefinitionListItem(Item):
     @cached_property
     def children(self):
         ret = []
-        ns = TreeNamespace(self._ctx, self._name)
+        ns = TreeNamespace(self._ctx.object_resolver, self._name)
         for cd in ns.classes:
             ret.append(ClassDefinitionItem(self._ctx.object_resolver, cd.ns, cd.name))
         return ret
@@ -398,7 +398,7 @@ class NamespaceListItem(Item):
     @cached_property
     def children(self):
         ret = []
-        ns = TreeNamespace(self._ctx, self._name)
+        ns = TreeNamespace(self._ctx.object_resolver, self._name)
         for namespace in ns.namespaces:
             ret.append(NamespaceItem(self._ctx, namespace.name))
         return ret
