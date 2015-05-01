@@ -11,6 +11,7 @@ from cim import CIM
 from cim import Index
 from objects import CIM_TYPE_SIZES
 from objects import TreeNamespace
+from objects import ObjectResolver
 from objects import TreeClassDefinition
 from common import h
 from common import LoggingObject
@@ -52,7 +53,7 @@ class PhysicalDataPageItem(Item):
 
     @property
     def data(self):
-        return self._ctx.cim.logical_data_store().get_physical_page_buffer(self.index)
+        return self._ctx.cim.logical_data_store.get_physical_page_buffer(self.index)
 
 
 class PhysicalDataPagesItem(Item):
@@ -67,7 +68,7 @@ class PhysicalDataPagesItem(Item):
     @cached_property
     def children(self):
         return [PhysicalDataPageItem(self._ctx, i) for i in
-                    xrange(self._ctx.cim.data_mapping().header.physicalPages)]
+                    xrange(self._ctx.cim.data_mapping.header.physical_page_count)]
 
     @property
     def type(self):
@@ -101,11 +102,11 @@ class LogicalDataPageItem(Item):
 
     @property
     def data(self):
-        return self._ctx.cim.logical_data_store().get_logical_page_buffer(self.index)
+        return self._ctx.cim.logical_data_store.get_logical_page_buffer(self.index)
 
     @property
     def structs(self):
-        page = self._ctx.cim.logical_data_store().get_page(self.index)
+        page = self._ctx.cim.logical_data_store.get_page(self.index)
         ret = [
             StructItem(0x0, "tocs", page.tocs),
         ]
@@ -128,7 +129,7 @@ class LogicalDataPagesItem(Item):
     @cached_property
     def children(self):
         return [LogicalDataPageItem(self._ctx, i) for i in
-                    xrange(self._ctx.cim.data_mapping().header.mappingEntries)]
+                    xrange(self._ctx.cim.data_mapping.header.mapping_entry_count)]
 
     @property
     def type(self):
@@ -158,38 +159,38 @@ class IndexKeyItem(Item):
 
     @property
     def name(self):
-        return "{:s}".format(formatKey(str(self._key)))
+        return "{:s}".format(self._key.human_format())
 
     @property
     def data(self):
-        return self._ctx.querier.get_object(self._key)
+        return self._ctx.object_resolver.get_object(self._key)
 
     @property
-    def isDataReference(self):
-        return self._key.is_data_reference()
+    def is_data_reference(self):
+        return self._key.is_data_reference
 
 
 class IndexNodeItem(Item):
-    def __init__(self, ctx, pageNumber):
+    def __init__(self, ctx, page_number):
         """
         pageNumber - the integer logical page number in the index file
         """
         super(IndexNodeItem, self).__init__()
         self._ctx = ctx
-        self._pageNumber = pageNumber
+        self._page_number = page_number
 
     def __repr__(self):
         return "IndexNodeItem(pageNumber: {:s})".format(
-            h(self._pageNumber))
+            h(self._page_number))
 
     @cached_property
     def children(self):
-        page = self._ctx.cim.logical_index_store().get_page(self._pageNumber)
+        page = self._ctx.cim.logical_index_store.get_page(self._page_number)
         ret = []
-        for i in xrange(page.key_count()):
+        for i in xrange(page.key_count):
             ret.append(IndexNodeItem(self._ctx, page.get_child(i)))
             ret.append(IndexKeyItem(self._ctx, page.get_key(i)))
-        ret.append(IndexNodeItem(self._ctx, page.get_child(page.key_count())))
+        ret.append(IndexNodeItem(self._ctx, page.get_child(page.key_count)))
         return ret
 
     @property
@@ -198,11 +199,11 @@ class IndexNodeItem(Item):
 
     @property
     def name(self):
-        return "Node {:s}".format(h(self._pageNumber))
+        return "Node {:s}".format(h(self._page_number))
 
     @property
     def data(self):
-        return self._ctx.cim.logical_index_store().get_logical_page_buffer(self._pageNumber)
+        return self._ctx.cim.logical_index_store.get_logical_page_buffer(self._page_number)
 
 
 class IndexRootItem(Item):
@@ -217,7 +218,7 @@ class IndexRootItem(Item):
     def children(self):
         return [
             IndexNodeItem(self._ctx,
-                self._ctx.cim.logical_index_store().root_page_number()),
+                self._ctx.cim.logical_index_store.root_page_number),
         ]
 
     @property
@@ -309,23 +310,24 @@ class ClassDefinitionItem(Item):
     def name(self):
         return "{:s}".format(self._name)
 
-    @property
+    @cached_property
     def cd(self):
-        return TreeClassDefinition(self._ctx, self._ns, self._name).cd
+        return self._ctx.object_resolver.get_cd(self._ns, self._name)
 
-    @property
+    @cached_property
     def cl(self):
-        return TreeClassDefinition(self._ctx, self._ns, self._name).cl
+        return self._ctx.object_resolver.get_cl(self._ns, self._name)
 
     @property
     def data(self):
         # TODO: don't reach
         return TreeClassDefinition(self._ctx, self._ns, self._name).cd._buf
 
-    @property
+    @cached_property
     def structs(self):
-        cd = TreeClassDefinition(self._ctx, self._ns, self._name).cd
+        cd = self.cd
         ret = [
+            # TODO: don't reach
             StructItem(0x0, "definition", cd._def),
         ]
         return ret
@@ -460,38 +462,38 @@ class CimRootItem(Item):
 
 
 class IndexKeyItemView(QTabWidget, LoggingObject):
-    def __init__(self, keyItem, parent=None):
+    def __init__(self, key_item, parent=None):
         super(IndexKeyItemView, self).__init__(parent)
-        self._keyItem = keyItem
-        if self._keyItem.is_data_reference:
-            hv = HexViewWidget(self._keyItem.data)
+        self._key_item = key_item
+        if self._key_item.is_data_reference:
+            hv = HexViewWidget(self._key_item.data)
             self.addTab(hv, "Target hex view")
 
 
 class DataPageView(QTabWidget, LoggingObject):
-    def __init__(self, pageItem, parent=None):
+    def __init__(self, page_item, parent=None):
         super(DataPageView, self).__init__(parent)
-        self._pageItem = pageItem
-        hv = HexViewWidget(self._pageItem.data)
+        self._page_item = page_item
+        hv = HexViewWidget(self._page_item.data)
         self.addTab(hv, "Hex view")
 
 
 class LogicalDataPageItemView(QTabWidget, LoggingObject):
-    def __init__(self, pageItem, parent=None):
+    def __init__(self, page_item, parent=None):
         super(LogicalDataPageItemView, self).__init__(parent)
-        self._pageItem = pageItem
+        self._page_item = page_item
 
-        vv = VstructViewWidget(self._pageItem.structs, self._pageItem.data)
+        vv = VstructViewWidget(self._page_item.structs, self._page_item.data)
         self.addTab(vv, "Structures")
 
-        hv = HexViewWidget(self._pageItem.data)
+        hv = HexViewWidget(self._page_item.data)
         self.addTab(hv, "Hex view")
 
 
 class ClassDefinitionItemView(QTabWidget, LoggingObject):
-    def __init__(self, cdItem, parent=None):
+    def __init__(self, cd_item, parent=None):
         super(ClassDefinitionItemView, self).__init__(parent)
-        self._cdItem = cdItem
+        self._cd_item = cd_item
 
         te = QTextEdit()
         te.setReadOnly(True)
@@ -503,41 +505,42 @@ class ClassDefinitionItemView(QTabWidget, LoggingObject):
 
         self.addTab(te, "Class details")
 
-        vv = VstructViewWidget(self._cdItem.structs, self._cdItem.data)
+        vv = VstructViewWidget(self._cd_item.structs, self._cd_item.data)
         self.addTab(vv, "Structures")
 
-        hv = HexViewWidget(self._cdItem.data)
+        hv = HexViewWidget(self._cd_item.data)
         self.addTab(hv, "Hex view")
 
 
     @property
     def _classDescription(self):
-        cd = self._cdItem.cd
-        cl = self._cdItem.cl
+        cd = self._cd_item.cd
+        cl = self._cd_item.cl
 
         ret = []
-        ret.append("classname: %s" % cd.class_name())
-        ret.append("super: %s" % cd.super_class_name())
-        ret.append("ts: %s" % cd.timestamp().isoformat("T"))
+        ret.append("classname: %s" % cd.class_name)
+        ret.append("super: %s" % cd.super_class_name)
+        ret.append("ts: %s" % cd.timestamp.isoformat("T"))
         ret.append("qualifiers:")
-        for k, v in cd.qualifiers().iteritems():
+        for k, v in cd.qualifiers.iteritems():
             ret.append("  %s: %s" % (k, str(v)))
         ret.append("properties:")
-        for propname, prop in cd.properties().iteritems():
-            ret.append("  name: %s" % prop.name())
-            ret.append("    type: %s" % prop.type())
-            ret.append("    order: %s" % prop.entry_number())
+        for propname, prop in cd.properties.iteritems():
+            ret.append("  name: %s" % prop.name)
+            ret.append("    type: %s" % prop.type)
+            ret.append("    order: %s" % prop.entry_number)
             ret.append("    qualifiers:")
-            for k, v in prop.qualifiers().iteritems():
+            for k, v in prop.qualifiers.iteritems():
                 ret.append("      %s: %s" % (k, str(v)))
         ret.append("layout:")
         off = 0
         for prop in cl.properties:
-            ret.append("  (%s)   %s %s" % (h(off), prop.type(), prop.name()))
-            if prop.type().is_array():
+            # TODO: refactor and merge with other impl
+            ret.append("  (%s)   %s %s" % (h(off), prop.type, prop.name))
+            if prop.type.is_array:
                 off += 0x4
             else:
-                off += CIM_TYPE_SIZES[prop.type().type()]
+                off += CIM_TYPE_SIZES[prop.type.type]
         return "\n".join(ret)
 
 
@@ -545,7 +548,7 @@ class Form(QWidget, LoggingObject):
     def __init__(self, ctx, parent=None):
         super(Form, self).__init__(parent)
         self._ctx = ctx
-        self._treeModel = TreeModel(
+        self._tree_model = TreeModel(
                 CimRootItem(ctx),
                 [
                     ColumnDef("Name", "name"),
@@ -557,7 +560,7 @@ class Form(QWidget, LoggingObject):
         emptyLayout(self._ui.browseDetailsLayout)
 
         tv = self._ui.browseTreeView
-        tv.setModel(self._treeModel)
+        tv.setModel(self._tree_model)
         tv.header().setSectionResizeMode(QHeaderView.Interactive)
         tv.header().resizeSection(0, 250)  # chosen empirically
         tv.activated.connect(self._handleBrowseItemActivated)
@@ -569,30 +572,30 @@ class Form(QWidget, LoggingObject):
         self.setWindowTitle("cim - ui")
 
     def _handleBrowseItemActivated(self, itemIndex):
-        item = self._treeModel.getIndexData(itemIndex)
+        item = self._tree_model.getIndexData(itemIndex)
         details = self._ui.browseDetails
-        detailsLayout = self._ui.browseDetailsLayout
-        emptyLayout(detailsLayout)
+        details_layout = self._ui.browseDetailsLayout
+        emptyLayout(details_layout)
 
         if isinstance(item, PhysicalDataPageItem):
             v = DataPageView(item, details)
-            detailsLayout.addWidget(v)
+            details_layout.addWidget(v)
 
         elif isinstance(item, LogicalDataPageItem):
             v = LogicalDataPageItemView(item, details)
-            detailsLayout.addWidget(v)
+            details_layout.addWidget(v)
 
         elif isinstance(item, IndexNodeItem):
             v = DataPageView(item, details)
-            detailsLayout.addWidget(v)
+            details_layout.addWidget(v)
 
         elif isinstance(item, IndexKeyItem):
             v = IndexKeyItemView(item, details)
-            detailsLayout.addWidget(v)
+            details_layout.addWidget(v)
 
         elif isinstance(item, ClassDefinitionItem):
             v = ClassDefinitionItemView(item, details)
-            detailsLayout.addWidget(v)
+            details_layout.addWidget(v)
 
 
 def main(type_, path):
@@ -602,13 +605,9 @@ def main(type_, path):
 
     c = CIM(type_, path)
 
-    # yuck.
-    cimctx = CimContext(
-            c,
-            Index(c.getCimType(), c.logical_index_store()),
-            {}, {})
-    ctx = Context(cimctx.cim, cimctx.index, cimctx.cdcache, cimctx.clcache,
-                  Querier(cimctx))
+    index = Index(c.cim_type, c.logical_index_store)
+    object_resolver = ObjectResolver(c, index)
+    ctx = Context(c, index, object_resolver)
 
     app = QApplication(sys.argv)
     screen = Form(ctx)
