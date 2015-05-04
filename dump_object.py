@@ -3,6 +3,8 @@ import logging
 
 from cim import CIM
 from cim import Key
+from cim import Index
+from objects import ObjectResolver
 
 
 def main(type_, path, key):
@@ -10,8 +12,8 @@ def main(type_, path, key):
         raise RuntimeError("Invalid mapping type: {:s}".format(type_))
 
     c = CIM(type_, path)
-    k = Key("a." + key)
-    sys.stdout.write(c.logical_data_store().get_object_buffer(k))
+    k = Key("__." + key)
+    sys.stdout.write(c.logical_data_store.get_object_buffer(k))
     sys.stdout.flush()
 
 
