@@ -171,9 +171,6 @@ class IndexKeyItem(Item):
 
 class IndexNodeItem(Item):
     def __init__(self, ctx, page_number):
-        """
-        pageNumber - the integer logical page number in the index file
-        """
         super(IndexNodeItem, self).__init__()
         self._ctx = ctx
         self._page_number = page_number
@@ -348,8 +345,7 @@ class ClassDefinitionItem(Item):
     def structs(self):
         cd = self.cd
         ret = [
-            # TODO: don't reach
-            StructItem(0x0, "definition", cd._def),
+            StructItem(0x0, "definition", cd),
         ]
         return ret
 
@@ -369,7 +365,7 @@ class ClassDefinitionListItem(Item):
         ret = []
         ns = TreeNamespace(self._ctx.object_resolver, self._name)
         for cd in ns.classes:
-            ret.append(ClassDefinitionItem(self._ctx.object_resolver, cd.ns, cd.name))
+            ret.append(ClassDefinitionItem(self._ctx, cd.ns, cd.name))
         return ret
 
     @property
@@ -533,7 +529,7 @@ class ClassDefinitionItemView(QTabWidget, LoggingObject):
         f = QFontDatabase.systemFont(QFontDatabase.FixedFont)
         td = QTextDocument()
         td.setDefaultFont(f)
-        td.setPlainText(self._classDescription)
+        td.setPlainText(self._class_description())
         te.setDocument(td)
 
         self.addTab(te, "Class details")
@@ -544,9 +540,7 @@ class ClassDefinitionItemView(QTabWidget, LoggingObject):
         hv = HexViewWidget(self._cd_item.data)
         self.addTab(hv, "Hex view")
 
-
-    @property
-    def _classDescription(self):
+    def _class_description(self):
         cd = self._cd_item.cd
         cl = self._cd_item.cl
 
@@ -555,6 +549,7 @@ class ClassDefinitionItemView(QTabWidget, LoggingObject):
         ret.append("super: %s" % cd.super_class_name)
         ret.append("ts: %s" % cd.timestamp.isoformat("T"))
         ret.append("qualifiers:")
+        print(dir(cd))
         for k, v in cd.qualifiers.iteritems():
             ret.append("  %s: %s" % (k, str(v)))
         ret.append("properties:")

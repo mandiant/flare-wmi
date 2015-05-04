@@ -4,16 +4,13 @@ doc
 import os
 import hashlib
 import logging
-from datetime import datetime
 from collections import namedtuple
 
-import hexdump
 from funcy.objects import cached_property
 import vstruct
 from vstruct.primitives import *
 
 from common import h
-from common import one
 from common import LoggingObject
 
 logging.basicConfig(level=logging.DEBUG)
@@ -286,16 +283,6 @@ class DataPage(LoggingObject):
         return ret
 
 
-class IndexPageHeader(vstruct.VStruct):
-    def __init__(self):
-        vstruct.VStruct.__init__(self)
-        self.sig = v_uint32()
-        self.logical_id = v_uint32()
-        self.zero0 = v_uint32()
-        self.zero1 = v_uint32()
-        self.record_count = v_uint32()
-
-
 class Key(LoggingObject):
     def __init__(self, string):
         super(Key, self).__init__()
@@ -340,6 +327,28 @@ class Key(LoggingObject):
     @property
     def data_length(self):
         return int(self._get_data_part(self.KEY_INDEX_DATA_SIZE))
+
+
+class IndexPageHeader(vstruct.VStruct):
+    def __init__(self):
+        vstruct.VStruct.__init__(self)
+        self.sig = v_uint32()
+        self.logical_id = v_uint32()
+        self.zero0 = v_uint32()
+        self.zero1 = v_uint32()
+        self.record_count = v_uint32()
+
+    @property
+    def is_active(self):
+        return self.sig == INDEX_PAGE_TYPES.PAGE_TYPE_ACTIVE
+
+    @property
+    def is_admin(self):
+        return self.sig == INDEX_PAGE_TYPES.PAGE_TYPE_ADMIN
+
+    @property
+    def is_deleted(self):
+        return self.sig == INDEX_PAGE_TYPES.PAGE_TYPE_DELETED
 
 
 class IndexPage(vstruct.VStruct, LoggingObject):
@@ -390,9 +399,9 @@ class IndexPage(vstruct.VStruct, LoggingObject):
 
         parts = []
         for i in range(string_part_count):
-            stringPartIndex = self.string_definition_table[string_def_index + 1 + i]
+            string_part_index = self.string_definition_table[string_def_index + 1 + i]
 
-            part = self._get_string_part(stringPartIndex)
+            part = self._get_string_part(string_part_index)
             parts.append(part)
 
         string = "/".join(parts)
@@ -409,7 +418,8 @@ class IndexPage(vstruct.VStruct, LoggingObject):
         return self._keys[key_index]
 
     def get_child(self, child_index):
-        return self.children[child_index]
+        """ get the logical page number of the given child index """
+        return int(self.children[child_index])
 
 
 class LogicalDataStore(LoggingObject):
@@ -477,6 +487,18 @@ class LogicalDataStore(LoggingObject):
         return "".join(data)
 
 
+class InvalidMappingEntryIndex(Exception):
+    pass
+
+
+class InvalidPhysicalPageNumber(Exception):
+    pass
+
+
+class InvalidLogicalPageNumber(Exception):
+    pass
+
+
 class LogicalIndexStore(LoggingObject):
     """
     provides an interface for accessing index nodes by logical page id.
@@ -499,7 +521,14 @@ class LogicalIndexStore(LoggingObject):
         return self.get_physical_page_buffer(physical_page_number)
 
     def get_page(self, index):
+        if index > self._mapping.header.mapping_entry_count:
+            raise InvalidMappingEntryIndex()
+
         physical_page_number = self._mapping.entries[index].page_number
+
+        if physical_page_number > self._mapping.header.physical_page_count:
+            raise InvalidPhysicalPageNumber()
+
         pagebuf = self.get_logical_page_buffer(index)
         p = IndexPage(index, physical_page_number)
         p.vsParse(pagebuf)

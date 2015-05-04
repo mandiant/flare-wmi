@@ -136,9 +136,9 @@ class BaseType(object):
       each item is not an array, but has the type of the array.
     needs to adhere to CimType interface.
     """
-    def __init__(self, type_, valueParser):
+    def __init__(self, type_, value_parser):
         self._type = type_
-        self._valueParser = valueParser
+        self._value_parser = value_parser
 
     def getType(self):
         return self._type
@@ -148,7 +148,7 @@ class BaseType(object):
 
     @property
     def value_parser(self):
-        return self._valueParser
+        return self._value_parser
 
     def __repr__(self):
         return CIM_TYPES.vsReverseMapping(self._type)
@@ -174,32 +174,32 @@ class CimType(vstruct.VStruct):
     def value_parser(self):
         if self.is_array:
             return v_uint32
-        elif self._type == CIM_TYPES.CIM_TYPE_LANGID:
+        elif self.type == CIM_TYPES.CIM_TYPE_LANGID:
             return v_uint32
-        elif self._type == CIM_TYPES.CIM_TYPE_REAL32:
+        elif self.type == CIM_TYPES.CIM_TYPE_REAL32:
             return v_float
-        elif self._type == CIM_TYPES.CIM_TYPE_STRING:
+        elif self.type == CIM_TYPES.CIM_TYPE_STRING:
             return v_uint32
-        elif self._type == CIM_TYPES.CIM_TYPE_BOOLEAN:
+        elif self.type == CIM_TYPES.CIM_TYPE_BOOLEAN:
             return v_uint16
-        elif self._type == CIM_TYPES.CIM_TYPE_UINT8:
+        elif self.type == CIM_TYPES.CIM_TYPE_UINT8:
             return v_uint8
-        elif self._type == CIM_TYPES.CIM_TYPE_UINT16:
+        elif self.type == CIM_TYPES.CIM_TYPE_UINT16:
             return v_uint16
-        elif self._type == CIM_TYPES.CIM_TYPE_UINT32:
+        elif self.type == CIM_TYPES.CIM_TYPE_UINT32:
             return v_uint32
-        elif self._type == CIM_TYPES.CIM_TYPE_UINT64:
+        elif self.type == CIM_TYPES.CIM_TYPE_UINT64:
             return v_uint64
-        elif self._type == CIM_TYPES.CIM_TYPE_DATETIME:
+        elif self.type == CIM_TYPES.CIM_TYPE_DATETIME:
             return v_uint32
         else:
-            raise RuntimeError("unknown qualifier type: %s", h(self._type))
+            raise RuntimeError("unknown qualifier type: %s", h(self.type))
 
     def __repr__(self):
         r = ""
         if self.is_array:
             r += "arrayref to "
-        r += CIM_TYPES.vsReverseMapping(self._type)
+        r += CIM_TYPES.vsReverseMapping(self.type)
         return r
 
     @property
@@ -227,7 +227,8 @@ class QualifierReference(vstruct.VStruct):
         self.value = v_bytes(size=0)
 
     def pcb_value_type(self):
-        self.vsSetField("value", self.value_type.value_parser())
+        P = self.value_type.value_parser
+        self.vsSetField("value", P())
 
     @property
     def is_builtin_key(self):
@@ -342,7 +343,7 @@ class PropertyReferenceList(vstruct.VStruct):
 class ClassDefinition(vstruct.VStruct, LoggingObject):
     def __init__(self):
         vstruct.VStruct.__init__(self)
-        LoggingObject.__init__()
+        LoggingObject.__init__(self)
 
         self.header = ClassDefinitionHeader()
         self.qualifiers_list = QualifiersList()
@@ -358,7 +359,7 @@ class ClassDefinition(vstruct.VStruct, LoggingObject):
     def data_length(self):
         return self._data_length & 0x7FFFFFFF
 
-    def pcb_data_length(self):
+    def pcb__data_length(self):
         self["data"].vsSetLength(self.data_length)
 
     def __repr__(self):
@@ -408,8 +409,8 @@ class ClassDefinition(vstruct.VStruct, LoggingObject):
 
     def get_qualifier_key(self, qualifier):
         if qualifier.is_builtin_key:
-            return BUILTIN_QUALIFIERS.vsReverseMapping(qualifier.get_key)
-        return self.get_string(qualifier.get_key)
+            return BUILTIN_QUALIFIERS.vsReverseMapping(qualifier.key)
+        return self.get_string(qualifier.key)
 
     @property
     def class_name(self):
@@ -454,16 +455,19 @@ class ClassInstance(vstruct.VStruct, LoggingObject):
         LoggingObject.__init__(self)
 
         self.class_layout = class_layout
+        self._buf = None
+
+        self.vsParse(self._buf)
 
         self.name_hash = v_wstr(size=0x40)
         self.ts1 = FILETIME()
         self.ts2 = FILETIME()
         self.data_length = v_uint32()
-        self.extra_padding = v_bytes(size=self.extra_padding_length)
+        self.extra_padding = v_bytes(size=0)
 
         self.toc = vstruct.VArray()
         for prop in self.class_layout.properties:
-            self.toc.vsAddElement(prop.type.value_parser)
+            self.toc.vsAddElement(prop.type.value_parser())
 
         self.qualifiers_list = QualifiersList()
         self.unk1 = v_uint8()
@@ -472,6 +476,17 @@ class ClassInstance(vstruct.VStruct, LoggingObject):
 
         self._property_index_map = {prop.name: i for i, prop in enumerate(self.class_layout.properties)}
         self._property_type_map = {prop.name: prop.type for prop in self.class_layout.properties}
+
+    def set_buffer(self, buf):
+        """
+        This is a hack until we can correctly compute extra_padding_length without trial and error.
+        Must be called before vsParse.
+        """
+        self._buf = buf
+
+    def pcb_data_length(self):
+        # hack: at this point, we know set_buffer must have been called
+        self["extra_padding"].vsSetLength(self.extra_padding_length())
 
     def pcb_property_data_length(self):
         self["property_data"].vsSetLength(self.property_data_length & 0x7FFFFFFF)
@@ -486,7 +501,6 @@ class ClassInstance(vstruct.VStruct, LoggingObject):
         # TODO: make this nice
         return "ClassInstance(classhash: {:s})".format(self._def.nameHash)
 
-    @property
     def extra_padding_length(self):
         class_definition = self.class_layout.class_definition
         if class_definition.header.unk3 == 0x18:
@@ -529,7 +543,7 @@ class ClassInstance(vstruct.VStruct, LoggingObject):
 
     def get_string(self, ref):
         s = WMIString()
-        s.vsParse(self.data, offset=int(ref))
+        s.vsParse(self.property_data, offset=int(ref))
         return str(s.s)
 
     def get_array(self, ref, item_type):
@@ -539,7 +553,7 @@ class ClassInstance(vstruct.VStruct, LoggingObject):
             return []
 
         Parser = item_type.value_parser
-        data = self.data
+        data = self.property_data
 
         arraySize = v_uint32()
         arraySize.vsParse(data, offset=int(ref))
@@ -629,24 +643,24 @@ class ClassLayout(LoggingObject):
 
     @property
     def properties(self):
-        className = self.class_definition.class_name
-        classDerivation = []  # initially, ordered from child to parent
-        while className != "":
-            cd = self.object_resolver.get_cd(self.namespace, className)
-            classDerivation.append(cd)
-            self.d("parent of %s is %s", className, cd.super_class_name)
-            className = cd.super_class_name
+        class_name = self.class_definition.class_name
+        class_derivation = []  # initially, ordered from child to parent
+        while class_name != "":
+            cd = self.object_resolver.get_cd(self.namespace, class_name)
+            class_derivation.append(cd)
+            self.d("parent of %s is %s", class_name, cd.super_class_name)
+            class_name = cd.super_class_name
 
-        # note, derivation now from parent to child
-        classDerivation.reverse()
+        # note, derivation now ordered from parent to child
+        class_derivation.reverse()
 
         self.d("%s derivation: %s",
                 self.class_definition.class_name,
-                map(lambda c: c.class_name, classDerivation))
+                map(lambda c: c.class_name, class_derivation))
 
         ret = []
-        while len(classDerivation) > 0:
-            cd = classDerivation.pop(0)
+        while len(class_derivation) > 0:
+            cd = class_derivation.pop(0)
             for prop in sorted(cd.properties.values(), key=lambda p: p.entry_number):
                 ret.append(prop)
 
@@ -741,9 +755,9 @@ class ObjectResolver(LoggingObject):
 
             if ref is None:
                 self.d("didn't find %s in %s, retrying in %s", class_name, namespace_name, SYSTEM_NAMESPACE_NAME)
-                q = "{}/{}".format(
-                    self.NS(SYSTEM_NAMESPACE_NAME),
-                    self.CD(class_name))
+                q = Key("{}/{}".format(
+                        self.NS(SYSTEM_NAMESPACE_NAME),
+                        self.CD(class_name)))
             c_cdbuf = self.get_object(q)
             c_cd = ClassDefinition()
             c_cd.vsParse(c_cdbuf)
@@ -779,7 +793,10 @@ class ObjectResolver(LoggingObject):
                     self.IL()))
 
         for ns_i in self.get_objects(q):
-            i = self.ns_cl.instance.vsParse(ns_i)
+            i = self.ns_cl.instance
+            # hack: until we can compute extra_padding_length
+            i.set_buffer(ns_i)
+            i.vsParse(ns_i)
             yield self.NamespaceSpecifier(namespace_name + "\\" + i.get_property_value("Name"))
 
     ClassDefinitionSpecifier = namedtuple("ClassDefintionSpecifier", ["namespace_name", "class_name"])
@@ -789,7 +806,8 @@ class ObjectResolver(LoggingObject):
                     self.CD()))
 
         for cdbuf in self.get_objects(q):
-            cd = ClassDefinition(cdbuf)
+            cd = ClassDefinition()
+            cd.vsParse(cdbuf)
             yield self.ClassDefinitionSpecifier(namespace_name, cd.class_name)
 
     ClassInstanceSpecifier = namedtuple("ClassInstanceSpecifier", ["namespace_name", "class_name", "instance_name"])
