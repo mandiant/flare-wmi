@@ -338,8 +338,7 @@ class ClassDefinitionItem(Item):
 
     @property
     def data(self):
-        # TODO: don't reach
-        return TreeClassDefinition(self._ctx.object_resolver, self._ns, self._name).cd._buf
+        return self._ctx.object_resolver.get_cd_buf(self._ns, self._name)
 
     @cached_property
     def structs(self):

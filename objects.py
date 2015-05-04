@@ -738,6 +738,23 @@ class ObjectResolver(LoggingObject):
     def root_namespace(self):
         return SYSTEM_NAMESPACE_NAME
 
+    def get_cd_buf(self, namespace_name, class_name):
+        q = Key("{}/{}".format(
+                self.NS(namespace_name),
+                self.CD(class_name)))
+        # TODO: should ensure this query has a unique result
+        ref = one(self._index.lookup_keys(q))
+
+        # some standard class definitions (like __NAMESPACE) are not in the
+        #   current NS, but in the __SystemClass NS. So we try that one, too.
+
+        if ref is None:
+            self.d("didn't find %s in %s, retrying in %s", class_name, namespace_name, SYSTEM_NAMESPACE_NAME)
+            q = Key("{}/{}".format(
+                    self.NS(SYSTEM_NAMESPACE_NAME),
+                    self.CD(class_name)))
+        return self.get_object(q)
+
     def get_cd(self, namespace_name, class_name):
         c_id = get_class_id(namespace_name, class_name)
         c_cd = self._cdcache.get(c_id, None)
