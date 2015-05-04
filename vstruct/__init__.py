@@ -380,8 +380,7 @@ class VStruct(vs_prims.v_base):
             self.__dict__["_vs_values"] = vsvals
         r = vsvals.get(name)
         if r is None:
-            # need to support @properties
-            return object.__getattribute__(self, name)
+            raise AttributeError()
         if isinstance(r, vs_prims.v_prim):
             return r.vsGetValue()
         return r

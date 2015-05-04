@@ -9,7 +9,6 @@ import logging
 from datetime import datetime
 from collections import namedtuple
 
-import hexdump
 from funcy.objects import cached_property
 
 from common import h
@@ -92,7 +91,6 @@ class ClassDefinitionHeader(vstruct.VStruct):
         #   0x19 - then 0x11
         #   0x18 - then 0x10
         #   0x17 - then 0x0F
-        # so they all add up to 0x
         self.unk4 = v_uint32()  # not present if no superclass
 
     def pcb_super_class_unicode_length(self):
@@ -309,7 +307,6 @@ class Property(LoggingObject):
     @property
     def qualifiers(self):
         """ get dict of str to str """
-        # TODO: can merge this will ClassDef.getQualifiers
         ret = {}
         for i in xrange(self._prop.qualifiers.count):
             q = self._prop.qualifiers.qualifiers[i]
@@ -916,7 +913,10 @@ class TreeClassInstance(LoggingObject):
         self.instance_name = instance_name
 
     def __repr__(self):
-        return "ClassInstance(name: {:s})".format(self.name)
+        return "ClassInstance(namespace: {:s}, class: {:s}, name: {:s})".format(
+            self.ns,
+            self.class_name,
+            self.instance_name)
 
     @property
     def klass(self):
