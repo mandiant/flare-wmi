@@ -1,16 +1,22 @@
 from PyQt5 import uic
 from PyQt5.QtGui import QBrush
 from PyQt5.QtGui import QPalette
+from PyQt5.QtGui import QMouseEvent
 from PyQt5.QtGui import QFontDatabase
+import PyQt5.QtCore as QtCore
 from PyQt5.QtCore import Qt
+from PyQt5.QtCore import QSize
 from PyQt5.QtCore import pyqtSignal
-from PyQt5.QtCore import QAbstractTableModel
-from PyQt5.QtCore import QItemSelection
 from PyQt5.QtCore import QModelIndex
+from PyQt5.QtCore import QItemSelection
 from PyQt5.QtCore import QItemSelectionModel
+from PyQt5.QtCore import QAbstractTableModel
 from PyQt5.QtWidgets import QWidget
+from PyQt5.QtWidgets import QTableView
+from PyQt5.QtWidgets import QSizePolicy
 from PyQt5.QtWidgets import QGridLayout
 from PyQt5.QtWidgets import QApplication
+from PyQt5.QtWidgets import QAbstractItemView
 
 import os.path, sys
 sys.path.append(os.path.join(os.path.dirname(os.path.realpath(__file__)), os.pardir))
@@ -116,16 +122,39 @@ class HexTableModel(QAbstractTableModel):
         return self.index(r, c)
 
 
+def row_start_index(index):
+    return index - (index % 0x10)
+
+def row_end_index(index):
+    return index - (index % 0x10) + 0xF
+
+def row_number(index):
+    return index / 0x10
+
+
 class HexItemSelectionModel(QItemSelectionModel):
-    def isInBytesSide(self, qindex):
-        return qindex.column() < 0x10
-
-    def isInCharsSide(self, qindex):
-        return qindex.column() > 0x10
-
-    # TODO: currently ignoring selectionFlags...
-    def select(self, selection, selectionFlags):
+    def __init__(self, model, view):
         """
+        :type view: HexTableView
+        """
+        super(HexItemSelectionModel, self).__init__(model)
+        self._model = model
+        self._view = view
+
+        self._start_qindex = None
+        self._view.mousePressedIndex.connect(self._handle_mouse_pressed)
+        self._view.mouseMovedIndex.connect(self._handle_mouse_moved)
+        self._view.mouseReleasedIndex.connect(self._handle_mouse_released)
+
+    def _bselect(self, selection, start_bindex, end_bindex):
+        """ add the given buffer indices to the given QItemSelection, both byte and char panes """
+        selection.select(self._model.index2qindexb(start_bindex), self._model.index2qindexb(end_bindex))
+        selection.select(self._model.index2qindexc(start_bindex), self._model.index2qindexc(end_bindex))
+
+    def _do_select(self, start_bindex, end_bindex):
+        """
+        select the given range by buffer indices
+
         selects items like this:
 
             ..................
@@ -143,64 +172,100 @@ class HexItemSelectionModel(QItemSelectionModel):
             ......xxxxxx......
             ......xxxxxx......
             ..................
+         """
+        if start_bindex > end_bindex:
+            start_bindex, end_bindex = end_bindex, start_bindex
 
-        the following via: http://stackoverflow.com/questions/10906950/
-                             qt-qitemselectionmodel-to-ignore-columns
+        selection = QItemSelection()
+        if row_number(end_bindex) - row_number(start_bindex) == 0:
+            # all on one line
+            self._bselect(selection, start_bindex, end_bindex)
+        elif row_number(end_bindex) - row_number(start_bindex) == 1:
+            # two lines
+            self._bselect(selection, start_bindex, row_end_index(start_bindex))
+            self._bselect(selection, row_start_index(end_bindex), end_bindex)
+        else:
+            # many lines
+            self._bselect(selection, start_bindex, row_end_index(start_bindex))
+            self._bselect(selection, row_start_index(start_bindex) + 0x10, row_end_index(end_bindex) - 0x10)
+            self._bselect(selection, row_start_index(end_bindex), end_bindex)
 
-        have to handle both QItemSelectionModel.select methods::
+        self.select(selection, QItemSelectionModel.SelectCurrent)
 
-            1. select(QtCore.QModelIndex, QItemSelectionModel.SelectionFlags)
-            2. select(QtGui.QItemSelection, QItemSelectionModel.SelectionFlags)
+    def _update_selection(self, qindex1, qindex2):
+        """  select the given range by qmodel indices """
+        m = self.model()
+        self._do_select(m.qindex2index(qindex1), m.qindex2index(qindex2))
 
-        The first seems to run on mouse down and mouse up.
-        The second seems to run on mouse down, up and drag
-        """
-        if isinstance(selection, QItemSelection):
-            # This is the overload with the QItemSelection passed to arg 0
-            qindexes = selection.indexes()
+    def _handle_mouse_pressed(self, qindex):
+        self._start_qindex = qindex
+        self._update_selection(qindex, qindex)
 
-            bSideCount = sum([1 for i in qindexes if self.isInBytesSide(i)])
-            cSideCount = sum([1 for i in qindexes if self.isInCharsSide(i)])
+    def _handle_mouse_moved(self, qindex):
+        self._update_selection(self._start_qindex, qindex)
 
-            m = self.model()
-            indices = []
-            if bSideCount >= cSideCount:
-                # we assume the main select in on the left side.
-                for qindex in qindexes:
-                    if not self.isInBytesSide(qindex):
-                        continue
-                    indices.append(m.qindex2index(qindex))
-
-            else:
-                # we assume the main select in on the left side.
-                for qindex in qindexes:
-                    if not self.isInCharsSide(qindex):
-                        continue
-                    indices.append(m.qindex2index(qindex))
-
-            if not indices:
-                super(HexItemSelectionModel, self).select(QItemSelection(),
-                                                        selectionFlags)
-                return
-            low = min(indices)
-            high = max(indices)
-            selection = QItemSelection()
-            for i in xrange(low, high):
-                qib = m.index2qindexb(i)
-                selection.select(qib, qib)
-                qic = m.index2qindexc(i)
-                selection.select(qic, qic)
-            super(HexItemSelectionModel, self).select(selection,
-                                                    selectionFlags)
+    def _handle_mouse_released(self, qindex):
+        self._update_selection(self._start_qindex, qindex)
+        self._start_qindex = None
 
 
-        elif isinstance(selection, QModelIndex):
-            # This is the overload with the QModelIndex passed to arg 0
-            super(HexItemSelectionModel, self).select(selection,
-                                                        selectionFlags)
+class HexTableView(QTableView, LoggingObject):
+    """ table view that handles click events for better selection handling """
+    mousePressed = pyqtSignal([QMouseEvent])
+    mousePressedIndex = pyqtSignal([QModelIndex])
+    mouseMoved = pyqtSignal([QMouseEvent])
+    mouseMovedIndex = pyqtSignal([QModelIndex])
+    mouseReleased = pyqtSignal([QMouseEvent])
+    mouseReleasedIndex = pyqtSignal([QModelIndex])
 
-        else:  # Just in case
-            raise Exception("Unexpected type for arg 0: '%s'" % type(selection))
+    def __init__(self, *args, **kwargs):
+        super(HexTableView, self).__init__(*args, **kwargs)
+        self.mousePressed.connect(self._handle_mouse_press)
+        self.mouseMoved.connect(self._handle_mouse_move)
+        self.mouseReleased.connect(self._handle_mouse_release)
+
+        self._pressStartIndex = None
+        self._pressCurrentIndex = None
+        self._pressEndIndex = None
+        self._isTrackingMouse = False
+
+    def _resetPressState(self):
+        self._pressStartIndex = None
+        self._pressCurrentIndex = None
+        self._pressEndIndex = None
+
+    def mousePressEvent(self, event):
+        super(HexTableView, self).mousePressEvent(event)
+        self.mousePressed.emit(event)
+
+    def mouseMoveEvent(self, event):
+        super(HexTableView, self).mouseMoveEvent(event)
+        self.mouseMoved.emit(event)
+
+    def mouseReleaseEvent(self, event):
+        super(HexTableView, self).mousePressEvent(event)
+        self.mouseReleased.emit(event)
+
+    def _handle_mouse_press(self, key_event):
+        self._resetPressState()
+
+        self._pressStartIndex = self.indexAt(key_event.pos())
+        self._isTrackingMouse = True
+
+        self.mousePressedIndex.emit(self._pressStartIndex)
+
+    def _handle_mouse_move(self, key_event):
+        if self._isTrackingMouse:
+            i = self.indexAt(key_event.pos())
+            if i != self._pressCurrentIndex:
+                self._pressCurrentIndex = i
+                self.mouseMovedIndex.emit(i)
+
+    def _handle_mouse_release(self, key_event):
+        self._pressEndIndex = self.indexAt(key_event.pos())
+        self._isTrackingMouse = False
+
+        self.mouseReleasedIndex.emit(self._pressEndIndex)
 
 
 class HexViewWidget(QWidget, LoggingObject):
@@ -211,22 +276,52 @@ class HexViewWidget(QWidget, LoggingObject):
 
         # TODO: maybe subclass the loaded .ui and use that instance directly
         self._ui = uic.loadUi("ui/hexview.ui")
-        self._ui.view.setModel(self._model)
-        for i in xrange(0x10):
-            self._ui.view.setColumnWidth(i, 25)
-        self._ui.view.setColumnWidth(0x10, 12)
-        for i in xrange(0x11, 0x22):
-            self._ui.view.setColumnWidth(i, 10)
 
-        self._hsm = HexItemSelectionModel(self._model)
-        self._ui.view.setSelectionModel(self._hsm)
+        # ripped from pyuic5 ui/hexview.ui
+        #   at commit 6c9edffd32706097d7eba8814d306ea1d997b25a
+        self.view = HexTableView(self._ui)
+        sizePolicy = QSizePolicy(QSizePolicy.Fixed, QSizePolicy.Expanding)
+        sizePolicy.setHorizontalStretch(0)
+        sizePolicy.setVerticalStretch(0)
+        sizePolicy.setHeightForWidth(self.view.sizePolicy().hasHeightForWidth())
+        self.view.setSizePolicy(sizePolicy)
+        self.view.setMinimumSize(QSize(660, 0))
+        self.view.setVerticalScrollBarPolicy(QtCore.Qt.ScrollBarAlwaysOn)
+        self.view.setHorizontalScrollBarPolicy(QtCore.Qt.ScrollBarAlwaysOff)
+        self.view.setSelectionMode(QAbstractItemView.NoSelection)
+        self.view.setShowGrid(False)
+        self.view.setWordWrap(False)
+        self.view.setObjectName("view")
+        self.view.horizontalHeader().setDefaultSectionSize(25)
+        self.view.horizontalHeader().setMinimumSectionSize(25)
+        self.view.verticalHeader().setDefaultSectionSize(21)
+        self._ui.horizontalLayout.addWidget(self.view)
+        # end rip
+
+        self.view.setModel(self._model)
+        for i in xrange(0x10):
+            self.view.setColumnWidth(i, 25)
+        self.view.setColumnWidth(0x10, 12)
+        for i in xrange(0x11, 0x22):
+            self.view.setColumnWidth(i, 10)
+
+        self._hsm = HexItemSelectionModel(self._model, self.view)
+        self.view.setSelectionModel(self._hsm)
 
         f = QFontDatabase.systemFont(QFontDatabase.FixedFont)
-        self._ui.view.setFont(f)
+        self.view.setFont(f)
 
         mainLayout = QGridLayout()
         mainLayout.addWidget(self._ui, 0, 0)
         self.setLayout(mainLayout)
+
+        selection = QItemSelection()
+
+        selection.select(self._model.index2qindexb(0x12), self._model.index2qindexb(0x1F))
+        selection.select(self._model.index2qindexb(0x20), self._model.index2qindexb(0x2F))
+        selection.select(self._model.index2qindexb(0x30), self._model.index2qindexb(0x33))
+
+        self._hsm.select(selection, QItemSelectionModel.SelectCurrent)
 
     def colorRange(self, start, end):
         """ highlight by buffer indices """
@@ -234,7 +329,7 @@ class HexViewWidget(QWidget, LoggingObject):
 
     def scrollTo(self, index):
         qi = self._model.index2qindexb(index)
-        self._ui.view.scrollTo(qi)
+        self.view.scrollTo(qi)
 
 
 def main():
@@ -244,7 +339,7 @@ def main():
 
 
     app = QApplication(sys.argv)
-    screen = HexViewWidget2(buf)
+    screen = HexViewWidget(buf)
     screen.show()
     sys.exit(app.exec_())
 
