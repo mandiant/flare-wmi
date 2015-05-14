@@ -138,10 +138,10 @@ class BaseType(object):
         self._type = type_
         self._value_parser = value_parser
 
-    def getType(self):
+    def type(self):
         return self._type
 
-    def isArray(self):
+    def is_array(self):
         return False
 
     @property
@@ -725,10 +725,13 @@ class ObjectResolver(LoggingObject):
         # TODO: should ensure this query has a unique result
         return self._cim.logical_data_store.get_object_buffer(ref)
 
+    def get_keys(self, query):
+        """ return a generator of keys matching the query """
+        return self._index.lookup_keys(query)
+
     def get_objects(self, query):
         """ return a generator of object buffers matching the query """
-        refs = self._index.lookup_keys(query)
-        for ref in refs:
+        for ref in self.get_keys(query):
             yield self._cim.logical_data_store.get_object_buffer(ref)
 
     @property

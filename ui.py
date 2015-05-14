@@ -8,6 +8,7 @@ from PyQt5.QtWidgets import QApplication
 from PyQt5 import uic
 
 from cim import CIM
+from cim import Key
 from cim import Index
 from objects import CIM_TYPE_SIZES
 from objects import TreeNamespace
@@ -590,7 +591,14 @@ class Form(QWidget, LoggingObject):
         tv.setModel(self._tree_model)
         tv.header().setSectionResizeMode(QHeaderView.Interactive)
         tv.header().resizeSection(0, 250)  # chosen empirically
-        tv.activated.connect(self._handleBrowseItemActivated)
+        tv.activated.connect(self._handle_browse_item_activated)
+
+        self._query_model = QStandardItemModel(self._ui.queryResultsList)
+        self._query_model_item_map = {}
+        self._ui.queryResultsList.setModel(self._query_model)
+        self._ui.queryInputLineEdit.returnPressed.connect(self._handle_query)
+        self._ui.queryInputActionButton.clicked.connect(self._handle_query)
+        self._ui.queryResultsList.activated.connect(self._handle_results_item_activated)
 
         mainLayout = QGridLayout()
         mainLayout.addWidget(self._ui, 0, 0)
@@ -598,7 +606,7 @@ class Form(QWidget, LoggingObject):
         self.setLayout(mainLayout)
         self.setWindowTitle("cim - ui")
 
-    def _handleBrowseItemActivated(self, itemIndex):
+    def _handle_browse_item_activated(self, itemIndex):
         item = self._tree_model.getIndexData(itemIndex)
         details = self._ui.browseDetails
         details_layout = self._ui.browseDetailsLayout
@@ -623,6 +631,34 @@ class Form(QWidget, LoggingObject):
         elif isinstance(item, ClassDefinitionItem):
             v = ClassDefinitionItemView(item, details)
             details_layout.addWidget(v)
+
+    def _handle_query(self):
+        emptyLayout(self._ui.queryResultsViewLayout)
+        self._query_model.clear()
+        self._query_model_item_map = {}
+
+        query_text = self._ui.queryInputLineEdit.text()
+        self.d("query: %s", query_text)
+        if query_text.startswith("NS_"):
+            self.d("key query")
+            for o in self._ctx.object_resolver.get_keys(Key(query_text)):
+                self.d("  query result: %s", o)
+                self._query_model_item_map[o.human_format] = o
+                item = QStandardItem(o.human_format)
+                self._query_model.appendRow(item)
+        else:
+            self.w("unknown query schema: %s", query_text)
+
+    def _handle_results_item_activated(self, itemIndex):
+        emptyLayout(self._ui.queryResultsViewLayout)
+
+        item = self._query_model.itemFromIndex(itemIndex)
+        o = self._query_model_item_map[item.text()]
+        self.d("item changed: %s", o)
+
+        buf = self._ctx.object_resolver.get_object(o)
+        hv = HexViewWidget(buf, self._ui.queryResultsViewFrame)
+        self._ui.queryResultsViewLayout.addWidget(hv)
 
 
 def main(type_, path):

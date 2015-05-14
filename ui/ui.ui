@@ -18,7 +18,7 @@
     <item>
      <widget class="QTabWidget" name="contentTabWidget">
       <property name="currentIndex">
-       <number>0</number>
+       <number>1</number>
       </property>
       <widget class="QWidget" name="browseTab">
        <attribute name="title">
@@ -109,8 +109,12 @@
              <property name="orientation">
               <enum>Qt::Horizontal</enum>
              </property>
-             <widget class="QListView" name="queryResultsList"/>
-             <widget class="QFrame" name="queryResultsHexViewFrame">
+             <widget class="QListView" name="queryResultsList">
+              <property name="editTriggers">
+               <set>QAbstractItemView::NoEditTriggers</set>
+              </property>
+             </widget>
+             <widget class="QFrame" name="queryResultsViewFrame">
               <property name="sizePolicy">
                <sizepolicy hsizetype="Minimum" vsizetype="Preferred">
                 <horstretch>0</horstretch>
@@ -129,6 +133,11 @@
               <property name="frameShadow">
                <enum>QFrame::Raised</enum>
               </property>
+              <layout class="QVBoxLayout" name="verticalLayout_6">
+               <item>
+                <layout class="QVBoxLayout" name="queryResultsViewLayout"/>
+               </item>
+              </layout>
              </widget>
             </widget>
            </item>
