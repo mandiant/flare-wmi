@@ -269,18 +269,22 @@ class HexTableView(QTableView, LoggingObject):
         self.mouseReleasedIndex.emit(self._pressEndIndex)
 
 
-class HexViewWidget(QWidget, LoggingObject):
+UI, Base = uic.loadUiType("ui/hexview.ui")
+
+class HexViewWidget(Base, UI, LoggingObject):
     def __init__(self, buf, parent=None):
         super(HexViewWidget, self).__init__(parent)
+        self.setupUi(self)
         self._buf = buf
         self._model = HexTableModel(self._buf)
 
         # TODO: maybe subclass the loaded .ui and use that instance directly
-        self._ui = uic.loadUi("ui/hexview.ui")
+        #self._ui = uic.loadUi("ui/hexview.ui")
+        print(dir(self))
 
         # ripped from pyuic5 ui/hexview.ui
         #   at commit 6c9edffd32706097d7eba8814d306ea1d997b25a
-        self.view = HexTableView(self._ui)
+        self.view = HexTableView(self)
         sizePolicy = QSizePolicy(QSizePolicy.MinimumExpanding, QSizePolicy.Expanding)
         sizePolicy.setHorizontalStretch(0)
         sizePolicy.setVerticalStretch(0)
@@ -296,7 +300,7 @@ class HexViewWidget(QWidget, LoggingObject):
         self.view.horizontalHeader().setDefaultSectionSize(25)
         self.view.horizontalHeader().setMinimumSectionSize(25)
         self.view.verticalHeader().setDefaultSectionSize(21)
-        self._ui.horizontalLayout.addWidget(self.view)
+        self.mainLayout.insertWidget(0, self.view)
         # end rip
 
         self.view.setModel(self._model)
@@ -311,18 +315,6 @@ class HexViewWidget(QWidget, LoggingObject):
 
         f = QFontDatabase.systemFont(QFontDatabase.FixedFont)
         self.view.setFont(f)
-
-        mainLayout = QGridLayout()
-        mainLayout.addWidget(self._ui, 0, 0)
-        self.setLayout(mainLayout)
-
-        selection = QItemSelection()
-
-        selection.select(self._model.index2qindexb(0x12), self._model.index2qindexb(0x1F))
-        selection.select(self._model.index2qindexb(0x20), self._model.index2qindexb(0x2F))
-        selection.select(self._model.index2qindexb(0x30), self._model.index2qindexb(0x33))
-
-        self._hsm.select(selection, QItemSelectionModel.SelectCurrent)
 
     def colorRange(self, start, end):
         """ highlight by buffer indices """

@@ -6,7 +6,7 @@
    <rect>
     <x>0</x>
     <y>0</y>
-    <width>670</width>
+    <width>690</width>
     <height>651</height>
    </rect>
   </property>
@@ -25,19 +25,6 @@
      <property name="orientation">
       <enum>Qt::Vertical</enum>
      </property>
-     <widget class="QWidget" name="detailsFrame" native="true">
-      <property name="minimumSize">
-       <size>
-        <width>670</width>
-        <height>400</height>
-       </size>
-      </property>
-      <layout class="QVBoxLayout" name="verticalLayout_2">
-       <item>
-        <layout class="QVBoxLayout" name="detailsLayout"/>
-       </item>
-      </layout>
-     </widget>
      <widget class="QTreeView" name="treeView"/>
     </widget>
    </item>

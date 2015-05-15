@@ -153,10 +153,9 @@ class VstructViewWidget(QWidget, LoggingObject):
 
         # TODO: maybe subclass the loaded .ui and use that instance directly
         self._ui = uic.loadUi("ui/vstruct.ui")
-        emptyLayout(self._ui.detailsLayout)
 
-        self._hv = HexViewWidget(self._buf, self._ui.detailsFrame)
-        self._ui.detailsLayout.addWidget(self._hv)
+        self._hv = HexViewWidget(self._buf, self._ui.splitter)
+        self._ui.splitter.insertWidget(0, self._hv)
 
         tv = self._ui.treeView
         tv.setModel(self._model)

@@ -633,7 +633,8 @@ class Form(QWidget, LoggingObject):
             details_layout.addWidget(v)
 
     def _handle_query(self):
-        emptyLayout(self._ui.queryResultsViewLayout)
+        viewLayout = self._ui.queryResultsViewLayout
+        emptyLayout(viewLayout)
         self._query_model.clear()
         self._query_model_item_map = {}
 
