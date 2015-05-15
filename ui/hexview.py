@@ -1,3 +1,10 @@
+# TODO: add multiple color selections.
+# TODO: use hash-based color picking
+# TODO: add selection "save as binary" action
+# TODO: add selection "save as hex dump text" action
+# TODO: add "add new origin" action
+# TODO: add origin offset status bar entry
+
 from PyQt5 import uic
 from PyQt5.QtGui import QBrush
 from PyQt5.QtGui import QPalette
@@ -48,6 +55,8 @@ class HexTableModel(QAbstractTableModel):
             if self._colorStart is None or self._colorEnd is None:
                 return None
             elif self._colorStart <= self.qindex2index(index) < self._colorEnd:
+                if index.column() == 0x10:
+                    return None
                 color = QApplication.palette().color(QPalette.Highlight)
                 return QBrush(color)
             else:
@@ -142,9 +151,9 @@ class HexItemSelectionModel(QItemSelectionModel):
         self._view = view
 
         self._start_qindex = None
-        self._view.mousePressedIndex.connect(self._handle_mouse_pressed)
-        self._view.mouseMovedIndex.connect(self._handle_mouse_moved)
-        self._view.mouseReleasedIndex.connect(self._handle_mouse_released)
+        self._view.leftMousePressedIndex.connect(self._handle_mouse_pressed)
+        self._view.leftMouseMovedIndex.connect(self._handle_mouse_moved)
+        self._view.leftMouseReleasedIndex.connect(self._handle_mouse_released)
 
     def _bselect(self, selection, start_bindex, end_bindex):
         """ add the given buffer indices to the given QItemSelection, both byte and char panes """
@@ -213,18 +222,18 @@ class HexItemSelectionModel(QItemSelectionModel):
 
 class HexTableView(QTableView, LoggingObject):
     """ table view that handles click events for better selection handling """
-    mousePressed = pyqtSignal([QMouseEvent])
-    mousePressedIndex = pyqtSignal([QModelIndex])
-    mouseMoved = pyqtSignal([QMouseEvent])
-    mouseMovedIndex = pyqtSignal([QModelIndex])
-    mouseReleased = pyqtSignal([QMouseEvent])
-    mouseReleasedIndex = pyqtSignal([QModelIndex])
+    leftMousePressed = pyqtSignal([QMouseEvent])
+    leftMousePressedIndex = pyqtSignal([QModelIndex])
+    leftMouseMoved = pyqtSignal([QMouseEvent])
+    leftMouseMovedIndex = pyqtSignal([QModelIndex])
+    leftMouseReleased = pyqtSignal([QMouseEvent])
+    leftMouseReleasedIndex = pyqtSignal([QModelIndex])
 
     def __init__(self, *args, **kwargs):
         super(HexTableView, self).__init__(*args, **kwargs)
-        self.mousePressed.connect(self._handle_mouse_press)
-        self.mouseMoved.connect(self._handle_mouse_move)
-        self.mouseReleased.connect(self._handle_mouse_release)
+        self.leftMousePressed.connect(self._handle_mouse_press)
+        self.leftMouseMoved.connect(self._handle_mouse_move)
+        self.leftMouseReleased.connect(self._handle_mouse_release)
 
         self._pressStartIndex = None
         self._pressCurrentIndex = None
@@ -238,15 +247,18 @@ class HexTableView(QTableView, LoggingObject):
 
     def mousePressEvent(self, event):
         super(HexTableView, self).mousePressEvent(event)
-        self.mousePressed.emit(event)
+        if event.buttons() & Qt.LeftButton:
+            self.leftMousePressed.emit(event)
 
     def mouseMoveEvent(self, event):
         super(HexTableView, self).mouseMoveEvent(event)
-        self.mouseMoved.emit(event)
+        if event.buttons() & Qt.LeftButton:
+            self.leftMouseMoved.emit(event)
 
     def mouseReleaseEvent(self, event):
         super(HexTableView, self).mousePressEvent(event)
-        self.mouseReleased.emit(event)
+        if event.buttons() & Qt.LeftButton:
+            self.leftMouseReleased.emit(event)
 
     def _handle_mouse_press(self, key_event):
         self._resetPressState()
@@ -254,20 +266,20 @@ class HexTableView(QTableView, LoggingObject):
         self._pressStartIndex = self.indexAt(key_event.pos())
         self._isTrackingMouse = True
 
-        self.mousePressedIndex.emit(self._pressStartIndex)
+        self.leftMousePressedIndex.emit(self._pressStartIndex)
 
     def _handle_mouse_move(self, key_event):
         if self._isTrackingMouse:
             i = self.indexAt(key_event.pos())
             if i != self._pressCurrentIndex:
                 self._pressCurrentIndex = i
-                self.mouseMovedIndex.emit(i)
+                self.leftMouseMovedIndex.emit(i)
 
     def _handle_mouse_release(self, key_event):
         self._pressEndIndex = self.indexAt(key_event.pos())
         self._isTrackingMouse = False
 
-        self.mouseReleasedIndex.emit(self._pressEndIndex)
+        self.leftMouseReleasedIndex.emit(self._pressEndIndex)
 
 
 # reference: http://stackoverflow.com/questions/10612467/pyqt4-custom-widget-uic-loaded-added-to-layout-is-invisible

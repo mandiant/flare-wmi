@@ -721,6 +721,7 @@ class ObjectResolver(LoggingObject):
 
     def get_object(self, query):
         """ fetch the first object buffer matching the query """
+        self.d("query: %s", str(query))
         ref = one(self._index.lookup_keys(query))
         # TODO: should ensure this query has a unique result
         return self._cim.logical_data_store.get_object_buffer(ref)

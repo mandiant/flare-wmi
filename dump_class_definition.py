@@ -9,6 +9,10 @@ from common import h
 
 
 def dump_class_def(cd, cl):
+    print(cd.tree())
+
+
+
     print("classname: %s" % cd.class_name)
     print("super: %s" % cd.super_class_name)
     print("ts: %s" % cd.timestamp.isoformat("T"))

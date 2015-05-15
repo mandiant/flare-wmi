@@ -1,3 +1,4 @@
+# add "color region" action
 import binascii
 
 from PyQt5 import uic
