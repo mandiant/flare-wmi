@@ -173,6 +173,7 @@ class HexItemSelectionModel(QItemSelectionModel):
             ......xxxxxx......
             ..................
          """
+        self.select(QItemSelection(), QItemSelectionModel.Clear)
         if start_bindex > end_bindex:
             start_bindex, end_bindex = end_bindex, start_bindex
 
@@ -280,7 +281,7 @@ class HexViewWidget(QWidget, LoggingObject):
         # ripped from pyuic5 ui/hexview.ui
         #   at commit 6c9edffd32706097d7eba8814d306ea1d997b25a
         self.view = HexTableView(self._ui)
-        sizePolicy = QSizePolicy(QSizePolicy.Fixed, QSizePolicy.Expanding)
+        sizePolicy = QSizePolicy(QSizePolicy.MinimumExpanding, QSizePolicy.Expanding)
         sizePolicy.setHorizontalStretch(0)
         sizePolicy.setVerticalStretch(0)
         sizePolicy.setHeightForWidth(self.view.sizePolicy().hasHeightForWidth())
@@ -300,7 +301,7 @@ class HexViewWidget(QWidget, LoggingObject):
 
         self.view.setModel(self._model)
         for i in xrange(0x10):
-            self.view.setColumnWidth(i, 25)
+            self.view.setColumnWidth(i, 23)
         self.view.setColumnWidth(0x10, 12)
         for i in xrange(0x11, 0x22):
             self.view.setColumnWidth(i, 10)
