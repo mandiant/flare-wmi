@@ -269,6 +269,7 @@ class HexTableView(QTableView, LoggingObject):
         self.mouseReleasedIndex.emit(self._pressEndIndex)
 
 
+# reference: http://stackoverflow.com/questions/10612467/pyqt4-custom-widget-uic-loaded-added-to-layout-is-invisible
 UI, Base = uic.loadUiType("ui/hexview.ui")
 
 class HexViewWidget(Base, UI, LoggingObject):

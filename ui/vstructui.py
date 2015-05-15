@@ -134,10 +134,14 @@ class VstructRootItem(Item):
         return [VstructItem(i.struct, i.name, i.offset) for i in self._items]
 
 
-class VstructViewWidget(QWidget, LoggingObject):
+UI, Base = uic.loadUiType("ui/vstruct.ui")
+
+class VstructViewWidget(Base, UI, LoggingObject):
     def __init__(self, items, buf, parent=None):
         """ items is a list of VstructItem """
         super(VstructViewWidget, self).__init__(parent)
+        self.setupUi(self)
+
         self._items = items
         self._buf = buf
         self._model = TreeModel(
@@ -151,22 +155,15 @@ class VstructViewWidget(QWidget, LoggingObject):
                     ColumnDef("End", "end", formatter=h),
                 ])
 
-        # TODO: maybe subclass the loaded .ui and use that instance directly
-        self._ui = uic.loadUi("ui/vstruct.ui")
+        self._hv = HexViewWidget(self._buf, self.splitter)
+        self.splitter.insertWidget(0, self._hv)
 
-        self._hv = HexViewWidget(self._buf, self._ui.splitter)
-        self._ui.splitter.insertWidget(0, self._hv)
-
-        tv = self._ui.treeView
+        tv = self.treeView
         tv.setModel(self._model)
         tv.header().setSectionResizeMode(QHeaderView.Interactive)
         tv.entered.connect(self._handleItemActivated)
         tv.clicked.connect(self._handleItemActivated)
         tv.activated.connect(self._handleItemActivated)
-
-        mainLayout = QGridLayout()
-        mainLayout.addWidget(self._ui, 0, 0)
-        self.setLayout(mainLayout)
 
     def _handleItemActivated(self, itemIndex):
         item = self._model.getIndexData(itemIndex)
