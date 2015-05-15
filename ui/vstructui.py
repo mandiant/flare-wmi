@@ -135,7 +135,6 @@ class VstructRootItem(Item):
 
 
 UI, Base = uic.loadUiType("ui/vstruct.ui")
-
 class VstructViewWidget(Base, UI, LoggingObject):
     def __init__(self, items, buf, parent=None):
         """ items is a list of VstructItem """
@@ -161,11 +160,11 @@ class VstructViewWidget(Base, UI, LoggingObject):
         tv = self.treeView
         tv.setModel(self._model)
         tv.header().setSectionResizeMode(QHeaderView.Interactive)
-        tv.entered.connect(self._handleItemActivated)
-        tv.clicked.connect(self._handleItemActivated)
-        tv.activated.connect(self._handleItemActivated)
+        tv.entered.connect(self._handle_item_activated)
+        tv.clicked.connect(self._handle_item_activated)
+        tv.activated.connect(self._handle_item_activated)
 
-    def _handleItemActivated(self, itemIndex):
+    def _handle_item_activated(self, itemIndex):
         item = self._model.getIndexData(itemIndex)
         start = item.start
         end = start + item.length

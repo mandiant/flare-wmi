@@ -133,6 +133,8 @@ def row_number(index):
 
 
 class HexItemSelectionModel(QItemSelectionModel):
+    selectionRangeChanged = pyqtSignal([int, int])
+
     def __init__(self, model, view):
         """
         :type view: HexTableView
@@ -192,6 +194,7 @@ class HexItemSelectionModel(QItemSelectionModel):
             self._bselect(selection, row_start_index(end_bindex), end_bindex)
 
         self.select(selection, QItemSelectionModel.SelectCurrent)
+        self.selectionRangeChanged.emit(start_bindex, end_bindex)
 
     def _update_selection(self, qindex1, qindex2):
         """  select the given range by qmodel indices """
@@ -271,7 +274,6 @@ class HexTableView(QTableView, LoggingObject):
 
 # reference: http://stackoverflow.com/questions/10612467/pyqt4-custom-widget-uic-loaded-added-to-layout-is-invisible
 UI, Base = uic.loadUiType("ui/hexview.ui")
-
 class HexViewWidget(Base, UI, LoggingObject):
     def __init__(self, buf, parent=None):
         super(HexViewWidget, self).__init__(parent)
@@ -279,12 +281,9 @@ class HexViewWidget(Base, UI, LoggingObject):
         self._buf = buf
         self._model = HexTableModel(self._buf)
 
-        # TODO: maybe subclass the loaded .ui and use that instance directly
-        #self._ui = uic.loadUi("ui/hexview.ui")
-        print(dir(self))
-
         # ripped from pyuic5 ui/hexview.ui
         #   at commit 6c9edffd32706097d7eba8814d306ea1d997b25a
+        # so we can add our custom HexTableView instance
         self.view = HexTableView(self)
         sizePolicy = QSizePolicy(QSizePolicy.MinimumExpanding, QSizePolicy.Expanding)
         sizePolicy.setHorizontalStretch(0)
@@ -314,6 +313,8 @@ class HexViewWidget(Base, UI, LoggingObject):
         self._hsm = HexItemSelectionModel(self._model, self.view)
         self.view.setSelectionModel(self._hsm)
 
+        self._hsm.selectionRangeChanged.connect(self._handle_selection_range_changed)
+
         f = QFontDatabase.systemFont(QFontDatabase.FixedFont)
         self.view.setFont(f)
 
@@ -324,6 +325,9 @@ class HexViewWidget(Base, UI, LoggingObject):
     def scrollTo(self, index):
         qi = self._model.index2qindexb(index)
         self.view.scrollTo(qi)
+
+    def _handle_selection_range_changed(self, start_bindex, end_bindex):
+        self.statusLabel.setText("sel: [{:s}, {:s}]".format(hex(start_bindex), hex(end_bindex)))
 
 
 def main():
