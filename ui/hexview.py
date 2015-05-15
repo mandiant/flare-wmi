@@ -11,10 +11,8 @@ from PyQt5.QtCore import QModelIndex
 from PyQt5.QtCore import QItemSelection
 from PyQt5.QtCore import QItemSelectionModel
 from PyQt5.QtCore import QAbstractTableModel
-from PyQt5.QtWidgets import QWidget
 from PyQt5.QtWidgets import QTableView
 from PyQt5.QtWidgets import QSizePolicy
-from PyQt5.QtWidgets import QGridLayout
 from PyQt5.QtWidgets import QApplication
 from PyQt5.QtWidgets import QAbstractItemView
 
@@ -317,6 +315,7 @@ class HexViewWidget(Base, UI, LoggingObject):
 
         f = QFontDatabase.systemFont(QFontDatabase.FixedFont)
         self.view.setFont(f)
+        self.statusLabel.setFont(f)
 
     def colorRange(self, start, end):
         """ highlight by buffer indices """
@@ -327,7 +326,11 @@ class HexViewWidget(Base, UI, LoggingObject):
         self.view.scrollTo(qi)
 
     def _handle_selection_range_changed(self, start_bindex, end_bindex):
-        self.statusLabel.setText("sel: [{:s}, {:s}]".format(hex(start_bindex), hex(end_bindex)))
+        txt = []
+        if start_bindex != -1 and end_bindex != -1:
+            txt.append("sel: [{:s}, {:s}]".format(hex(start_bindex), hex(end_bindex)))
+            txt.append("len: {:s}".format(hex(end_bindex - start_bindex + 1)))
+        self.statusLabel.setText(" ".join(txt))
 
 
 def main():
