@@ -2,7 +2,11 @@
 import binascii
 
 from PyQt5 import uic
+from PyQt5.QtCore import Qt
+from PyQt5.QtGui import QColor
 from PyQt5.QtGui import QPalette
+from PyQt5.QtWidgets import QAction
+from PyQt5.QtWidgets import QMenu
 from PyQt5.QtWidgets import QHeaderView
 from PyQt5.QtWidgets import QApplication
 
@@ -22,6 +26,30 @@ from ui.tree import TreeModel
 from ui.tree import ColumnDef
 from ui.hexview import ColoredRange
 from ui.hexview import HexViewWidget
+
+
+"""
+via http://ethanschoonover.com/solarized
+solarized accent colors:
+
+    $yellow:    #b58900;
+    $orange:    #cb4b16;
+    $red:       #dc322f;
+    $magenta:   #d33682;
+    $violet:    #6c71c4;
+    $blue:      #268bd2;
+    $cyan:      #2aa198;
+    $green:     #859900;
+"""
+solarized_colors = (
+    QColor(0xb5, 0x89, 0x00),
+    QColor(0xcb, 0x4b, 0x16),
+    QColor(0xdc, 0x32, 0x2f),
+    QColor(0xd3, 0x36, 0x82),
+    QColor(0x6c, 0x71, 0xc4),
+    QColor(0x26, 0x8b, 0xd2),
+    QColor(0x2a, 0xa1, 0x98),
+    QColor(0x85, 0x99, 0x00))
 
 
 class Item(object):
@@ -177,34 +205,84 @@ class VstructViewWidget(Base, UI, LoggingObject):
         # used for keyboard navigation
         tv.selectionModel().selectionChanged.connect(self._handle_item_selected)
 
-        self._current_range = None
+        tv.setContextMenuPolicy(Qt.CustomContextMenu)
+        tv.customContextMenuRequested.connect(self._handle_context_menu_requested)
+
+        self._current_range = None  # type: ColoredRange
+        self._colored_items = {}  # type: Mapping[VstructItem, ColoredRange]
 
     def _clear_current_range(self):
         if self._current_range is None:
             return
-        self._hv.getModel().getColorModel().clear_range(self._current_range)
+        self._hv.getColorModel().clear_range(self._current_range)
+        self._current_range = None
 
-    def _handle_item_clicked(self, itemIndex):
-        self._handle_item_activated(itemIndex)
+    def _handle_item_clicked(self, item_index):
+        self._handle_item_activated(item_index)
 
-    def _handle_item_selected(self, itemIndexes):
+    def _handle_item_selected(self, item_indices):
         # hint found here: http://stackoverflow.com/a/15214966/87207
-        if not itemIndexes.indexes():
+        if not item_indices.indexes():
             self._clear_current_range()
         else:
-            self._handle_item_activated(itemIndexes.indexes()[0])
+            self._handle_item_activated(item_indices.indexes()[0])
 
-    def _handle_item_activated(self, itemIndex):
-        self._clear_current_range()
-
-        item = self._model.getIndexData(itemIndex)
+    def _color_item(self, item, color):
         start = item.start
         end = start + item.length
-        color = QApplication.palette().color(QPalette.Highlight)
         range = ColoredRange(start, end, color)
-        self._hv.getModel().getColorModel().color_range(range)
+        self._hv.getColorModel().color_range(range)
+        return range
+
+    def _handle_item_activated(self, item_index):
+        self._clear_current_range()
+
+        item = self._model.getIndexData(item_index)
+        color = QApplication.palette().color(QPalette.Highlight)
+        range = self._color_item(item, color)
         self._current_range = range
-        self._hv.scrollTo(start)
+        self._hv.scrollTo(item.start)
+
+    def _handle_context_menu_requested(self, qpoint):
+        index = self.treeView.indexAt(qpoint)
+        item = index.model().getIndexData(index)
+
+        action = None
+        if item in self._colored_items:
+            action = QAction("De-color item", self)
+            action.setStatusTip("de-color item tip")
+            action.triggered.connect(lambda: self._handle_clear_color_item(item))
+        else:
+            action = QAction("Color item", self)
+            action.setStatusTip("color item tip")
+            action.triggered.connect(lambda: self._handle_color_item(item))
+
+        menu = QMenu(self)
+        menu.addAction(action)
+
+        menu.exec_(self.treeView.mapToGlobal(qpoint))
+
+    def _handle_color_item(self, item):
+        print("color item")
+
+        # remove current selection to make change of color visible
+        self._clear_current_range()
+
+        range = self._color_item(item, solarized_colors[len(self._colored_items) % len(solarized_colors)])
+        self._colored_items[item] = range
+
+    def _handle_clear_color_item(self, item):
+        print("de-color item")
+
+        # remove current selection to make change of color visible
+        self._clear_current_range()
+
+        range = self._colored_items.get(item, None)
+        if range is None:
+            return
+
+        self._hv.getColorModel().clear_range(range)
+        del self._colored_items[item]
 
 
 def main():

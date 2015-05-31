@@ -418,8 +418,14 @@ class HexViewWidget(Base, UI, LoggingObject):
 
         self.view.setItemDelegate(HexItemDelegate(self._model, self))
 
+        self.statusLabel.setText("")
+
     def getModel(self):
         return self._model
+
+    def getColorModel(self):
+        """ this is a shortcut, to make it easy to add/remove colored ranged """
+        return self.getModel().getColorModel()
 
     def scrollTo(self, index):
         qi = self._model.index2qindexb(index)
