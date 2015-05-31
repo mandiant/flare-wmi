@@ -171,9 +171,11 @@ class VstructViewWidget(Base, UI, LoggingObject):
         tv = self.treeView
         tv.setModel(self._model)
         tv.header().setSectionResizeMode(QHeaderView.Interactive)
-        tv.entered.connect(self._handle_item_activated)
-        tv.clicked.connect(self._handle_item_activated)
-        tv.activated.connect(self._handle_item_activated)
+
+        # used for mouse click
+        tv.clicked.connect(self._handle_item_clicked)
+        # used for keyboard navigation
+        tv.selectionModel().selectionChanged.connect(self._handle_item_selected)
 
         self._current_range = None
 
@@ -181,6 +183,16 @@ class VstructViewWidget(Base, UI, LoggingObject):
         if self._current_range is None:
             return
         self._hv.getModel().getColorModel().clear_range(self._current_range)
+
+    def _handle_item_clicked(self, itemIndex):
+        self._handle_item_activated(itemIndex)
+
+    def _handle_item_selected(self, itemIndexes):
+        # hint found here: http://stackoverflow.com/a/15214966/87207
+        if not itemIndexes.indexes():
+            self._clear_current_range()
+        else:
+            self._handle_item_activated(itemIndexes.indexes()[0])
 
     def _handle_item_activated(self, itemIndex):
         self._clear_current_range()
@@ -214,7 +226,7 @@ def main():
     t1.vsParse(buf, offset=0x0)
 
     t2 = TestStruct()
-    t2.vsParse(buf, offset=0x30)
+    t2.vsParse(buf, offset=0x40)
 
     app = QApplication(sys.argv)
     screen = VstructViewWidget((VstructItem(t1, "t1", 0x0), VstructItem(t2, "t2", 0x40)), buf)
