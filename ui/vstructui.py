@@ -25,7 +25,7 @@ from ui.tree import TreeModel
 from ui.tree import ColumnDef
 from ui.hexview import ColoredRange
 from ui.hexview import HexViewWidget
-from ui.hexview import SOLARIZED_COLORS
+from ui.colortheme import SolarizedColorTheme
 
 
 class Item(object):
@@ -244,7 +244,7 @@ class VstructViewWidget(Base, UI, LoggingObject):
         # remove current selection to make change of color visible
         self._clear_current_range()
 
-        range = self._color_item(item, SOLARIZED_COLORS[len(self._colored_items) % len(SOLARIZED_COLORS)])
+        range = self._color_item(item, SolarizedColorTheme.get_accent(len(self._colored_items)))
         self._colored_items[item] = range
 
     def _handle_clear_color_item(self, item):

@@ -14,7 +14,6 @@ import intervaltree
 from intervaltree import IntervalTree
 
 from PyQt5 import uic
-from PyQt5.QtGui import QColor
 from PyQt5.QtGui import QBrush
 from PyQt5.QtGui import QMouseEvent
 from PyQt5.QtGui import QFontDatabase
@@ -39,29 +38,8 @@ from PyQt5.QtWidgets import QAbstractItemView
 import os.path, sys
 sys.path.append(os.path.join(os.path.dirname(os.path.realpath(__file__)), os.pardir))
 from common import LoggingObject
-
-"""
-via http://ethanschoonover.com/solarized
-solarized accent colors:
-
-    $yellow:    #b58900;
-    $orange:    #cb4b16;
-    $red:       #dc322f;
-    $magenta:   #d33682;
-    $violet:    #6c71c4;
-    $blue:      #268bd2;
-    $cyan:      #2aa198;
-    $green:     #859900;
-"""
-SOLARIZED_COLORS = (
-    QColor(0xb5, 0x89, 0x00),
-    QColor(0xcb, 0x4b, 0x16),
-    QColor(0xdc, 0x32, 0x2f),
-    QColor(0xd3, 0x36, 0x82),
-    QColor(0x6c, 0x71, 0xc4),
-    QColor(0x26, 0x8b, 0xd2),
-    QColor(0x2a, 0xa1, 0x98),
-    QColor(0x85, 0x99, 0x00))
+from ui.colortheme import SolarizedColorTheme
+from ui.colortheme import LightPastelColorTheme
 
 
 ROLE_BORDER = 0xF
@@ -515,10 +493,9 @@ class HexViewWidget(Base, UI, LoggingObject):
         menu.exec_(self.view.mapToGlobal(qpoint))
 
     def _handle_color_selection(self):
-        color = SOLARIZED_COLORS[len(self._colored_regions) % len(SOLARIZED_COLORS)]
         s = self._hsm.start
         e = self._hsm.end
-        range = ColoredRange(s, e, color)
+        range = ColoredRange(s, e, SolarizedColorTheme.get_accent(len(self._colored_regions)))
         self.getColorModel().color_range(range)
         # seems to be a bit of duplication here and in the ColorModel?
         self._colored_regions.addi(s, e, range)
