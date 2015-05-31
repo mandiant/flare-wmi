@@ -184,13 +184,13 @@ class VstructViewWidget(Base, UI, LoggingObject):
         tv.setContextMenuPolicy(Qt.CustomContextMenu)
         tv.customContextMenuRequested.connect(self._handle_context_menu_requested)
 
-        self._current_range = None  # type: ColoredRange
+        self._current_range = None  # type: Pair[int, int]
         self._colored_items = {}  # type: Mapping[VstructItem, ColoredRange]
 
     def _clear_current_range(self):
         if self._current_range is None:
             return
-        self._hv.getColorModel().clear_range(self._current_range)
+        self._hv.getBorderModel().clear_region(*self._current_range)
         self._current_range = None
 
     def _handle_item_clicked(self, item_index):
@@ -203,28 +203,36 @@ class VstructViewWidget(Base, UI, LoggingObject):
         else:
             self._handle_item_activated(item_indices.indexes()[0])
 
-    def _color_item(self, item, color):
+    def _color_item(self, item, color=None):
         start = item.start
         end = start + item.length
-        range = ColoredRange(start, end, color)
-        self._hv.getColorModel().color_range(range)
-        return range
+        return self._hv.getColorModel().color_region(start, end, color)
+
+    def _is_item_colored(self, item):
+        start = item.start
+        end = start + item.length
+        return self._hv.getColorModel().is_region_colored(start, end)
+
+    def _clear_item(self, item):
+        start = item.start
+        end = start + item.length
+        return self._hv.getColorModel().clear_region(start, end)
 
     def _handle_item_activated(self, item_index):
         self._clear_current_range()
-
         item = self._model.getIndexData(item_index)
-        color = QApplication.palette().color(QPalette.Highlight)
-        range = self._color_item(item, color)
-        self._current_range = range
-        self._hv.scrollTo(item.start)
+        s = item.start
+        e = item.start + item.length
+        self._hv.getBorderModel().border_region(s, e, Qt.black)
+        self._current_range = (s, e)
+        self._hv.scrollTo(s)
 
     def _handle_context_menu_requested(self, qpoint):
         index = self.treeView.indexAt(qpoint)
         item = index.model().getIndexData(index)
 
         action = None
-        if item in self._colored_items:
+        if self._is_item_colored(item):
             action = QAction("De-color item", self)
             action.setStatusTip("de-color item tip")
             action.triggered.connect(lambda: self._handle_clear_color_item(item))
@@ -239,26 +247,14 @@ class VstructViewWidget(Base, UI, LoggingObject):
         menu.exec_(self.treeView.mapToGlobal(qpoint))
 
     def _handle_color_item(self, item):
-        print("color item")
-
         # remove current selection to make change of color visible
         self._clear_current_range()
-
-        range = self._color_item(item, SolarizedColorTheme.get_accent(len(self._colored_items)))
-        self._colored_items[item] = range
+        range = self._color_item(item)
 
     def _handle_clear_color_item(self, item):
-        print("de-color item")
-
         # remove current selection to make change of color visible
         self._clear_current_range()
-
-        range = self._colored_items.get(item, None)
-        if range is None:
-            return
-
-        self._hv.getColorModel().clear_range(range)
-        del self._colored_items[item]
+        self._clear_item(item)
 
 
 def main():

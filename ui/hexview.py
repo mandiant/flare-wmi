@@ -8,6 +8,7 @@
 import base64
 import binascii
 from collections import namedtuple
+from collections import defaultdict
 
 import hexdump
 import intervaltree
@@ -38,12 +39,27 @@ from PyQt5.QtWidgets import QAbstractItemView
 import os.path, sys
 sys.path.append(os.path.join(os.path.dirname(os.path.realpath(__file__)), os.pardir))
 from common import LoggingObject
+from mutablenamedtuple import mutablenamedtuple
 from ui.colortheme import SolarizedColorTheme
-from ui.colortheme import LightPastelColorTheme
 
 
-ROLE_BORDER = 0xF
-BorderData = namedtuple("BorderData", ["top", "bottom", "left", "right", "color"])
+def row_start_index(index):
+    """ get index of the start of the 0x10 byte row containing the given index """
+    return index - (index % 0x10)
+
+
+def row_end_index(index):
+    """ get index of the end of the 0x10 byte row containing the given index """
+    return index - (index % 0x10) + 0xF
+
+
+def row_number(index):
+    """ get row number of the 0x10 byte row containing the given index """
+    return index / 0x10
+
+def column_number(index):
+    return index % 0x10
+
 
 class HexItemDelegate(QItemDelegate):
     def __init__(self, model, parent, *args):
@@ -57,7 +73,7 @@ class HexItemDelegate(QItemDelegate):
         if border is None:
             return
 
-        qpainter.setPen(border.color)
+        qpainter.setPen(border.theme.color)
         r = option.rect
         if border.top:
             qpainter.drawLine(r.topLeft(), r.topRight())
@@ -78,9 +94,26 @@ ColoredRange = namedtuple("ColorRange", ["begin", "end", "color"])
 class ColorModel(QObject):
     rangeChanged = pyqtSignal([ColoredRange])
 
-    def __init__(self, parent):
+    def __init__(self, parent, color_theme=SolarizedColorTheme):
         super(ColorModel, self).__init__(parent)
         self._db = IntervalTree()
+        self._theme = SolarizedColorTheme
+
+    def color_region(self, begin, end, color=None):
+        if color is None:
+            color = self._theme.get_accent(len(self._db))
+        range = ColoredRange(begin, end, color)
+        self.color_range(range)
+        return range
+
+    def clear_region(self, begin, end):
+        span = end - begin
+        to_remove = []
+        for range in self._db[begin:end]:
+            if range.end - range.begin == span:
+                to_remove.append(range)
+        for range in to_remove:
+            self.clear_range(range.data)
 
     def color_range(self, range):
         # note we use (end + 1) to ensure the entire selection gets captured
@@ -100,6 +133,140 @@ class ColorModel(QObject):
             return ranges[0].data.color
         return None
 
+    def is_index_colored(self, index):
+        return len(self._db[index]) > 0
+
+    def is_region_colored(self, begin, end):
+        span = end - begin
+        for range in self._db[begin:end]:
+            if range.end - range.begin == span:
+                return True
+        return False
+
+
+ROLE_BORDER = 0xF
+BorderTheme = namedtuple("BorderTheme", ["color"])
+BorderData = namedtuple("BorderData", ["top", "bottom", "left", "right", "theme"])
+BorderedRange = namedtuple("BorderedRange", ["begin", "end", "theme", "cells"])
+
+
+CellT = mutablenamedtuple("CellT", ["top", "bottom", "left", "right"])
+def Cell(top=False, bottom=False, left=False, right=False):
+    return CellT(top, bottom, left, right)
+
+
+def compute_region_border(start, end):
+    # TODO: doc
+    cells = defaultdict(Cell)
+
+    start_row = row_number(start)
+    end_row = row_number(end)
+
+    ## topmost cells
+    if start_row == end_row:
+        for i in xrange(start, end + 1):
+            cells[i].top = True
+    else:
+        for i in xrange(start, row_end_index(start) + 1):
+            cells[i].top = True
+    # cells on second row, top left
+    if start_row != end_row:
+        next_row_start = row_start_index(start) + 0x10
+        for i in xrange(next_row_start, next_row_start + column_number(start)):
+            cells[i].top = True
+
+    ## bottommost cells
+    if start_row == end_row:
+        for i in xrange(start, end + 1):
+            cells[i].bottom = True
+    else:
+        for i in xrange(row_start_index(end), end + 1):
+            cells[i].bottom = True
+    # cells on second-to-last row, bottom right
+    if start_row != end_row:
+        prev_row_end = row_end_index(end) - 0x10
+        for i in xrange(prev_row_end - (0x10 - column_number(end) - 2), prev_row_end + 1):
+            cells[i].bottom = True
+
+    ## leftmost cells
+    if start_row == end_row:
+        cells[start].left = True
+    else:
+        second_row_start = row_start_index(start) + 0x10
+        for i in xrange(second_row_start, row_start_index(end) + 0x10, 0x10):
+            cells[i].left = True
+    # cells in first row, top left
+    if start_row != end_row:
+        cells[start].left = True
+
+    ## rightmost cells
+    if start_row == end_row:
+        cells[end].right = True
+    else:
+        penultimate_row_end = row_end_index(end) - 0x10
+        for i in xrange(row_end_index(start), penultimate_row_end + 0x10, 0x10):
+            cells[i].right = True
+    # cells in last row, bottom right
+    if start_row != end_row:
+        cells[end].right = True
+
+    # convert back to standard dict
+    # trick from: http://stackoverflow.com/a/20428703/87207
+    cells.default_factory = None
+    return cells
+
+
+class BorderModel(QObject):
+    rangeChanged = pyqtSignal([BorderedRange])
+
+    def __init__(self, parent, color_theme=SolarizedColorTheme):
+        super(BorderModel, self).__init__(parent)
+        self._db = IntervalTree()
+        self._theme = SolarizedColorTheme
+
+    def border_region(self, begin, end, color=None):
+        if color is None:
+            color = self._theme.get_accent(len(self._db))
+        range = BorderedRange(begin, end, BorderTheme(color), compute_region_border(begin, end))
+        # note we use (end + 1) to ensure the entire selection gets captured
+        self._db.addi(range.begin, range.end + 1, range)
+        self.rangeChanged.emit(range)
+
+    def clear_region(self, begin, end):
+        span = end - begin
+        to_remove = []
+        for range in self._db[begin:end]:
+            print(begin, end, range.begin, range.end)
+            if range.end - range.begin - 1 == span:
+                to_remove.append(range)
+        for range in to_remove:
+            self._db.removei(range.begin, range.end, range)
+            self.rangeChanged.emit(range)
+
+    def get_border(self, index):
+        # ranges is a (potentially empty) list of intervaltree.Interval instances
+        # we sort them here from shorted length to longest, because we want
+        #    the most specific border
+        ranges = sorted(self._db[index], key=lambda r: r.end - r.begin)
+        if len(ranges) > 0:
+            range = ranges[0].data
+            cell = range.cells.get(index, None)
+            if cell is None:
+                return None
+            ret = BorderData(cell.top, cell.bottom, cell.left, cell.right, range.theme)
+            return ret
+        return None
+
+    def is_index_bordered(self, index):
+        return len(self._db[index]) > 0
+
+    def is_region_bordered(self, begin, end):
+        span = end - begin
+        for range in self._db[begin:end]:
+            if range.end - range.begin == span:
+                return True
+        return False
+
 
 class HexTableModel(QAbstractTableModel):
     FILTER = ''.join([(len(repr(chr(x)))==3) and chr(x) or '.' for x in range(256)])
@@ -108,10 +275,10 @@ class HexTableModel(QAbstractTableModel):
         super(HexTableModel, self).__init__(parent, *args)
         self._buf = buf
         self._colors = ColorModel(self)
+        self._borders = BorderModel(self)
 
         self._colors.rangeChanged.connect(self._handle_color_range_changed)
-
-        self._colors.color_range(ColoredRange(0x10, 0x20, Qt.red))
+        self._borders.rangeChanged.connect(self._handle_border_range_changed)
 
     def getColorModel(self):
         return self._colors
@@ -120,6 +287,15 @@ class HexTableModel(QAbstractTableModel):
         self._colors.rangeChanged.disconnect(self._handle_color_range_changed)
         self._colors = color_model
         self._colors.rangeChanged.connect(self._handle_color_range_changed)
+        # TODO: re-render all cells
+
+    def getBorderModel(self):
+        return self._borders
+
+    def setBorderModel(self, color_model):
+        self._borders.rangeChanged.disconnect(self._handle_border_range_changed)
+        self._borders = color_model
+        self._borders.rangeChanged.connect(self._handle_border_range_changed)
         # TODO: re-render all cells
 
     @staticmethod
@@ -182,16 +358,10 @@ class HexTableModel(QAbstractTableModel):
                 return "%02x" % (c)
 
         elif role == ROLE_BORDER:
-            if index.row() == 2:
-                return BorderData(True, False, False, False, Qt.red)
-            if index.row() == 4:
-                return BorderData(False, True, False, False, Qt.blue)
-            if index.row() == 6:
-                return BorderData(False, False, True, False, Qt.green)
-            if index.row() == 8:
-                return BorderData(False, False, False, True, Qt.yellow)
-            if index.row() == 10:
-                return BorderData(True, True, True, True, Qt.black)
+            if index.column() == 0x10:
+                return None
+
+            return self._borders.get_border(bindex)
 
         else:
             return None
@@ -211,28 +381,19 @@ class HexTableModel(QAbstractTableModel):
         else:
             return None
 
-    def _handle_color_range_changed(self, range):
-        for i in xrange(range.begin, range.end):
+    def _emit_data_changed(self, start_bindex, end_bindex):
+        for i in xrange(start_bindex, end_bindex):
             # mark data changed to encourage re-rendering of cell
             qib = self.index2qindexb(i)
             qic = self.index2qindexc(i)
             self.dataChanged.emit(qib, qib)
             self.dataChanged.emit(qic, qic)
 
+    def _handle_color_range_changed(self, range):
+        self._emit_data_changed(range.begin, range.end)
 
-def row_start_index(index):
-    """ get index of the start of the 0x10 byte row containing the given index """
-    return index - (index % 0x10)
-
-
-def row_end_index(index):
-    """ get index of the end of the 0x10 byte row containing the given index """
-    return index - (index % 0x10) + 0xF
-
-
-def row_number(index):
-    """ get row number of the 0x10 byte row containing the given index """
-    return index / 0x10
+    def _handle_border_range_changed(self, range):
+        self._emit_data_changed(range.begin, range.end)
 
 
 class HexItemSelectionModel(QItemSelectionModel):
@@ -303,6 +464,10 @@ class HexItemSelectionModel(QItemSelectionModel):
         self.selectionRangeChanged.emit(start_bindex, end_bindex)
         self.start = start_bindex
         self.end = end_bindex
+
+    def bselect(self, start_bindex, end_bindex):
+        """  the public interface to _do_select """
+        return self._do_select(start_bindex, end_bindex)
 
     def _update_selection(self, qindex1, qindex2):
         """  select the given range by qmodel indices """
@@ -444,8 +609,15 @@ class HexViewWidget(Base, UI, LoggingObject):
         return self._model
 
     def getColorModel(self):
-        """ this is a shortcut, to make it easy to add/remove colored ranged """
+        """ this is a shortcut, to make it easy to add/remove colored ranges """
         return self.getModel().getColorModel()
+
+    def getBorderModel(self):
+        """ this is a shortcut, to make it easy to add/remove bordered ranges """
+        return self.getModel().getBorderModel()
+
+    def getSelectionModel(self):
+        return self._hsm
 
     def scrollTo(self, index):
         qi = self._model.index2qindexb(index)
@@ -495,8 +667,8 @@ class HexViewWidget(Base, UI, LoggingObject):
     def _handle_color_selection(self):
         s = self._hsm.start
         e = self._hsm.end
-        range = ColoredRange(s, e, SolarizedColorTheme.get_accent(len(self._colored_regions)))
-        self.getColorModel().color_range(range)
+        range = self.getColorModel().color_region(s, e)
+        self.getBorderModel().border_region(s, e, Qt.black)
         # seems to be a bit of duplication here and in the ColorModel?
         self._colored_regions.addi(s, e, range)
 
