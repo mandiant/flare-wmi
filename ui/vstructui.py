@@ -3,10 +3,9 @@ import binascii
 
 from PyQt5 import uic
 from PyQt5.QtCore import Qt
-from PyQt5.QtGui import QColor
 from PyQt5.QtGui import QPalette
-from PyQt5.QtWidgets import QAction
 from PyQt5.QtWidgets import QMenu
+from PyQt5.QtWidgets import QAction
 from PyQt5.QtWidgets import QHeaderView
 from PyQt5.QtWidgets import QApplication
 
@@ -26,30 +25,7 @@ from ui.tree import TreeModel
 from ui.tree import ColumnDef
 from ui.hexview import ColoredRange
 from ui.hexview import HexViewWidget
-
-
-"""
-via http://ethanschoonover.com/solarized
-solarized accent colors:
-
-    $yellow:    #b58900;
-    $orange:    #cb4b16;
-    $red:       #dc322f;
-    $magenta:   #d33682;
-    $violet:    #6c71c4;
-    $blue:      #268bd2;
-    $cyan:      #2aa198;
-    $green:     #859900;
-"""
-solarized_colors = (
-    QColor(0xb5, 0x89, 0x00),
-    QColor(0xcb, 0x4b, 0x16),
-    QColor(0xdc, 0x32, 0x2f),
-    QColor(0xd3, 0x36, 0x82),
-    QColor(0x6c, 0x71, 0xc4),
-    QColor(0x26, 0x8b, 0xd2),
-    QColor(0x2a, 0xa1, 0x98),
-    QColor(0x85, 0x99, 0x00))
+from ui.hexview import SOLARIZED_COLORS
 
 
 class Item(object):
@@ -268,7 +244,7 @@ class VstructViewWidget(Base, UI, LoggingObject):
         # remove current selection to make change of color visible
         self._clear_current_range()
 
-        range = self._color_item(item, solarized_colors[len(self._colored_items) % len(solarized_colors)])
+        range = self._color_item(item, SOLARIZED_COLORS[len(self._colored_items) % len(SOLARIZED_COLORS)])
         self._colored_items[item] = range
 
     def _handle_clear_color_item(self, item):

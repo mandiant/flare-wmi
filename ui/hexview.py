@@ -5,11 +5,16 @@
 # TODO: add "add new origin" action
 # TODO: add origin offset status bar entry
 
+import base64
+import binascii
 from collections import namedtuple
 
+import hexdump
+import intervaltree
 from intervaltree import IntervalTree
 
 from PyQt5 import uic
+from PyQt5.QtGui import QColor
 from PyQt5.QtGui import QBrush
 from PyQt5.QtGui import QMouseEvent
 from PyQt5.QtGui import QFontDatabase
@@ -17,11 +22,14 @@ import PyQt5.QtCore as QtCore
 from PyQt5.QtCore import Qt
 from PyQt5.QtCore import QSize
 from PyQt5.QtCore import QObject
+from PyQt5.QtCore import QMimeData
 from PyQt5.QtCore import pyqtSignal
 from PyQt5.QtCore import QModelIndex
 from PyQt5.QtCore import QItemSelection
 from PyQt5.QtCore import QItemSelectionModel
 from PyQt5.QtCore import QAbstractTableModel
+from PyQt5.QtWidgets import QMenu
+from PyQt5.QtWidgets import QAction
 from PyQt5.QtWidgets import QTableView
 from PyQt5.QtWidgets import QSizePolicy
 from PyQt5.QtWidgets import QApplication
@@ -31,6 +39,29 @@ from PyQt5.QtWidgets import QAbstractItemView
 import os.path, sys
 sys.path.append(os.path.join(os.path.dirname(os.path.realpath(__file__)), os.pardir))
 from common import LoggingObject
+
+"""
+via http://ethanschoonover.com/solarized
+solarized accent colors:
+
+    $yellow:    #b58900;
+    $orange:    #cb4b16;
+    $red:       #dc322f;
+    $magenta:   #d33682;
+    $violet:    #6c71c4;
+    $blue:      #268bd2;
+    $cyan:      #2aa198;
+    $green:     #859900;
+"""
+SOLARIZED_COLORS = (
+    QColor(0xb5, 0x89, 0x00),
+    QColor(0xcb, 0x4b, 0x16),
+    QColor(0xdc, 0x32, 0x2f),
+    QColor(0xd3, 0x36, 0x82),
+    QColor(0x6c, 0x71, 0xc4),
+    QColor(0x26, 0x8b, 0xd2),
+    QColor(0x2a, 0xa1, 0x98),
+    QColor(0x85, 0x99, 0x00))
 
 
 ROLE_BORDER = 0xF
@@ -74,11 +105,12 @@ class ColorModel(QObject):
         self._db = IntervalTree()
 
     def color_range(self, range):
-        self._db.addi(range.begin, range.end, range)
+        # note we use (end + 1) to ensure the entire selection gets captured
+        self._db.addi(range.begin, range.end + 1, range)
         self.rangeChanged.emit(range)
 
     def clear_range(self, range):
-        self._db.removei(range.begin, range.end, range)
+        self._db.removei(range.begin, range.end + 1, range)
         self.rangeChanged.emit(range)
 
     def get_color(self, index):
@@ -241,6 +273,9 @@ class HexItemSelectionModel(QItemSelectionModel):
         self._view.leftMouseMovedIndex.connect(self._handle_mouse_moved)
         self._view.leftMouseReleasedIndex.connect(self._handle_mouse_released)
 
+        self.start = None
+        self.end = None
+
     def _bselect(self, selection, start_bindex, end_bindex):
         """ add the given buffer indices to the given QItemSelection, both byte and char panes """
         selection.select(self._model.index2qindexb(start_bindex), self._model.index2qindexb(end_bindex))
@@ -288,6 +323,8 @@ class HexItemSelectionModel(QItemSelectionModel):
 
         self.select(selection, QItemSelectionModel.SelectCurrent)
         self.selectionRangeChanged.emit(start_bindex, end_bindex)
+        self.start = start_bindex
+        self.end = end_bindex
 
     def _update_selection(self, qindex1, qindex2):
         """  select the given range by qmodel indices """
@@ -377,6 +414,8 @@ class HexViewWidget(Base, UI, LoggingObject):
         self._buf = buf
         self._model = HexTableModel(self._buf)
 
+        self._colored_regions = intervaltree.IntervalTree()
+
         # ripped from pyuic5 ui/hexview.ui
         #   at commit 6c9edffd32706097d7eba8814d306ea1d997b25a
         # so we can add our custom HexTableView instance
@@ -410,6 +449,9 @@ class HexViewWidget(Base, UI, LoggingObject):
         self._hsm = HexItemSelectionModel(self._model, self.view)
         self.view.setSelectionModel(self._hsm)
 
+        self.view.setContextMenuPolicy(Qt.CustomContextMenu)
+        self.view.customContextMenuRequested.connect(self._handle_context_menu_requested)
+
         self._hsm.selectionRangeChanged.connect(self._handle_selection_range_changed)
 
         f = QFontDatabase.systemFont(QFontDatabase.FixedFont)
@@ -437,6 +479,82 @@ class HexViewWidget(Base, UI, LoggingObject):
             txt.append("sel: [{:s}, {:s}]".format(hex(start_bindex), hex(end_bindex)))
             txt.append("len: {:s}".format(hex(end_bindex - start_bindex + 1)))
         self.statusLabel.setText(" ".join(txt))
+
+    def _handle_context_menu_requested(self, qpoint):
+        menu = QMenu(self)
+
+        color_selection_action = QAction("Color selection", self)
+        color_selection_action.triggered.connect(self._handle_color_selection)
+        menu.addAction(color_selection_action)
+
+        menu.addSeparator()
+
+        copy_binary_action = QAction("Copy selection (binary)", self)
+        copy_binary_action.triggered.connect(self._handle_copy_binary)
+        menu.addAction(copy_binary_action)
+
+        copy_menu = menu.addMenu("Copy...")
+        copy_menu.addAction(copy_binary_action)
+
+        copy_text_action= QAction("Copy selection (text)", self)
+        copy_text_action.triggered.connect(self._handle_copy_text)
+        copy_menu.addAction(copy_text_action)
+
+        copy_hex_action = QAction("Copy selection (hex)", self)
+        copy_hex_action.triggered.connect(self._handle_copy_hex)
+        copy_menu.addAction(copy_hex_action)
+
+        copy_hexdump_action = QAction("Copy selection (hexdump)", self)
+        copy_hexdump_action.triggered.connect(self._handle_copy_hexdump)
+        copy_menu.addAction(copy_hexdump_action)
+
+        copy_base64_action = QAction("Copy selection (base64)", self)
+        copy_base64_action.triggered.connect(self._handle_copy_base64)
+        copy_menu.addAction(copy_base64_action)
+
+        menu.exec_(self.view.mapToGlobal(qpoint))
+
+    def _handle_color_selection(self):
+        color = SOLARIZED_COLORS[len(self._colored_regions) % len(SOLARIZED_COLORS)]
+        s = self._hsm.start
+        e = self._hsm.end
+        range = ColoredRange(s, e, color)
+        self.getColorModel().color_range(range)
+        # seems to be a bit of duplication here and in the ColorModel?
+        self._colored_regions.addi(s, e, range)
+
+    @property
+    def _selected_data(self):
+        start = self._hsm.start
+        end = self._hsm.end
+        return self._buf[start:end]
+
+    def _handle_copy_binary(self):
+        mime = QMimeData()
+        # mime type suggested here: http://stackoverflow.com/a/6783972/87207
+        mime.setData("application/octet-stream", self._selected_data)
+        QApplication.clipboard().setMimeData(mime)
+
+    def _handle_copy_text(self):
+        mime = QMimeData()
+        mime.setText(self._selected_data)
+        QApplication.clipboard().setMimeData(mime)
+
+    def _handle_copy_hex(self):
+        mime = QMimeData()
+        mime.setText(binascii.b2a_hex(self._selected_data))
+        QApplication.clipboard().setMimeData(mime)
+
+    def _handle_copy_hexdump(self):
+        mime = QMimeData()
+        t = hexdump.hexdump(self._selected_data, result="return")
+        mime.setText(t)
+        QApplication.clipboard().setMimeData(mime)
+
+    def _handle_copy_base64(self):
+        mime = QMimeData()
+        mime.setText(base64.b64encode(self._selected_data))
+        QApplication.clipboard().setMimeData(mime)
 
 
 def main():
