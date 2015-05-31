@@ -2,19 +2,25 @@
 import binascii
 
 from PyQt5 import uic
-from PyQt5.QtWidgets import QWidget
+from PyQt5.QtGui import QPalette
 from PyQt5.QtWidgets import QHeaderView
-from PyQt5.QtWidgets import QGridLayout
+from PyQt5.QtWidgets import QApplication
 
 from common import h
 from common import LoggingObject
+
 from vstruct import VStruct
+from vstruct import VArray
 from vstruct.primitives import v_prim
 from vstruct.primitives import v_number
 from vstruct.primitives import v_bytes
+from vstruct.primitives import v_uint8
+from vstruct.primitives import v_uint16
+from vstruct.primitives import v_uint32
+
 from ui.tree import TreeModel
 from ui.tree import ColumnDef
-from ui.uicommon import emptyLayout
+from ui.hexview import ColoredRange
 from ui.hexview import HexViewWidget
 
 
@@ -89,6 +95,10 @@ class VstructItem(Item):
         return ret
 
     @property
+    def struct(self):
+        return self._struct
+
+    @property
     def name(self):
         return self._name
 
@@ -132,7 +142,7 @@ class VstructRootItem(Item):
 
     @property
     def children(self):
-        return [VstructItem(i.struct, i.name, i.offset) for i in self._items]
+        return [VstructItem(i.struct, i.name, i.start) for i in self._items]
 
 
 UI, Base = uic.loadUiType("ui/vstruct.ui")
@@ -165,9 +175,53 @@ class VstructViewWidget(Base, UI, LoggingObject):
         tv.clicked.connect(self._handle_item_activated)
         tv.activated.connect(self._handle_item_activated)
 
+        self._current_range = None
+
+    def _clear_current_range(self):
+        if self._current_range is None:
+            return
+        self._hv.getModel().getColorModel().clear_range(self._current_range)
+
     def _handle_item_activated(self, itemIndex):
+        self._clear_current_range()
+
         item = self._model.getIndexData(itemIndex)
         start = item.start
         end = start + item.length
-        self._hv.colorRange(start, end)
+        color = QApplication.palette().color(QPalette.Highlight)
+        range = ColoredRange(start, end, color)
+        self._hv.getModel().getColorModel().color_range(range)
+        self._current_range = range
         self._hv.scrollTo(start)
+
+
+def main():
+    buf = []
+    for i in xrange(0x100):
+        buf.append(chr(i))
+    buf = "".join(buf)
+
+    class TestStruct(VStruct):
+        def __init__(self):
+            VStruct.__init__(self)
+            self.a = v_uint8()
+            self.b = v_uint16()
+            self.c = v_uint32()
+            self.d = v_uint8()
+            self.e = VArray((v_uint32(), v_uint32(), v_uint32(), v_uint32()))
+
+    t1 = TestStruct()
+    t1.vsParse(buf, offset=0x0)
+
+    t2 = TestStruct()
+    t2.vsParse(buf, offset=0x30)
+
+    app = QApplication(sys.argv)
+    screen = VstructViewWidget((VstructItem(t1, "t1", 0x0), VstructItem(t2, "t2", 0x40)), buf)
+    screen.show()
+    sys.exit(app.exec_())
+
+
+if __name__ == "__main__":
+    import sys
+    main(*sys.argv[1:])

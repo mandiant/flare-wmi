@@ -7,14 +7,16 @@
 
 from collections import namedtuple
 
+from intervaltree import IntervalTree
+
 from PyQt5 import uic
 from PyQt5.QtGui import QBrush
-from PyQt5.QtGui import QPalette
 from PyQt5.QtGui import QMouseEvent
 from PyQt5.QtGui import QFontDatabase
 import PyQt5.QtCore as QtCore
 from PyQt5.QtCore import Qt
 from PyQt5.QtCore import QSize
+from PyQt5.QtCore import QObject
 from PyQt5.QtCore import pyqtSignal
 from PyQt5.QtCore import QModelIndex
 from PyQt5.QtCore import QItemSelection
@@ -61,15 +63,54 @@ class HexItemDelegate(QItemDelegate):
             qpainter.drawLine(r.topRight(), r.bottomRight())
 
 
+ColoredRange = namedtuple("ColorRange", ["begin", "end", "color"])
+
+
+class ColorModel(QObject):
+    rangeChanged = pyqtSignal([ColoredRange])
+
+    def __init__(self, parent):
+        super(ColorModel, self).__init__(parent)
+        self._db = IntervalTree()
+
+    def color_range(self, range):
+        self._db.addi(range.begin, range.end, range)
+        self.rangeChanged.emit(range)
+
+    def clear_range(self, range):
+        self._db.removei(range.begin, range.end, range)
+        self.rangeChanged.emit(range)
+
+    def get_color(self, index):
+        # ranges is a (potentially empty) list of intervaltree.Interval instances
+        # we sort them here from shorted length to longest, because we want
+        #    the most specific color
+        ranges = sorted(self._db[index], key=lambda r: r.end - r.begin)
+        if len(ranges) > 0:
+            return ranges[0].data.color
+        return None
+
+
 class HexTableModel(QAbstractTableModel):
     FILTER = ''.join([(len(repr(chr(x)))==3) and chr(x) or '.' for x in range(256)])
-    colorChanged = pyqtSignal()
 
     def __init__(self, buf, parent=None, *args):
         super(HexTableModel, self).__init__(parent, *args)
         self._buf = buf
-        self._colorStart = None
-        self._colorEnd = None
+        self._colors = ColorModel(self)
+
+        self._colors.rangeChanged.connect(self._handle_color_range_changed)
+
+        self._colors.color_range(ColoredRange(0x10, 0x20, Qt.red))
+
+    def getColorModel(self):
+        return self._colors
+
+    def setColorModel(self, color_model):
+        self._colors.rangeChanged.disconnect(self._handle_color_range_changed)
+        self._colors = color_model
+        self._colors.rangeChanged.connect(self._handle_color_range_changed)
+        # TODO: re-render all cells
 
     @staticmethod
     def qindex2index(index):
@@ -97,7 +138,7 @@ class HexTableModel(QAbstractTableModel):
         if len(self._buf) % 0x10 != 0:
             return (len(self._buf) // 0x10) + 1
         else:
-            return (len(self._buf) // 0x10)
+            return len(self._buf) // 0x10
 
     def columnCount(self, parent):
         return 0x21
@@ -105,28 +146,29 @@ class HexTableModel(QAbstractTableModel):
     def data(self, index, role):
         if not index.isValid():
             return None
+
         elif self.qindex2index(index) >= len(self._buf):
             return None
 
-        elif role == Qt.BackgroundRole:
-            if self._colorStart is None or self._colorEnd is None:
+        bindex = self.qindex2index(index)
+        if role == Qt.BackgroundRole:
+            # don't color the divider column
+            if index.column() == 0x10:
                 return None
-            elif self._colorStart <= self.qindex2index(index) < self._colorEnd:
-                if index.column() == 0x10:
-                    return None
-                color = QApplication.palette().color(QPalette.Highlight)
+
+            color = self._colors.get_color(bindex)
+            if color is not None:
                 return QBrush(color)
-            else:
-                return None
+            return None
 
         elif role == Qt.DisplayRole:
             if index.column() == 0x10:
                 return ""
+
+            c = ord(self._buf[bindex])
             if index.column() > 0x10:
-                c = self._buf[self.qindex2index(index)]
-                return chr(ord(c)).translate(HexTableModel.FILTER)
+                return chr(c).translate(HexTableModel.FILTER)
             else:
-                c = ord(self._buf[self.qindex2index(index)])
                 return "%02x" % (c)
 
         elif role == ROLE_BORDER:
@@ -159,31 +201,13 @@ class HexTableModel(QAbstractTableModel):
         else:
             return None
 
-    def colorRange(self, start, end):
-        self.clearColor()
-        self._colorStart = start
-        self._colorEnd = end
-        for i in xrange(start, end):
+    def _handle_color_range_changed(self, range):
+        for i in xrange(range.begin, range.end):
             # mark data changed to encourage re-rendering of cell
             qib = self.index2qindexb(i)
             qic = self.index2qindexc(i)
             self.dataChanged.emit(qib, qib)
             self.dataChanged.emit(qic, qic)
-        self.colorChanged.emit()
-
-    def clearColor(self):
-        oldstart = self._colorStart
-        oldend = self._colorEnd
-        self._colorStart = None
-        self._colorEnd = None
-        if oldstart is not None and oldend is not None:
-            # mark data changed to encourage re-rendering of cell
-            for i in xrange(oldstart, oldend):
-                qib = self.index2qindexb(i)
-                qic = self.index2qindexc(i)
-                self.dataChanged.emit(qib, qib)
-                self.dataChanged.emit(qic, qic)
-        self.colorChanged.emit()
 
 
 def row_start_index(index):
@@ -394,9 +418,8 @@ class HexViewWidget(Base, UI, LoggingObject):
 
         self.view.setItemDelegate(HexItemDelegate(self._model, self))
 
-    def colorRange(self, start, end):
-        """ highlight by buffer indices """
-        self._model.colorRange(start, end)
+    def getModel(self):
+        return self._model
 
     def scrollTo(self, index):
         qi = self._model.index2qindexb(index)
