@@ -31,11 +31,34 @@ from common import LoggingObject
 class HexTableModel(QAbstractTableModel):
     FILTER = ''.join([(len(repr(chr(x)))==3) and chr(x) or '.' for x in range(256)])
     colorChanged = pyqtSignal()
+
     def __init__(self, buf, parent=None, *args):
         super(HexTableModel, self).__init__(parent, *args)
         self._buf = buf
         self._colorStart = None
         self._colorEnd = None
+
+    @staticmethod
+    def qindex2index(index):
+        """ from a QIndex (row/column coordinate system), get the buffer index of the byte """
+        r = index.row()
+        c = index.column()
+        if c > 0x10:
+            return (0x10 * r) + c - 0x11
+        else:
+            return (0x10 * r) + c
+
+    def index2qindexb(self, index):
+        """ from a buffer index, get the QIndex (row/column coordinate system) of the byte pane """
+        r = index // 0x10
+        c = index % 0x10
+        return self.index(r, c)
+
+    def index2qindexc(self, index):
+        """ from a buffer index, get the QIndex (row/column coordinate system) of the char pane """
+        r = (index // 0x10)
+        c = index % 0x10 + 0x11
+        return self.index(r, c)
 
     def rowCount(self, parent):
         if len(self._buf) % 0x10 != 0:
@@ -51,6 +74,7 @@ class HexTableModel(QAbstractTableModel):
             return None
         elif self.qindex2index(index) >= len(self._buf):
             return None
+
         elif role == Qt.BackgroundRole:
             if self._colorStart is None or self._colorEnd is None:
                 return None
@@ -61,6 +85,7 @@ class HexTableModel(QAbstractTableModel):
                 return QBrush(color)
             else:
                 return None
+
         elif role == Qt.DisplayRole:
             if index.column() == 0x10:
                 return ""
@@ -71,9 +96,13 @@ class HexTableModel(QAbstractTableModel):
                 c = ord(self._buf[self.qindex2index(index)])
                 return "%02x" % (c)
 
+        else:
+            return None
+
     def headerData(self, section, orientation, role):
         if role != Qt.DisplayRole:
             return None
+
         elif orientation == Qt.Horizontal:
             if section < 0x10:
                 return "%01X" % (section)
@@ -81,6 +110,7 @@ class HexTableModel(QAbstractTableModel):
                 return ""
         elif orientation == Qt.Vertical:
             return "%04X" % (section * 0x10)
+
         else:
             return None
 
@@ -109,24 +139,6 @@ class HexTableModel(QAbstractTableModel):
                 self.dataChanged.emit(qib, qib)
                 self.dataChanged.emit(qic, qic)
         self.colorChanged.emit()
-
-    def qindex2index(self, index):
-        if index.column() > 0x10:
-            return (0x10 * index.row()) + index.column() - 0x11
-        else:
-            return (0x10 * index.row()) + index.column()
-
-    def index2qindexb(self, index):
-        """ for the byte side """
-        r = index // 0x10
-        c = index % 0x10
-        return self.index(r, c)
-
-    def index2qindexc(self, index):
-        """ for the char side """
-        r = (index // 0x10)
-        c = index % 0x10 + 0x11
-        return self.index(r, c)
 
 
 def row_start_index(index):
@@ -313,6 +325,7 @@ class HexViewWidget(Base, UI, LoggingObject):
         self.mainLayout.insertWidget(0, self.view)
         # end rip
 
+        # TODO: provide a HexViewWidget.setModel method, and don't build it ourselves
         self.view.setModel(self._model)
         for i in xrange(0x10):
             self.view.setColumnWidth(i, 23)
