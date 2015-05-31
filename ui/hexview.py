@@ -5,6 +5,8 @@
 # TODO: add "add new origin" action
 # TODO: add origin offset status bar entry
 
+from collections import namedtuple
+
 from PyQt5 import uic
 from PyQt5.QtGui import QBrush
 from PyQt5.QtGui import QPalette
@@ -21,11 +23,42 @@ from PyQt5.QtCore import QAbstractTableModel
 from PyQt5.QtWidgets import QTableView
 from PyQt5.QtWidgets import QSizePolicy
 from PyQt5.QtWidgets import QApplication
+from PyQt5.QtWidgets import QItemDelegate
 from PyQt5.QtWidgets import QAbstractItemView
 
 import os.path, sys
 sys.path.append(os.path.join(os.path.dirname(os.path.realpath(__file__)), os.pardir))
 from common import LoggingObject
+
+
+ROLE_BORDER = 0xF
+BorderData = namedtuple("BorderData", ["top", "bottom", "left", "right", "color"])
+
+class HexItemDelegate(QItemDelegate):
+    def __init__(self, model, parent, *args):
+        super(HexItemDelegate, self).__init__(parent)
+        self._model = model
+
+    def paint(self, qpainter, option, qindex):
+        super(HexItemDelegate, self).paint(qpainter, option, qindex)
+        border = self._model.data(qindex, ROLE_BORDER)
+
+        if border is None:
+            return
+
+        qpainter.setPen(border.color)
+        r = option.rect
+        if border.top:
+            qpainter.drawLine(r.topLeft(), r.topRight())
+
+        if border.bottom:
+            qpainter.drawLine(r.bottomLeft(), r.bottomRight())
+
+        if border.left:
+            qpainter.drawLine(r.topLeft(), r.bottomLeft())
+
+        if border.right:
+            qpainter.drawLine(r.topRight(), r.bottomRight())
 
 
 class HexTableModel(QAbstractTableModel):
@@ -96,6 +129,18 @@ class HexTableModel(QAbstractTableModel):
                 c = ord(self._buf[self.qindex2index(index)])
                 return "%02x" % (c)
 
+        elif role == ROLE_BORDER:
+            if index.row() == 2:
+                return BorderData(True, False, False, False, Qt.red)
+            if index.row() == 4:
+                return BorderData(False, True, False, False, Qt.blue)
+            if index.row() == 6:
+                return BorderData(False, False, True, False, Qt.green)
+            if index.row() == 8:
+                return BorderData(False, False, False, True, Qt.yellow)
+            if index.row() == 10:
+                return BorderData(True, True, True, True, Qt.black)
+
         else:
             return None
 
@@ -142,12 +187,17 @@ class HexTableModel(QAbstractTableModel):
 
 
 def row_start_index(index):
+    """ get index of the start of the 0x10 byte row containing the given index """
     return index - (index % 0x10)
 
+
 def row_end_index(index):
+    """ get index of the end of the 0x10 byte row containing the given index """
     return index - (index % 0x10) + 0xF
 
+
 def row_number(index):
+    """ get row number of the 0x10 byte row containing the given index """
     return index / 0x10
 
 
@@ -341,6 +391,8 @@ class HexViewWidget(Base, UI, LoggingObject):
         f = QFontDatabase.systemFont(QFontDatabase.FixedFont)
         self.view.setFont(f)
         self.statusLabel.setFont(f)
+
+        self.view.setItemDelegate(HexItemDelegate(self._model, self))
 
     def colorRange(self, start, end):
         """ highlight by buffer indices """
