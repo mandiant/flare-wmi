@@ -628,9 +628,41 @@ class HexViewWidget(Base, UI, LoggingObject):
         menu = QMenu(self)
         index = self.view.indexAt(qpoint)
 
-        color_selection_action = QAction("Color selection", self)
-        color_selection_action.triggered.connect(self._handle_color_selection)
-        menu.addAction(color_selection_action)
+        color_action = QAction("Color selection", self)
+        color_action.triggered.connect(self._handle_color_selection)
+        menu.addAction(color_action)
+
+        # duplication here with vstructui
+        color_menu = menu.addMenu("Color selection...")
+        NamedColor = namedtuple("NamedColor", ["name", "qcolor"])
+
+        # need to escape the closure capture on the color loop variable below
+        # hint from: http://stackoverflow.com/a/6035865/87207
+        def make_handler(color):
+            return lambda: self._handle_color_selection(color=color)
+
+        for color in (
+                    NamedColor("red", Qt.red),
+                    NamedColor("green", Qt.green),
+                    NamedColor("blue", Qt.blue),
+                    NamedColor("black", Qt.black),
+                    NamedColor("dark red", Qt.darkRed),
+                    NamedColor("dark green", Qt.darkGreen),
+                    NamedColor("dark blue", Qt.darkBlue),
+                    NamedColor("cyan", Qt.cyan),
+                    NamedColor("magenta", Qt.magenta),
+                    NamedColor("yellow", Qt.yellow),
+                    NamedColor("gray", Qt.gray),
+                    NamedColor("dark cyan", Qt.darkCyan),
+                    NamedColor("dark magenta", Qt.darkMagenta),
+                    NamedColor("dark yellow", Qt.darkYellow),
+                    NamedColor("dark gray", Qt.darkGray),
+                    NamedColor("light gray", Qt.lightGray),
+                ):
+            color_action = QAction("Color item {:s}".format(color.name), self)
+            color_action.setStatusTip("color item {:s} tip".format(color.name))
+            color_action.triggered.connect(make_handler(color.qcolor))
+            color_menu.addAction(color_action)
 
         menu.addSeparator()
 
@@ -665,10 +697,10 @@ class HexViewWidget(Base, UI, LoggingObject):
 
         menu.exec_(self.view.mapToGlobal(qpoint))
 
-    def _handle_color_selection(self):
+    def _handle_color_selection(self, color=None):
         s = self._hsm.start
         e = self._hsm.end + 1
-        range = self.getColorModel().color_region(s, e)
+        range = self.getColorModel().color_region(s, e, color=color)
         self._hsm.bselect(-1, -1)
         # seems to be a bit of duplication here and in the ColorModel?
         self._colored_regions.addi(s, e, range)
