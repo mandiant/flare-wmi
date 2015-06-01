@@ -753,10 +753,16 @@ class HexViewWidget(Base, UI, LoggingObject):
             self.add_origin(Origin(index, name))
 
 
-def main():
-    buf = []
-    for i in xrange(0x100):
-        buf.append(chr(i))
+def main(filename=None):
+    import sys
+
+    if filename is None:
+        buf = []
+        for i in xrange(0x100):
+            buf.append(chr(i))
+    else:
+        with open(filename, "rb") as f:
+            buf = f.read()
 
     app = QApplication(sys.argv)
     screen = HexViewWidget(buf)
