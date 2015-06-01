@@ -1,7 +1,3 @@
-# TODO: add multiple color selections.
-# TODO: use hash-based color picking
-# TODO: add selection "save as binary" action
-# TODO: add selection "save as hex dump text" action
 # TODO: add "add new origin" action
 # TODO: add origin offset status bar entry
 
@@ -117,11 +113,11 @@ class ColorModel(QObject):
 
     def color_range(self, range):
         # note we use (end + 1) to ensure the entire selection gets captured
-        self._db.addi(range.begin, range.end + 1, range)
+        self._db.addi(range.begin, range.end, range)
         self.rangeChanged.emit(range)
 
     def clear_range(self, range):
-        self._db.removei(range.begin, range.end + 1, range)
+        self._db.removei(range.begin, range.end, range)
         self.rangeChanged.emit(range)
 
     def get_color(self, index):
@@ -164,7 +160,7 @@ def compute_region_border(start, end):
 
     ## topmost cells
     if start_row == end_row:
-        for i in xrange(start, end + 1):
+        for i in xrange(start, end):
             cells[i].top = True
     else:
         for i in xrange(start, row_end_index(start) + 1):
@@ -177,15 +173,15 @@ def compute_region_border(start, end):
 
     ## bottommost cells
     if start_row == end_row:
-        for i in xrange(start, end + 1):
+        for i in xrange(start, end):
             cells[i].bottom = True
     else:
-        for i in xrange(row_start_index(end), end + 1):
+        for i in xrange(row_start_index(end), end):
             cells[i].bottom = True
     # cells on second-to-last row, bottom right
     if start_row != end_row:
         prev_row_end = row_end_index(end) - 0x10
-        for i in xrange(prev_row_end - (0x10 - column_number(end) - 2), prev_row_end + 1):
+        for i in xrange(prev_row_end - (0x10 - column_number(end) - 1), prev_row_end + 1):
             cells[i].bottom = True
 
     ## leftmost cells
@@ -201,14 +197,14 @@ def compute_region_border(start, end):
 
     ## rightmost cells
     if start_row == end_row:
-        cells[end].right = True
+        cells[end - 1].right = True
     else:
         penultimate_row_end = row_end_index(end) - 0x10
         for i in xrange(row_end_index(start), penultimate_row_end + 0x10, 0x10):
             cells[i].right = True
     # cells in last row, bottom right
     if start_row != end_row:
-        cells[end].right = True
+        cells[end - 1].right = True
 
     # convert back to standard dict
     # trick from: http://stackoverflow.com/a/20428703/87207
@@ -236,12 +232,11 @@ class BorderModel(QObject):
         span = end - begin
         to_remove = []
         for range in self._db[begin:end]:
-            print(begin, end, range.begin, range.end)
             if range.end - range.begin - 1 == span:
                 to_remove.append(range)
         for range in to_remove:
-            self._db.removei(range.begin, range.end, range)
-            self.rangeChanged.emit(range)
+            self._db.removei(range.begin, range.end, range.data)
+            self.rangeChanged.emit(range.data)
 
     def get_border(self, index):
         # ranges is a (potentially empty) list of intervaltree.Interval instances
@@ -390,10 +385,10 @@ class HexTableModel(QAbstractTableModel):
             self.dataChanged.emit(qic, qic)
 
     def _handle_color_range_changed(self, range):
-        self._emit_data_changed(range.begin, range.end)
+        self._emit_data_changed(range.begin, range.end + 1)
 
     def _handle_border_range_changed(self, range):
-        self._emit_data_changed(range.begin, range.end)
+        self._emit_data_changed(range.begin, range.end + 1)
 
 
 class HexItemSelectionModel(QItemSelectionModel):
@@ -587,7 +582,7 @@ class HexViewWidget(Base, UI, LoggingObject):
             self.view.setColumnWidth(i, 23)
         self.view.setColumnWidth(0x10, 12)
         for i in xrange(0x11, 0x22):
-            self.view.setColumnWidth(i, 10)
+            self.view.setColumnWidth(i, 11)
 
         self._hsm = HexItemSelectionModel(self._model, self.view)
         self.view.setSelectionModel(self._hsm)
