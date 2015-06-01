@@ -698,6 +698,10 @@ class HexViewWidget(Base, UI, LoggingObject):
         menu.exec_(self.view.mapToGlobal(qpoint))
 
     def _handle_color_selection(self, color=None):
+        # qt seems to set non-existant keyword args to False, so we manually reset to None
+        if not color:
+            color = None
+
         s = self._hsm.start
         e = self._hsm.end + 1
         range = self.getColorModel().color_region(s, e, color=color)
