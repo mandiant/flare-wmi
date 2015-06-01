@@ -202,6 +202,7 @@ class VstructViewWidget(Base, UI, LoggingObject):
     def _color_item(self, item, color=None):
         start = item.start
         end = start + item.length
+        self._hv._hsm.bselect(-1, -1)
         return self._hv.getColorModel().color_region(start, end, color)
 
     def _is_item_colored(self, item):
@@ -245,12 +246,10 @@ class VstructViewWidget(Base, UI, LoggingObject):
 
     def _handle_color_item(self, item):
         # remove current selection to make change of color visible
-        self._clear_current_range()
         range = self._color_item(item)
 
     def _handle_clear_color_item(self, item):
         # remove current selection to make change of color visible
-        self._clear_current_range()
         self._clear_item(item)
 
 

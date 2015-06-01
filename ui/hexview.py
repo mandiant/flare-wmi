@@ -1,4 +1,4 @@
-# TODO: fix bug with intervals inclusive or exclusive
+# TODO: fix bug where bordered cells don't get colored
 
 import base64
 import binascii
@@ -662,9 +662,9 @@ class HexViewWidget(Base, UI, LoggingObject):
 
     def _handle_color_selection(self):
         s = self._hsm.start
-        e = self._hsm.end
+        e = self._hsm.end + 1
         range = self.getColorModel().color_region(s, e)
-        self.getBorderModel().border_region(s, e, Qt.black)
+        self._hsm.bselect(-1, -1)
         # seems to be a bit of duplication here and in the ColorModel?
         self._colored_regions.addi(s, e, range)
 
@@ -714,9 +714,6 @@ class HexViewWidget(Base, UI, LoggingObject):
         name, ok = QInputDialog.getText(self, "Add origin...", "Origin name:")
         if ok and name:
             self.add_origin(Origin(index, name))
-
-    def _handle_key_movement(self, key):
-        pass
 
 
 def main():
