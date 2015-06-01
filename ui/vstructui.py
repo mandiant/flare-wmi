@@ -1,8 +1,11 @@
 # TODO: fix de-color item
+# TODO: fix bug of bordering zero-length item
 
 import binascii
+from collections import namedtuple
 
 from PyQt5 import uic
+from PyQt5.QtGui import QColor
 from PyQt5.QtCore import Qt
 from PyQt5.QtWidgets import QMenu
 from PyQt5.QtWidgets import QAction
@@ -229,27 +232,58 @@ class VstructViewWidget(Base, UI, LoggingObject):
         index = self.treeView.indexAt(qpoint)
         item = index.model().getIndexData(index)
 
+        menu = QMenu(self)
+
         action = None
         if self._is_item_colored(item):
             action = QAction("De-color item", self)
             action.setStatusTip("de-color item tip")
             action.triggered.connect(lambda: self._handle_clear_color_item(item))
+            menu.addAction(action)
         else:
             action = QAction("Color item", self)
             action.setStatusTip("color item tip")
             action.triggered.connect(lambda: self._handle_color_item(item))
+            menu.addAction(action)
 
-        menu = QMenu(self)
-        menu.addAction(action)
+            color_menu = menu.addMenu("Color item...")
+            NamedColor = namedtuple("NamedColor", ["name", "qcolor"])
+
+            # need to escape the closure capture on the color loop variable below
+            # hint from: http://stackoverflow.com/a/6035865/87207
+            def make_handler(item, color):
+                return lambda: self._handle_color_item(item, color=color)
+
+            for color in (
+                        NamedColor("red", Qt.red),
+                        NamedColor("green", Qt.green),
+                        NamedColor("blue", Qt.blue),
+                        NamedColor("black", Qt.black),
+                        NamedColor("dark red", Qt.darkRed),
+                        NamedColor("dark green", Qt.darkGreen),
+                        NamedColor("dark blue", Qt.darkBlue),
+                        NamedColor("cyan", Qt.cyan),
+                        NamedColor("magenta", Qt.magenta),
+                        NamedColor("yellow", Qt.yellow),
+                        NamedColor("gray", Qt.gray),
+                        NamedColor("dark cyan", Qt.darkCyan),
+                        NamedColor("dark magenta", Qt.darkMagenta),
+                        NamedColor("dark yellow", Qt.darkYellow),
+                        NamedColor("dark gray", Qt.darkGray),
+                        NamedColor("light gray", Qt.lightGray),
+                    ):
+                color_action = QAction("Color item {:s}".format(color.name), self)
+                color_action.setStatusTip("color item {:s} tip".format(color.name))
+                color_action.triggered.connect(make_handler(item, color.qcolor))
+                color_menu.addAction(color_action)
 
         menu.exec_(self.treeView.mapToGlobal(qpoint))
 
-    def _handle_color_item(self, item):
-        # remove current selection to make change of color visible
-        range = self._color_item(item)
+    def _handle_color_item(self, item, color=None):
+        print(color)
+        range = self._color_item(item, color=color)
 
     def _handle_clear_color_item(self, item):
-        # remove current selection to make change of color visible
         self._clear_item(item)
 
 

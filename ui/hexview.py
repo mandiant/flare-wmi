@@ -534,7 +534,6 @@ class HexViewWidget(Base, UI, LoggingObject):
         self._model = HexTableModel(self._buf)
 
         self._colored_regions = intervaltree.IntervalTree()
-        #self._origins = [Origin(0x0, "buffer start")]
         self._origins = []
 
         # ripped from pyuic5 ui/hexview.ui
@@ -726,7 +725,6 @@ def main():
     buf = []
     for i in xrange(0x100):
         buf.append(chr(i))
-
 
     app = QApplication(sys.argv)
     screen = HexViewWidget(buf)
