@@ -44,26 +44,26 @@ class ColorModel(QObject):
     def color_region(self, begin, end, color=None):
         if color is None:
             color = self._theme.get_accent(len(self._db))
-        range = ColoredRange(begin, end, color)
-        self.color_range(range)
-        return range
+        r = ColoredRange(begin, end, color)
+        self.color_range(r)
+        return r
 
     def clear_region(self, begin, end):
         span = end - begin
         to_remove = []
-        for range in self._db[begin:end]:
-            if range.end - range.begin == span:
-                to_remove.append(range)
-        for range in to_remove:
-            self.clear_range(range.data)
+        for r in self._db[begin:end]:
+            if r.end - r.begin == span:
+                to_remove.append(r)
+        for r in to_remove:
+            self.clear_range(r.data)
 
-    def color_range(self, range):
-        self._db.addi(range.begin, range.end, range)
-        self.rangeChanged.emit(range)
+    def color_range(self, range_):
+        self._db.addi(range_.begin, range_.end, range_)
+        self.rangeChanged.emit(range_)
 
-    def clear_range(self, range):
-        self._db.removei(range.begin, range.end, range)
-        self.rangeChanged.emit(range)
+    def clear_range(self, range_):
+        self._db.removei(range_.begin, range_.end, range_)
+        self.rangeChanged.emit(range_)
 
     def get_color(self, index):
         # ranges is a (potentially empty) list of intervaltree.Interval instances
@@ -97,7 +97,16 @@ def Cell(top=False, bottom=False, left=False, right=False):
 
 
 def compute_region_border(start, end):
-    # TODO: doc
+    """
+    given the buffer start and end indices of a range, compute the border edges
+      that should be drawn to enclose the range.
+
+    this function currently assumes 0x10 length rows.
+    the result is a dictionary from buffer index to Cell instance.
+    the Cell instance has boolean properties "top", "bottom", "left", and "right"
+      that describe if a border should be drawn on that side of the cell view.
+    :rtype: Mapping[int, CellT]
+    """
     cells = defaultdict(Cell)
 
     start_row = row_number(start)
@@ -162,6 +171,14 @@ class BorderModel(QObject):
 
     def __init__(self, parent, color_theme=SolarizedColorTheme):
         super(BorderModel, self).__init__(parent)
+
+        # data structure description:
+        # _db is an interval tree that indexes on the start and end of bordered ranges
+        # the values are BorderedRange instances.
+        # given an index, determining its border is):
+        #   intervaltree lookup index in _db (which is O(log <num ranges>) )
+        #   iterate containing ranges (worst case, O(<num ranges>), but typically small)
+        #     hash lookup on index to fetch border state (which is O(1))
         self._db = IntervalTree()
         self._theme = color_theme
 
@@ -206,4 +223,3 @@ class BorderModel(QObject):
             if range.end - range.begin == span:
                 return True
         return False
-
