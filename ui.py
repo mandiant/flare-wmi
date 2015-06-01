@@ -6,6 +6,7 @@ from PyQt5.QtGui import *
 from PyQt5.QtWidgets import *
 from PyQt5.QtWidgets import QApplication
 from PyQt5 import uic
+from PyQt5.QtCore import QDir
 
 from cim import CIM
 from cim import Key
@@ -667,7 +668,7 @@ class Form(QWidget, LoggingObject):
         if self._save_buffer is None:
             return
 
-        filename, filter = QFileDialog.getSaveFileName(self, "Save binary...", "~", "Binary files (*.bin)")
+        filename, filter = QFileDialog.getSaveFileName(self, "Save binary...", QDir.currentPath(), "Binary files (*.bin)")
         if not filename:
             return
 
