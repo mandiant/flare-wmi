@@ -138,9 +138,11 @@ class BaseType(object):
         self._type = type_
         self._value_parser = value_parser
 
+    @property
     def type(self):
         return self._type
 
+    @property
     def is_array(self):
         return False
 
