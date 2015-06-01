@@ -263,9 +263,9 @@ class HexItemSelectionModel(QItemSelectionModel):
             self._bselect(selection, row_start_index(end_bindex), end_bindex)
 
         self.select(selection, QItemSelectionModel.SelectCurrent)
-        self.selectionRangeChanged.emit(end_bindex)
         self.start = start_bindex
         self.end = end_bindex
+        self.selectionRangeChanged.emit(end_bindex)
 
     def bselect(self, start_bindex, end_bindex):
         """  the public interface to _do_select """
