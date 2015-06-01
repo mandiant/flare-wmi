@@ -29,6 +29,7 @@ from PyQt5.QtWidgets import QAction
 from PyQt5.QtWidgets import QTableView
 from PyQt5.QtWidgets import QSizePolicy
 from PyQt5.QtWidgets import QApplication
+from PyQt5.QtWidgets import QInputDialog
 from PyQt5.QtWidgets import QItemDelegate
 from PyQt5.QtWidgets import QAbstractItemView
 
@@ -543,9 +544,14 @@ class HexTableView(QTableView, LoggingObject):
         self.leftMouseReleasedIndex.emit(self._press_end_index)
 
 
+Origin = namedtuple("Origin", ["offset", "name"])
+
+
 # reference: http://stackoverflow.com/questions/10612467/pyqt4-custom-widget-uic-loaded-added-to-layout-is-invisible
 UI, Base = uic.loadUiType("ui/hexview.ui")
 class HexViewWidget(Base, UI, LoggingObject):
+    originsChanged = pyqtSignal()
+
     def __init__(self, buf, parent=None):
         super(HexViewWidget, self).__init__(parent)
         self.setupUi(self)
@@ -553,6 +559,8 @@ class HexViewWidget(Base, UI, LoggingObject):
         self._model = HexTableModel(self._buf)
 
         self._colored_regions = intervaltree.IntervalTree()
+        #self._origins = [Origin(0x0, "buffer start")]
+        self._origins = []
 
         # ripped from pyuic5 ui/hexview.ui
         #   at commit 6c9edffd32706097d7eba8814d306ea1d997b25a
@@ -592,6 +600,8 @@ class HexViewWidget(Base, UI, LoggingObject):
 
         self._hsm.selectionRangeChanged.connect(self._handle_selection_range_changed)
 
+        self.originsChanged.connect(self._handle_origins_changed)
+
         f = QFontDatabase.systemFont(QFontDatabase.FixedFont)
         self.view.setFont(f)
         self.statusLabel.setFont(f)
@@ -618,15 +628,27 @@ class HexViewWidget(Base, UI, LoggingObject):
         qi = self._model.index2qindexb(index)
         self.view.scrollTo(qi)
 
-    def _handle_selection_range_changed(self, start_bindex, end_bindex):
+    def _render_status_text(self):
         txt = []
-        if start_bindex != -1 and end_bindex != -1:
-            txt.append("sel: [{:s}, {:s}]".format(hex(start_bindex), hex(end_bindex)))
-            txt.append("len: {:s}".format(hex(end_bindex - start_bindex + 1)))
+        start = self._hsm.start
+        end = self._hsm.end
+        if start not in (None, -1) and end not in (None, -1):
+            txt.append("sel: [{:s}, {:s}]".format(hex(start), hex(end)))
+            txt.append("len: {:s}".format(hex(end - start + 1)))
+            for origin in self._origins:
+                txt.append("from '{:s}': {:s}".format(
+                    origin.name, hex(start - origin.offset)))
         self.statusLabel.setText(" ".join(txt))
+
+    def _handle_selection_range_changed(self, start_bindex, end_bindex):
+        self._render_status_text()
+
+    def _handle_origins_changed(self):
+        self._render_status_text()
 
     def _handle_context_menu_requested(self, qpoint):
         menu = QMenu(self)
+        index = self.view.indexAt(qpoint)
 
         color_selection_action = QAction("Color selection", self)
         color_selection_action.triggered.connect(self._handle_color_selection)
@@ -656,6 +678,12 @@ class HexViewWidget(Base, UI, LoggingObject):
         copy_base64_action = QAction("Copy selection (base64)", self)
         copy_base64_action.triggered.connect(self._handle_copy_base64)
         copy_menu.addAction(copy_base64_action)
+
+        menu.addSeparator()
+
+        add_origin_action = QAction("Add origin", self)
+        add_origin_action.triggered.connect(lambda: self._handle_add_origin(index))
+        menu.addAction(add_origin_action)
 
         menu.exec_(self.view.mapToGlobal(qpoint))
 
@@ -699,6 +727,20 @@ class HexViewWidget(Base, UI, LoggingObject):
         mime = QMimeData()
         mime.setText(base64.b64encode(self._selected_data))
         QApplication.clipboard().setMimeData(mime)
+
+    def add_origin(self, origin):
+        self._origins.append(origin)
+        self.originsChanged.emit()
+
+    def remove_origin(self, origin):
+        self._origins.remove(origin)
+        self.originsChanged.emit()
+
+    def _handle_add_origin(self, qindex):
+        index = self.getModel().qindex2index(qindex)
+        name, ok = QInputDialog.getText(self, "Add origin...", "Origin name:")
+        if ok and name:
+            self.add_origin(Origin(index, name))
 
 
 def main():

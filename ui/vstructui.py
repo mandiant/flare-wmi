@@ -3,7 +3,6 @@ import binascii
 
 from PyQt5 import uic
 from PyQt5.QtCore import Qt
-from PyQt5.QtGui import QPalette
 from PyQt5.QtWidgets import QMenu
 from PyQt5.QtWidgets import QAction
 from PyQt5.QtWidgets import QHeaderView
@@ -23,9 +22,7 @@ from vstruct.primitives import v_uint32
 
 from ui.tree import TreeModel
 from ui.tree import ColumnDef
-from ui.hexview import ColoredRange
 from ui.hexview import HexViewWidget
-from ui.colortheme import SolarizedColorTheme
 
 
 class Item(object):
@@ -185,7 +182,6 @@ class VstructViewWidget(Base, UI, LoggingObject):
         tv.customContextMenuRequested.connect(self._handle_context_menu_requested)
 
         self._current_range = None  # type: Pair[int, int]
-        self._colored_items = {}  # type: Mapping[VstructItem, ColoredRange]
 
     def _clear_current_range(self):
         if self._current_range is None:
