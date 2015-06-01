@@ -1,3 +1,5 @@
+# TODO: fix bug with intervals inclusive or exclusive
+
 import base64
 import binascii
 from collections import namedtuple
@@ -8,6 +10,7 @@ import intervaltree
 from PyQt5 import uic
 from PyQt5.QtGui import QBrush
 from PyQt5.QtGui import QMouseEvent
+from PyQt5.QtGui import QKeySequence
 from PyQt5.QtGui import QFontDatabase
 import PyQt5.QtCore as QtCore
 from PyQt5.QtCore import Qt
@@ -266,6 +269,100 @@ class HexItemSelectionModel(QItemSelectionModel):
         """  the public interface to _do_select """
         return self._do_select(start_bindex, end_bindex)
 
+    def handle_move_key(self, key):
+        if self._start_qindex == self._model.index2qindexc(self.start) or \
+            self._start_qindex == self._model.index2qindexb(self.start):
+            i = self.end
+        else:
+            i = self.start
+        if key == QKeySequence.MoveToEndOfDocument:
+            # TODO: don't reach!
+            i = len(self._model._buf) - 1
+        elif key == QKeySequence.MoveToEndOfLine:
+            i = row_end_index(i)
+        elif key == QKeySequence.MoveToNextChar:
+            i += 1
+        elif key == QKeySequence.MoveToNextLine:
+            i += 0x10
+        elif key == QKeySequence.MoveToNextPage:
+            # TODO: fetch visible from hex view
+            i += 0x40
+        elif key == QKeySequence.MoveToNextWord:
+            i += 1
+        elif key == QKeySequence.MoveToPreviousChar:
+            i -= 1
+        elif key == QKeySequence.MoveToPreviousLine:
+            i -= 0x10
+        elif key == QKeySequence.MoveToPreviousPage:
+            # TODO: fetch visible from hex view
+            i -= 0x40
+        elif key == QKeySequence.MoveToPreviousWord:
+            i -= 1
+        elif key == QKeySequence.MoveToStartOfDocument:
+            i = 0x0
+        elif key == QKeySequence.MoveToStartOfLine:
+            i = row_start_index(i)
+        else:
+            raise RuntimeError("Unexpected movement key: %s" % (key))
+        if i < 0:
+            i %= 0x10
+        # TODO: don't reach!
+        if i > len(self._model._buf):
+            i %= 0x10
+            # TODO: don't reach!
+            i = len(self._model._buf) - 0x10 + i
+        self.bselect(i, i)
+
+    def handle_select_key(self, key):
+        i = None
+        j = None
+        if self._start_qindex == self._model.index2qindexc(self.start) or \
+            self._start_qindex == self._model.index2qindexb(self.start):
+            i = self.end
+            j = self.start
+        else:
+            i = self.start
+            j = self.end
+
+        if key == QKeySequence.SelectEndOfDocument:
+            # TODO: don't reach!
+            i = len(self._model._buf) - 1
+        elif key == QKeySequence.SelectEndOfLine:
+            i = row_end_index(i)
+        elif key == QKeySequence.SelectNextChar:
+            i += 1
+        elif key == QKeySequence.SelectNextLine:
+            i += 0x10
+        elif key == QKeySequence.SelectNextPage:
+            # TODO: fetch visible from hex view
+            i += 0x40
+        elif key == QKeySequence.SelectNextWord:
+            i += 1
+        elif key == QKeySequence.SelectPreviousChar:
+            i -= 1
+        elif key == QKeySequence.SelectPreviousLine:
+            i -= 0x10
+        elif key == QKeySequence.SelectPreviousPage:
+            # TODO: fetch visible from hex view
+            i -= 0x40
+        elif key == QKeySequence.SelectPreviousWord:
+            i -= 1
+        elif key == QKeySequence.SelectStartOfDocument:
+            i = 0x0
+        elif key == QKeySequence.SelectStartOfLine:
+            i = row_start_index(i)
+        else:
+            raise RuntimeError("Unexpected select key: %s" % (key))
+        if i < 0:
+            i %= 0x10
+        # TODO: don't reach!
+        if i > len(self._model._buf):
+            i %= 0x10
+            # TODO: don't reach!
+            i = len(self._model._buf) - 0x10 + i
+
+        self.bselect(i, j)
+
     def _update_selection(self, qindex1, qindex2):
         """  select the given range by qmodel indices """
         m = self.model()
@@ -291,6 +388,8 @@ class HexTableView(QTableView, LoggingObject):
     leftMouseMovedIndex = pyqtSignal([QModelIndex])
     leftMouseReleased = pyqtSignal([QMouseEvent])
     leftMouseReleasedIndex = pyqtSignal([QModelIndex])
+    moveKeyPressed = pyqtSignal([QKeySequence])
+    selectKeyPressed = pyqtSignal([QKeySequence])
 
     def __init__(self, *args, **kwargs):
         super(HexTableView, self).__init__(*args, **kwargs)
@@ -322,6 +421,76 @@ class HexTableView(QTableView, LoggingObject):
         super(HexTableView, self).mousePressEvent(event)
         if event.buttons() & Qt.LeftButton:
             self.leftMouseReleased.emit(event)
+
+    def keyPressEvent(self, event):
+        move_keys = (
+            QKeySequence.MoveToEndOfDocument,
+            QKeySequence.MoveToEndOfLine,
+            QKeySequence.MoveToNextChar,
+            QKeySequence.MoveToNextLine,
+            QKeySequence.MoveToNextPage,
+            QKeySequence.MoveToNextWord,
+            QKeySequence.MoveToPreviousChar,
+            QKeySequence.MoveToPreviousLine,
+            QKeySequence.MoveToPreviousPage,
+            QKeySequence.MoveToPreviousWord,
+            QKeySequence.MoveToStartOfDocument,
+            QKeySequence.MoveToStartOfLine,
+        )
+
+        for move_key in move_keys:
+            if event.matches(move_key):
+                self.moveKeyPressed.emit(move_key)
+                return
+
+        t = event.text()
+        KeyMapping = namedtuple("KeyMapping", ["source", "destination"])
+        vim_move_mappings = (
+            KeyMapping("j", QKeySequence.MoveToNextLine),
+            KeyMapping("k", QKeySequence.MoveToPreviousLine),
+            KeyMapping("h", QKeySequence.MoveToPreviousChar),
+            KeyMapping("l", QKeySequence.MoveToNextChar),
+            KeyMapping("^", QKeySequence.MoveToStartOfLine),
+            KeyMapping("$", QKeySequence.MoveToEndOfLine),
+        )
+        for vim_mapping in vim_move_mappings:
+            if vim_mapping.source == t:
+                self.moveKeyPressed.emit(vim_mapping.destination)
+                return
+
+        select_keys = (
+            QKeySequence.SelectAll,
+            QKeySequence.SelectEndOfDocument,
+            QKeySequence.SelectEndOfLine,
+            QKeySequence.SelectNextChar,
+            QKeySequence.SelectNextLine,
+            QKeySequence.SelectNextPage,
+            QKeySequence.SelectNextWord,
+            QKeySequence.SelectPreviousChar,
+            QKeySequence.SelectPreviousLine,
+            QKeySequence.SelectPreviousPage,
+            QKeySequence.SelectPreviousWord,
+            QKeySequence.SelectStartOfDocument,
+            QKeySequence.SelectStartOfLine,
+        )
+
+        for select_key in select_keys:
+            if event.matches(select_key):
+                self.selectKeyPressed.emit(select_key)
+                return
+
+        t = event.text()
+        KeyMapping = namedtuple("KeyMapping", ["source", "destination"])
+        vim_select_mappings = (
+            KeyMapping("J", QKeySequence.SelectNextLine),
+            KeyMapping("K", QKeySequence.SelectPreviousLine),
+            KeyMapping("H", QKeySequence.SelectPreviousChar),
+            KeyMapping("L", QKeySequence.SelectNextChar),
+        )
+        for vim_mapping in vim_select_mappings:
+            if vim_mapping.source == t:
+                self.selectKeyPressed.emit(vim_mapping.destination)
+                return
 
     def _handle_mouse_press(self, key_event):
         self._reset_press_state()
@@ -402,6 +571,9 @@ class HexViewWidget(Base, UI, LoggingObject):
         self._hsm.selectionRangeChanged.connect(self._handle_selection_range_changed)
 
         self.originsChanged.connect(self._handle_origins_changed)
+
+        self.view.moveKeyPressed.connect(self._hsm.handle_move_key)
+        self.view.selectKeyPressed.connect(self._hsm.handle_select_key)
 
         f = QFontDatabase.systemFont(QFontDatabase.FixedFont)
         self.view.setFont(f)
@@ -542,6 +714,9 @@ class HexViewWidget(Base, UI, LoggingObject):
         name, ok = QInputDialog.getText(self, "Add origin...", "Origin name:")
         if ok and name:
             self.add_origin(Origin(index, name))
+
+    def _handle_key_movement(self, key):
+        pass
 
 
 def main():
