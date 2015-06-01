@@ -13,7 +13,6 @@ from cim import Index
 from objects import CIM_TYPE_SIZES
 from objects import TreeNamespace
 from objects import ObjectResolver
-from objects import TreeClassDefinition
 from common import h
 from common import LoggingObject
 from ui.tree import Item
@@ -366,7 +365,7 @@ class ClassDefinitionListItem(Item):
         ns = TreeNamespace(self._ctx.object_resolver, self._name)
         for cd in ns.classes:
             ret.append(ClassDefinitionItem(self._ctx, cd.ns, cd.name))
-        return ret
+        return sorted(ret, key=lambda r: r.name)
 
     @property
     def type(self):
@@ -549,7 +548,6 @@ class ClassDefinitionItemView(QTabWidget, LoggingObject):
         ret.append("super: %s" % cd.super_class_name)
         ret.append("ts: %s" % cd.timestamp.isoformat("T"))
         ret.append("qualifiers:")
-        print(dir(cd))
         for k, v in cd.qualifiers.iteritems():
             ret.append("  %s: %s" % (k, str(v)))
         ret.append("properties:")
