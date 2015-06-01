@@ -53,6 +53,7 @@ def row_number(index):
     """ get row number of the 0x10 byte row containing the given index """
     return index / 0x10
 
+
 def column_number(index):
     return index % 0x10
 
@@ -93,7 +94,7 @@ class ColorModel(QObject):
     def __init__(self, parent, color_theme=SolarizedColorTheme):
         super(ColorModel, self).__init__(parent)
         self._db = IntervalTree()
-        self._theme = SolarizedColorTheme
+        self._theme = color_theme
 
     def color_region(self, begin, end, color=None):
         if color is None:
@@ -112,7 +113,6 @@ class ColorModel(QObject):
             self.clear_range(range.data)
 
     def color_range(self, range):
-        # note we use (end + 1) to ensure the entire selection gets captured
         self._db.addi(range.begin, range.end, range)
         self.rangeChanged.emit(range)
 
@@ -218,7 +218,7 @@ class BorderModel(QObject):
     def __init__(self, parent, color_theme=SolarizedColorTheme):
         super(BorderModel, self).__init__(parent)
         self._db = IntervalTree()
-        self._theme = SolarizedColorTheme
+        self._theme = color_theme
 
     def border_region(self, begin, end, color=None):
         if color is None:
@@ -496,15 +496,15 @@ class HexTableView(QTableView, LoggingObject):
         self.leftMouseMoved.connect(self._handle_mouse_move)
         self.leftMouseReleased.connect(self._handle_mouse_release)
 
-        self._pressStartIndex = None
-        self._pressCurrentIndex = None
-        self._pressEndIndex = None
-        self._isTrackingMouse = False
+        self._press_start_index = None
+        self._press_current_index = None
+        self._press_end_index = None
+        self._is_tracking_mouse = False
 
-    def _resetPressState(self):
-        self._pressStartIndex = None
-        self._pressCurrentIndex = None
-        self._pressEndIndex = None
+    def _reset_press_state(self):
+        self._press_start_index = None
+        self._press_current_index = None
+        self._press_end_index = None
 
     def mousePressEvent(self, event):
         super(HexTableView, self).mousePressEvent(event)
@@ -522,25 +522,25 @@ class HexTableView(QTableView, LoggingObject):
             self.leftMouseReleased.emit(event)
 
     def _handle_mouse_press(self, key_event):
-        self._resetPressState()
+        self._reset_press_state()
 
-        self._pressStartIndex = self.indexAt(key_event.pos())
-        self._isTrackingMouse = True
+        self._press_start_index = self.indexAt(key_event.pos())
+        self._is_tracking_mouse = True
 
-        self.leftMousePressedIndex.emit(self._pressStartIndex)
+        self.leftMousePressedIndex.emit(self._press_start_index)
 
     def _handle_mouse_move(self, key_event):
-        if self._isTrackingMouse:
+        if self._is_tracking_mouse:
             i = self.indexAt(key_event.pos())
-            if i != self._pressCurrentIndex:
-                self._pressCurrentIndex = i
+            if i != self._press_current_index:
+                self._press_current_index = i
                 self.leftMouseMovedIndex.emit(i)
 
     def _handle_mouse_release(self, key_event):
-        self._pressEndIndex = self.indexAt(key_event.pos())
-        self._isTrackingMouse = False
+        self._press_end_index = self.indexAt(key_event.pos())
+        self._is_tracking_mouse = False
 
-        self.leftMouseReleasedIndex.emit(self._pressEndIndex)
+        self.leftMouseReleasedIndex.emit(self._press_end_index)
 
 
 # reference: http://stackoverflow.com/questions/10612467/pyqt4-custom-widget-uic-loaded-added-to-layout-is-invisible
