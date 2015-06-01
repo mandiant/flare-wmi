@@ -6,4 +6,4 @@ def emptyLayout(layout):
         layout.itemAt(i).widget().setParent(None)
 
 
-StructItem = namedtuple("StructItem", ["offset", "name", "struct"])
+StructItem = namedtuple("StructItem", ["start", "name", "struct"])

@@ -1,5 +1,3 @@
-# TODO: fix bug where bordered cells don't get colored
-
 import base64
 import binascii
 from collections import namedtuple
@@ -136,10 +134,21 @@ class HexTableModel(QAbstractTableModel):
         elif self.qindex2index(index) >= len(self._buf):
             return None
 
+        col = index.column()
         bindex = self.qindex2index(index)
-        if role == Qt.BackgroundRole:
+        if role == Qt.DisplayRole:
+            if col == 0x10:
+                return ""
+
+            c = ord(self._buf[bindex])
+            if col > 0x10:
+                return chr(c).translate(HexTableModel.FILTER)
+            else:
+                return "%02x" % (c)
+
+        elif role == Qt.BackgroundRole:
             # don't color the divider column
-            if index.column() == 0x10:
+            if col == 0x10:
                 return None
 
             color = self._colors.get_color(bindex)
@@ -147,24 +156,17 @@ class HexTableModel(QAbstractTableModel):
                 return QBrush(color)
             return None
 
-        elif role == Qt.DisplayRole:
-            if index.column() == 0x10:
-                return ""
-
-            c = ord(self._buf[bindex])
-            if index.column() > 0x10:
-                return chr(c).translate(HexTableModel.FILTER)
-            else:
-                return "%02x" % (c)
-
         elif role == ROLE_BORDER:
-            if index.column() == 0x10:
+            if col == 0x10:
                 return None
-
             return self._borders.get_border(bindex)
 
         else:
             return None
+
+    @property
+    def data_length(self):
+        return len(self._buf)
 
     def headerData(self, section, orientation, role):
         if role != Qt.DisplayRole:
@@ -197,7 +199,7 @@ class HexTableModel(QAbstractTableModel):
 
 
 class HexItemSelectionModel(QItemSelectionModel):
-    selectionRangeChanged = pyqtSignal([int, int])
+    selectionRangeChanged = pyqtSignal([int])
 
     def __init__(self, model, view):
         """
@@ -261,7 +263,7 @@ class HexItemSelectionModel(QItemSelectionModel):
             self._bselect(selection, row_start_index(end_bindex), end_bindex)
 
         self.select(selection, QItemSelectionModel.SelectCurrent)
-        self.selectionRangeChanged.emit(start_bindex, end_bindex)
+        self.selectionRangeChanged.emit(end_bindex)
         self.start = start_bindex
         self.end = end_bindex
 
@@ -276,8 +278,7 @@ class HexItemSelectionModel(QItemSelectionModel):
         else:
             i = self.start
         if key == QKeySequence.MoveToEndOfDocument:
-            # TODO: don't reach!
-            i = len(self._model._buf) - 1
+            i = self._model.data_length - 1
         elif key == QKeySequence.MoveToEndOfLine:
             i = row_end_index(i)
         elif key == QKeySequence.MoveToNextChar:
@@ -285,7 +286,6 @@ class HexItemSelectionModel(QItemSelectionModel):
         elif key == QKeySequence.MoveToNextLine:
             i += 0x10
         elif key == QKeySequence.MoveToNextPage:
-            # TODO: fetch visible from hex view
             i += 0x40
         elif key == QKeySequence.MoveToNextWord:
             i += 1
@@ -294,7 +294,6 @@ class HexItemSelectionModel(QItemSelectionModel):
         elif key == QKeySequence.MoveToPreviousLine:
             i -= 0x10
         elif key == QKeySequence.MoveToPreviousPage:
-            # TODO: fetch visible from hex view
             i -= 0x40
         elif key == QKeySequence.MoveToPreviousWord:
             i -= 1
@@ -304,13 +303,15 @@ class HexItemSelectionModel(QItemSelectionModel):
             i = row_start_index(i)
         else:
             raise RuntimeError("Unexpected movement key: %s" % (key))
+
+        # this behavior selects the smallest or largest cell in the
+        #   same column as the out-of-bounds index
         if i < 0:
             i %= 0x10
-        # TODO: don't reach!
-        if i > len(self._model._buf):
+        if i > self._model.data_length:
             i %= 0x10
-            # TODO: don't reach!
-            i = len(self._model._buf) - 0x10 + i
+            i = self._model.data_length - 0x10 + i
+
         self.bselect(i, i)
 
     def handle_select_key(self, key):
@@ -325,8 +326,7 @@ class HexItemSelectionModel(QItemSelectionModel):
             j = self.end
 
         if key == QKeySequence.SelectEndOfDocument:
-            # TODO: don't reach!
-            i = len(self._model._buf) - 1
+            i = self._model.data_length - 1
         elif key == QKeySequence.SelectEndOfLine:
             i = row_end_index(i)
         elif key == QKeySequence.SelectNextChar:
@@ -334,7 +334,6 @@ class HexItemSelectionModel(QItemSelectionModel):
         elif key == QKeySequence.SelectNextLine:
             i += 0x10
         elif key == QKeySequence.SelectNextPage:
-            # TODO: fetch visible from hex view
             i += 0x40
         elif key == QKeySequence.SelectNextWord:
             i += 1
@@ -343,7 +342,6 @@ class HexItemSelectionModel(QItemSelectionModel):
         elif key == QKeySequence.SelectPreviousLine:
             i -= 0x10
         elif key == QKeySequence.SelectPreviousPage:
-            # TODO: fetch visible from hex view
             i -= 0x40
         elif key == QKeySequence.SelectPreviousWord:
             i -= 1
@@ -353,13 +351,20 @@ class HexItemSelectionModel(QItemSelectionModel):
             i = row_start_index(i)
         else:
             raise RuntimeError("Unexpected select key: %s" % (key))
+
+        # this behavior selects the smallest or largest cell in the
+        #   same column as the out-of-bounds index
         if i < 0:
             i %= 0x10
-        # TODO: don't reach!
-        if i > len(self._model._buf):
+        if i > self._model.data_length:
             i %= 0x10
-            # TODO: don't reach!
-            i = len(self._model._buf) - 0x10 + i
+            i = self._model.data_length - 0x10 + i
+
+        # need to explicitly reset start_qindex so that the current index
+        #   doesn't get confused when coming from a selection of a single cell
+        #   (in the check at the start of this function to decide which end of
+        #    the selection was most recently active)
+        self._start_qindex = self._model.index2qindexc(j)
 
         self.bselect(i, j)
 
@@ -613,8 +618,9 @@ class HexViewWidget(Base, UI, LoggingObject):
                     origin.name, hex(start - origin.offset)))
         self.statusLabel.setText(" ".join(txt))
 
-    def _handle_selection_range_changed(self, start_bindex, end_bindex):
+    def _handle_selection_range_changed(self, end_bindex):
         self._render_status_text()
+        self.scrollTo(end_bindex)
 
     def _handle_origins_changed(self):
         self._render_status_text()

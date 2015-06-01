@@ -1,4 +1,5 @@
-# add "color region" action
+# TODO: fix de-color item
+
 import binascii
 
 from PyQt5 import uic
@@ -222,7 +223,6 @@ class VstructViewWidget(Base, UI, LoggingObject):
         e = item.start + item.length
         self._hv.getBorderModel().border_region(s, e, Qt.black)
         self._current_range = (s, e)
-        self._hv.getSelectionModel().bselect(s, e - 1)
         self._hv.scrollTo(s)
 
     def _handle_context_menu_requested(self, qpoint):
