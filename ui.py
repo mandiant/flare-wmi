@@ -600,6 +600,9 @@ class Form(QWidget, LoggingObject):
         self._ui.queryInputActionButton.clicked.connect(self._handle_query)
         self._ui.queryResultsList.activated.connect(self._handle_results_item_activated)
 
+        self._save_buffer = None
+        self._ui.queryResultsSaveButton.clicked.connect(self._handle_save)
+
         mainLayout = QGridLayout()
         mainLayout.addWidget(self._ui, 0, 0)
 
@@ -658,8 +661,20 @@ class Form(QWidget, LoggingObject):
         self.d("item changed: %s", o)
 
         buf = self._ctx.object_resolver.get_object(o)
+        self._save_buffer = buf
         hv = HexViewWidget(buf, self._ui.queryResultsViewFrame)
         self._ui.queryResultsViewLayout.addWidget(hv)
+
+    def _handle_save(self):
+        if self._save_buffer is None:
+            return
+
+        filename, filter = QFileDialog.getSaveFileName(self, "Save binary...", "~", "Binary files (*.bin)")
+        if not filename:
+            return
+
+        with open(filename, "wb") as f:
+            f.write(self._save_buffer)
 
 
 def main(type_, path):
