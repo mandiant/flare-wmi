@@ -2,16 +2,16 @@
 # TODO: fix bug of bordering zero-length item
 
 import binascii
-from collections import namedtuple
 
 from PyQt5 import uic
-from PyQt5.QtGui import QColor
 from PyQt5.QtCore import Qt
 from PyQt5.QtWidgets import QMenu
 from PyQt5.QtWidgets import QAction
 from PyQt5.QtWidgets import QHeaderView
 from PyQt5.QtWidgets import QApplication
 
+import os.path, sys
+sys.path.append(os.path.join(os.path.dirname(os.path.realpath(__file__)), os.pardir))
 from common import h
 from common import LoggingObject
 
@@ -26,7 +26,9 @@ from vstruct.primitives import v_uint32
 
 from ui.tree import TreeModel
 from ui.tree import ColumnDef
+from ui.hexview import QT_COLORS
 from ui.hexview import HexViewWidget
+from ui.hexview import make_color_icon
 
 
 class Item(object):
@@ -76,12 +78,12 @@ class VstructItem(Item):
 
     def __repr__(self):
         return "VstructItem(name: {:s}, type: {:s}, start: {:s}, length: {:s}, end: {:s})".format(
-                    self.name,
-                    self.type,
-                    h(self.start),
-                    h(self.length),
-                    h(self.end),
-                )
+            self.name,
+            self.type,
+            h(self.start),
+            h(self.length),
+            h(self.end),
+        )
 
     @property
     def children(self):
@@ -151,6 +153,8 @@ class VstructRootItem(Item):
 
 
 UI, Base = uic.loadUiType("ui/vstruct.ui")
+
+
 class VstructViewWidget(Base, UI, LoggingObject):
     def __init__(self, items, buf, parent=None):
         """ items is a list of VstructItem """
@@ -160,15 +164,15 @@ class VstructViewWidget(Base, UI, LoggingObject):
         self._items = items
         self._buf = buf
         self._model = TreeModel(
-                VstructRootItem(items),
-                [
-                    ColumnDef("Name", "name"),
-                    ColumnDef("Type", "type"),
-                    ColumnDef("Data", "data"),
-                    ColumnDef("Start", "start", formatter=h),
-                    ColumnDef("Length", "length", formatter=h),
-                    ColumnDef("End", "end", formatter=h),
-                ])
+            VstructRootItem(items),
+            [
+                ColumnDef("Name", "name"),
+                ColumnDef("Type", "type"),
+                ColumnDef("Data", "data"),
+                ColumnDef("Start", "start", formatter=h),
+                ColumnDef("Length", "length", formatter=h),
+                ColumnDef("End", "end", formatter=h),
+            ])
 
         self._hv = HexViewWidget(self._buf, self.splitter)
         self.splitter.insertWidget(0, self._hv)
@@ -185,6 +189,7 @@ class VstructViewWidget(Base, UI, LoggingObject):
         tv.setContextMenuPolicy(Qt.CustomContextMenu)
         tv.customContextMenuRequested.connect(self._handle_context_menu_requested)
 
+        # used to track the current "selection" controlled by the tree view entries
         self._current_range = None  # type: Pair[int, int]
 
     def _clear_current_range(self):
@@ -206,6 +211,7 @@ class VstructViewWidget(Base, UI, LoggingObject):
     def _color_item(self, item, color=None):
         start = item.start
         end = start + item.length
+        # deselect any existing ranges, or else colors get confused
         self._hv._hsm.bselect(-1, -1)
         return self._hv.getColorModel().color_region(start, end, color)
 
@@ -232,56 +238,37 @@ class VstructViewWidget(Base, UI, LoggingObject):
         index = self.treeView.indexAt(qpoint)
         item = index.model().getIndexData(index)
 
+        def add_action(menu, text, handler, icon=None):
+            a = None
+            if icon is None:
+                a = QAction(text, self)
+            else:
+                a = QAction(icon, text, self)
+            a.triggered.connect(handler)
+            menu.addAction(a)
+
         menu = QMenu(self)
 
         action = None
         if self._is_item_colored(item):
-            action = QAction("De-color item", self)
-            action.setStatusTip("de-color item tip")
-            action.triggered.connect(lambda: self._handle_clear_color_item(item))
-            menu.addAction(action)
+            add_action(menu, "De-color item", lambda: self._handle_clear_color_item(item))
         else:
-            action = QAction("Color item", self)
-            action.setStatusTip("color item tip")
-            action.triggered.connect(lambda: self._handle_color_item(item))
-            menu.addAction(action)
-
+            add_action(menu, "Color item", lambda: self._handle_color_item(item))
             color_menu = menu.addMenu("Color item...")
-            NamedColor = namedtuple("NamedColor", ["name", "qcolor"])
 
             # need to escape the closure capture on the color loop variable below
             # hint from: http://stackoverflow.com/a/6035865/87207
-            def make_handler(item, color):
+            def make_color_item_handler(item, color):
                 return lambda: self._handle_color_item(item, color=color)
 
-            for color in (
-                        NamedColor("red", Qt.red),
-                        NamedColor("green", Qt.green),
-                        NamedColor("blue", Qt.blue),
-                        NamedColor("black", Qt.black),
-                        NamedColor("dark red", Qt.darkRed),
-                        NamedColor("dark green", Qt.darkGreen),
-                        NamedColor("dark blue", Qt.darkBlue),
-                        NamedColor("cyan", Qt.cyan),
-                        NamedColor("magenta", Qt.magenta),
-                        NamedColor("yellow", Qt.yellow),
-                        NamedColor("gray", Qt.gray),
-                        NamedColor("dark cyan", Qt.darkCyan),
-                        NamedColor("dark magenta", Qt.darkMagenta),
-                        NamedColor("dark yellow", Qt.darkYellow),
-                        NamedColor("dark gray", Qt.darkGray),
-                        NamedColor("light gray", Qt.lightGray),
-                    ):
-                color_action = QAction("Color item {:s}".format(color.name), self)
-                color_action.setStatusTip("color item {:s} tip".format(color.name))
-                color_action.triggered.connect(make_handler(item, color.qcolor))
-                color_menu.addAction(color_action)
+            for color in QT_COLORS:
+                add_action(color_menu, "{:s}".format(color.name),
+                           make_color_item_handler(item, color.qcolor), make_color_icon(color.qcolor))
 
         menu.exec_(self.treeView.mapToGlobal(qpoint))
 
     def _handle_color_item(self, item, color=None):
-        print(color)
-        range = self._color_item(item, color=color)
+        self._color_item(item, color=color)
 
     def _handle_clear_color_item(self, item):
         self._clear_item(item)
@@ -316,4 +303,5 @@ def main():
 
 if __name__ == "__main__":
     import sys
+
     main(*sys.argv[1:])

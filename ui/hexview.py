@@ -6,7 +6,9 @@ import hexdump
 import intervaltree
 
 from PyQt5 import uic
+from PyQt5.QtGui import QIcon
 from PyQt5.QtGui import QBrush
+from PyQt5.QtGui import QPixmap
 from PyQt5.QtGui import QMouseEvent
 from PyQt5.QtGui import QKeySequence
 from PyQt5.QtGui import QFontDatabase
@@ -30,6 +32,7 @@ from PyQt5.QtWidgets import QAbstractItemView
 
 import os.path, sys
 sys.path.append(os.path.join(os.path.dirname(os.path.realpath(__file__)), os.pardir))
+from common import h
 from common import LoggingObject
 from tablecellstylemodels import row_start_index
 from tablecellstylemodels import row_end_index
@@ -37,6 +40,32 @@ from tablecellstylemodels import row_number
 from tablecellstylemodels import ROLE_BORDER
 from tablecellstylemodels import ColorModel
 from tablecellstylemodels import BorderModel
+
+NamedColor = namedtuple("NamedColor", ["name", "qcolor"])
+QT_COLORS = (
+        NamedColor("red", Qt.red),
+        NamedColor("green", Qt.green),
+        NamedColor("blue", Qt.blue),
+        NamedColor("black", Qt.black),
+        NamedColor("dark red", Qt.darkRed),
+        NamedColor("dark green", Qt.darkGreen),
+        NamedColor("dark blue", Qt.darkBlue),
+        NamedColor("cyan", Qt.cyan),
+        NamedColor("magenta", Qt.magenta),
+        NamedColor("yellow", Qt.yellow),
+        NamedColor("gray", Qt.gray),
+        NamedColor("dark cyan", Qt.darkCyan),
+        NamedColor("dark magenta", Qt.darkMagenta),
+        NamedColor("dark yellow", Qt.darkYellow),
+        NamedColor("dark gray", Qt.darkGray),
+        NamedColor("light gray", Qt.lightGray),
+)
+
+
+def make_color_icon(color):
+        pixmap = QPixmap(10, 10)
+        pixmap.fill(color)
+        return QIcon(pixmap)
 
 
 class HexItemDelegate(QItemDelegate):
@@ -628,72 +657,58 @@ class HexViewWidget(Base, UI, LoggingObject):
         menu = QMenu(self)
         index = self.view.indexAt(qpoint)
 
-        color_action = QAction("Color selection", self)
-        color_action.triggered.connect(self._handle_color_selection)
-        menu.addAction(color_action)
+        def add_action(menu, text, handler, icon=None):
+            a = None
+            if icon is None:
+                a = QAction(text, self)
+            else:
+                a = QAction(icon, text, self)
+            a.triggered.connect(handler)
+            menu.addAction(a)
+
+        add_action(menu, "Color selection", self._handle_color_selection)
 
         # duplication here with vstructui
         color_menu = menu.addMenu("Color selection...")
-        NamedColor = namedtuple("NamedColor", ["name", "qcolor"])
 
         # need to escape the closure capture on the color loop variable below
         # hint from: http://stackoverflow.com/a/6035865/87207
-        def make_handler(color):
+        def make_color_selection_handler(color):
             return lambda: self._handle_color_selection(color=color)
 
-        for color in (
-                    NamedColor("red", Qt.red),
-                    NamedColor("green", Qt.green),
-                    NamedColor("blue", Qt.blue),
-                    NamedColor("black", Qt.black),
-                    NamedColor("dark red", Qt.darkRed),
-                    NamedColor("dark green", Qt.darkGreen),
-                    NamedColor("dark blue", Qt.darkBlue),
-                    NamedColor("cyan", Qt.cyan),
-                    NamedColor("magenta", Qt.magenta),
-                    NamedColor("yellow", Qt.yellow),
-                    NamedColor("gray", Qt.gray),
-                    NamedColor("dark cyan", Qt.darkCyan),
-                    NamedColor("dark magenta", Qt.darkMagenta),
-                    NamedColor("dark yellow", Qt.darkYellow),
-                    NamedColor("dark gray", Qt.darkGray),
-                    NamedColor("light gray", Qt.lightGray),
-                ):
-            color_action = QAction("Color item {:s}".format(color.name), self)
-            color_action.setStatusTip("color item {:s} tip".format(color.name))
-            color_action.triggered.connect(make_handler(color.qcolor))
-            color_menu.addAction(color_action)
+        for color in QT_COLORS:
+            add_action(color_menu, "{:s}".format(color.name),
+                       make_color_selection_handler(color.qcolor), make_color_icon(color.qcolor))
 
-        menu.addSeparator()
+        start = self._hsm.start
+        end = self._hsm.end
+        cm = self.getColorModel()
+        if (start == end and cm.is_index_colored(start)) or cm.is_region_colored(start, end):
+            def make_remove_color_handler(r):
+                return lambda: self._handle_remove_color_range(r)
 
-        copy_binary_action = QAction("Copy selection (binary)", self)
-        copy_binary_action.triggered.connect(self._handle_copy_binary)
-        menu.addAction(copy_binary_action)
+            remove_color_menu = menu.addMenu("Remove color...")
+            for cr in cm.get_region_colors(start, end):
+                pixmap = QPixmap(10, 10)
+                pixmap.fill(cr.color)
+                icon = QIcon(pixmap)
+                add_action(remove_color_menu,
+                       "Remove color [{:s}, {:s}], len: {:s}".format(h(cr.begin), h(cr.end), h(cr.end - cr.begin)),
+                       make_remove_color_handler(cr), make_color_icon(cr.color))
 
+        menu.addSeparator()  # -----------------------------------------------------------------
+
+        add_action(menu, "Copy selection (binary)", self._handle_copy_binary)
         copy_menu = menu.addMenu("Copy...")
-        copy_menu.addAction(copy_binary_action)
+        add_action(copy_menu, "Copy selection (binary)", self._handle_copy_binary)
+        add_action(copy_menu, "Copy selection (text)", self._handle_copy_text)
+        add_action(copy_menu, "Copy selection (hex)", self._handle_copy_hex)
+        add_action(copy_menu, "Copy selection (hexdump)", self._handle_copy_hexdump)
+        add_action(copy_menu, "Copy selection (base64)", self._handle_copy_base64)
 
-        copy_text_action= QAction("Copy selection (text)", self)
-        copy_text_action.triggered.connect(self._handle_copy_text)
-        copy_menu.addAction(copy_text_action)
+        menu.addSeparator()  # -----------------------------------------------------------------
 
-        copy_hex_action = QAction("Copy selection (hex)", self)
-        copy_hex_action.triggered.connect(self._handle_copy_hex)
-        copy_menu.addAction(copy_hex_action)
-
-        copy_hexdump_action = QAction("Copy selection (hexdump)", self)
-        copy_hexdump_action.triggered.connect(self._handle_copy_hexdump)
-        copy_menu.addAction(copy_hexdump_action)
-
-        copy_base64_action = QAction("Copy selection (base64)", self)
-        copy_base64_action.triggered.connect(self._handle_copy_base64)
-        copy_menu.addAction(copy_base64_action)
-
-        menu.addSeparator()
-
-        add_origin_action = QAction("Add origin", self)
-        add_origin_action.triggered.connect(lambda: self._handle_add_origin(index))
-        menu.addAction(add_origin_action)
+        add_action(menu, "Add origin", lambda: self._handle_add_origin(index))
 
         menu.exec_(self.view.mapToGlobal(qpoint))
 
@@ -708,6 +723,9 @@ class HexViewWidget(Base, UI, LoggingObject):
         self._hsm.bselect(-1, -1)
         # seems to be a bit of duplication here and in the ColorModel?
         self._colored_regions.addi(s, e, range)
+
+    def _handle_remove_color_range(self, range):
+        self.getColorModel().clear_range(range)
 
     @property
     def _selected_data(self):

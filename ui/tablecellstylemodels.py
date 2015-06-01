@@ -1,6 +1,7 @@
 from collections import namedtuple
 from collections import defaultdict
 
+import funcy
 from intervaltree import IntervalTree
 from PyQt5.QtCore import QObject
 from PyQt5.QtCore import pyqtSignal
@@ -74,15 +75,18 @@ class ColorModel(QObject):
             return ranges[0].data.color
         return None
 
+    def get_region_colors(self, begin, end):
+        if begin == end:
+            results = self._db[begin]
+        else:
+            results = self._db[begin:end]
+        return funcy.pluck_attr("data", results)
+
     def is_index_colored(self, index):
         return len(self._db[index]) > 0
 
     def is_region_colored(self, begin, end):
-        span = end - begin
-        for range in self._db[begin:end]:
-            if range.end - range.begin == span:
-                return True
-        return False
+        return len(self._db[begin:end]) > 0
 
 
 ROLE_BORDER = 0xF
