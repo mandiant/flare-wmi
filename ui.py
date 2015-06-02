@@ -1,6 +1,9 @@
 import logging
 from collections import namedtuple
 
+from hexview import HexViewWidget
+from vstructui import VstructViewWidget
+
 from funcy.objects import cached_property
 from PyQt5.QtGui import *
 from PyQt5.QtWidgets import *
@@ -21,8 +24,7 @@ from ui.tree import TreeModel
 from ui.tree import ColumnDef
 from ui.uicommon import StructItem
 from ui.uicommon import emptyLayout
-from ui.hexview import HexViewWidget
-from ui.vstructui import VstructViewWidget
+
 from vstruct.primitives import v_bytes
 from vstruct.primitives import v_zstr
 
