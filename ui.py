@@ -19,6 +19,7 @@ from cim import IndexPage
 from cim import INDEX_PAGE_TYPES
 from objects import CIM_TYPE_SIZES
 from objects import TreeNamespace
+from objects import TreeClassDefinition
 from objects import ObjectResolver
 from common import h
 from common import LoggingObject
@@ -376,18 +377,20 @@ class IndexRootItem(Item):
 
 
 class ClassInstanceItem(Item):
-    def __init__(self, ctx, *args, **kwargs):
-        # TODO
+    def __init__(self, ctx, namespace, classname, instancename):
         super(ClassInstanceItem, self).__init__()
         self._ctx = ctx
+        self._ns = namespace
+        self._class = classname
+        self._instancename = instancename
 
     def __repr__(self):
-        # TODO
-        return "ClassInstanceItem()"
+        return "ClassInstanceItem(namespace: {:s}, classnamename: {:s}, name: {:s})".format(
+            self._ns,
+            self._class, self.name)
 
     @cached_property
     def children(self):
-        # TODO
         return []
 
     @property
@@ -396,17 +399,15 @@ class ClassInstanceItem(Item):
 
     @property
     def name(self):
-        # TODO
-        return ""
+        return "TODO"
 
 
 class ClassInstanceListItem(Item):
-    def __init__(self, ctx, namespace, classname, *args, **kwargs):
+    def __init__(self, ctx, namespace, classname):
         super(ClassInstanceListItem, self).__init__()
         self._ctx = ctx
         self._ns = namespace
         self._class = classname
-        # TODO
 
     def __repr__(self):
         return "ClassInstanceListItem(namespace: {:s}, classnamename: {:s})".format(
@@ -415,8 +416,12 @@ class ClassInstanceListItem(Item):
 
     @cached_property
     def children(self):
-        # TODO
-        return []
+        ret = []
+        cd = TreeClassDefinition(self._ctx.object_resolver, self._ns, self._class)
+        for instance in cd.instances:
+            ret.append(ClassInstanceItem(self._ctx, instance.ns, instance.class_name, instance.instance_name))
+        return sorted(ret, key=lambda r: r.name)
+
 
     @property
     def type(self):
