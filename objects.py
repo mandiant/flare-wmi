@@ -6,6 +6,7 @@
 #   class instance: "root\\CIMV2" Microsoft_BDD_Info NS_68577372C66A7B20658487FBD959AA154EF54B5F935DCC5663E9228B44322805/CI_6FCB95E1CB11D0950DA7AE40A94D774F02DCD34701D9645E00AB9444DBCF640B/IL_EEC4121F2A07B61ABA16414812AA9AFC39AB0A136360A5ACE2240DC19B0464EB.1606.116085.3740
 
 import logging
+import functools
 from datetime import datetime
 from collections import namedtuple
 
@@ -40,7 +41,11 @@ class FILETIME(vstruct.primitives.v_prim):
     def vsParse(self, fbytes, offset=0):
         offend = offset + self._vs_length
         q = struct.unpack("<Q", fbytes[offset:offend])[0]
-        self._ts = datetime.utcfromtimestamp(float(q) * 1e-7 - 11644473600 )
+        try:
+            self._ts = datetime.utcfromtimestamp(float(q) * 1e-7 - 11644473600 )
+        except ValueError:
+            print("invalid timestamp: %s" % (h(q)))
+            self._ts = datetime.min
         return offend
 
     def vsEmit(self):
@@ -158,17 +163,28 @@ class BaseType(object):
         return self
 
 
+ARRAY_STATES = v_enum()
+ARRAY_STATES.NOT_ARRAY = 0x0
+ARRAY_STATES.ARRAY = 0x20
+
+
+BOOLEAN_STATES = v_enum()
+BOOLEAN_STATES.FALSE = 0x0
+BOOLEAN_STATES.TRUE = 0xFFFF
+
+
 class CimType(vstruct.VStruct):
     def __init__(self):
         vstruct.VStruct.__init__(self)
-        self.type = v_uint8()
-        self._is_array = v_uint8()
+        self.type = enum_uint8(CIM_TYPES)
+        self.array_state = enum_uint8(ARRAY_STATES)
         self.unk0 = v_uint8()
         self.unk2 = v_uint8()
 
     @property
     def is_array(self):
-        return self._is_array == 0x20
+        # TODO: this is probably a bit-flag
+        return self.array_state == ARRAY_STATES.ARRAY
 
     @property
     def value_parser(self):
@@ -181,7 +197,7 @@ class CimType(vstruct.VStruct):
         elif self.type == CIM_TYPES.CIM_TYPE_STRING:
             return v_uint32
         elif self.type == CIM_TYPES.CIM_TYPE_BOOLEAN:
-            return v_uint16
+            return functools.partial(enum_uint16, BOOLEAN_STATES)
         elif self.type == CIM_TYPES.CIM_TYPE_UINT8:
             return v_uint8
         elif self.type == CIM_TYPES.CIM_TYPE_UINT16:
@@ -647,7 +663,10 @@ class ClassLayout(LoggingObject):
         while class_name != "":
             cd = self.object_resolver.get_cd(self.namespace, class_name)
             class_derivation.append(cd)
-            self.d("parent of %s is %s", class_name, cd.super_class_name)
+            if cd.super_class_name:
+                self.d("parent of %s is %s", class_name, cd.super_class_name)
+            else:
+                self.d("%s has no parent", class_name)
             class_name = cd.super_class_name
 
         # note, derivation now ordered from parent to child
