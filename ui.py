@@ -1,3 +1,4 @@
+import os
 import logging
 from collections import namedtuple
 
@@ -22,11 +23,14 @@ from common import LoggingObject
 from ui.tree import Item
 from ui.tree import TreeModel
 from ui.tree import ColumnDef
-from ui.uicommon import StructItem
 from ui.uicommon import emptyLayout
 
 from vstruct.primitives import v_bytes
 from vstruct.primitives import v_zstr
+
+from vstructui import get_parsers
+from vstructui import VstructInstance
+
 
 
 Context = namedtuple("Context", ["cim", "index", "object_resolver"])
@@ -110,12 +114,12 @@ class LogicalDataPageItem(Item):
     def structs(self):
         page = self._ctx.cim.logical_data_store.get_page(self.index)
         ret = [
-            StructItem(0x0, "toc", page.toc),
+            VstructInstance(0x0, page.toc, "toc"),
         ]
         for i, data in enumerate(page.objects):
             vbuf = v_bytes(size=len(data.buffer))
             vbuf.vsParse(data.buffer)
-            ret.append(StructItem(data.offset, "Object {:s}".format(h(i)), vbuf))
+            ret.append(VstructInstance(data.offset, vbuf, "Object {:s}".format(h(i))))
         return ret
 
 
@@ -208,7 +212,7 @@ class IndexNodeItem(Item):
     def structs(self):
         page = self._ctx.cim.logical_index_store.get_page(self._page_number)
         ret = [
-            StructItem(0x0, "node", page),
+            VstructInstance(0x0, page, "node"),
         ]
 
         data_offset = page.vsGetOffset("data")
@@ -222,7 +226,8 @@ class IndexNodeItem(Item):
                 string_offset = page.string_table[string_part_index]
                 s.vsParse(page.data, offset=string_offset)
 
-                ret.append(StructItem(data_offset + string_offset, "String {:s}, fragment {:s}".format(h(i), h(j)), s))
+                ret.append(VstructInstance(data_offset + string_offset, s,
+                                           "String {:s}, fragment {:s}".format(h(i), h(j))))
 
         return ret
 
@@ -347,7 +352,7 @@ class ClassDefinitionItem(Item):
     def structs(self):
         cd = self.cd
         ret = [
-            StructItem(0x0, "definition", cd),
+            VstructInstance(0x0, cd, "definition"),
         ]
         return ret
 
@@ -502,7 +507,8 @@ class LogicalDataPageItemView(QTabWidget, LoggingObject):
         super(LogicalDataPageItemView, self).__init__(parent)
         self._page_item = page_item
 
-        vv = VstructViewWidget(self._page_item.structs, self._page_item.data)
+        # TODO: hack get_parsers() until we have a unified repo/config
+        vv = VstructViewWidget(get_parsers(), self._page_item.structs, self._page_item.data)
         self.addTab(vv, "Structures")
 
         hv = HexViewWidget(self._page_item.data)
@@ -514,7 +520,8 @@ class IndexNodeItemView(QTabWidget, LoggingObject):
         super(IndexNodeItemView, self).__init__(parent)
         self._node_item = node_item
 
-        vv = VstructViewWidget(self._node_item.structs, self._node_item.data)
+        # TODO: hack get_parsers() until we have a unified repo/config
+        vv = VstructViewWidget(get_parsers(), self._node_item.structs, self._node_item.data)
         self.addTab(vv, "Structures")
 
         hv = HexViewWidget(self._node_item.data)
@@ -536,7 +543,8 @@ class ClassDefinitionItemView(QTabWidget, LoggingObject):
 
         self.addTab(te, "Class details")
 
-        vv = VstructViewWidget(self._cd_item.structs, self._cd_item.data)
+        # TODO: hack get_parsers() until we have a unified repo/config
+        vv = VstructViewWidget(get_parsers(), self._cd_item.structs, self._cd_item.data)
         self.addTab(vv, "Structures")
 
         hv = HexViewWidget(self._cd_item.data)
@@ -585,7 +593,9 @@ class Form(QWidget, LoggingObject):
                 ])
 
         # TODO: maybe subclass the loaded .ui and use that instance directly
-        self._ui = uic.loadUi("ui/ui.ui")
+
+        uipath = os.path.join(os.path.dirname(os.path.realpath(__file__)), os.path.join("ui", "ui.ui"))
+        self._ui = uic.loadUi(uipath)
         emptyLayout(self._ui.browseDetailsLayout)
 
         tv = self._ui.browseTreeView

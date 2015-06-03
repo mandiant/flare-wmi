@@ -161,14 +161,14 @@ class MappingXP(vstruct.VStruct):
         self._reverse_mapping = None
 
     def pcb_header(self):
-        for i in xrange(self.header.mapping_entries_count):
+        for i in xrange(self.header.mapping_entry_count):
             self.entries.vsAddElement(EntryXP())
 
     def pcb_free_dword_count(self):
         self["free"].vsSetLength(self.free_dword_count * 0x4)
 
     def _build_reverse_mapping(self):
-        for i in xrange(self.header.mapping_entries_count):
+        for i in xrange(self.header.mapping_entry_count):
             self._reverse_mapping[self.entries[i].page_number] = i
 
     def get_physical_page_number(self, logical_page_number):
@@ -549,7 +549,10 @@ class LogicalIndexStore(LoggingObject):
         #   linked as a child --- therefore, its the root.
         possible_roots = set([])
         impossible_roots = set([])
-        for i in xrange(self._mapping.header.mapping_entries):
+        for i in xrange(len(self._mapping.entries)):
+            # careful: vstruct returns int-like objects with
+            #   no hash-equivalence
+            i = int(i)
             try:
                 page = self.get_page(i)
             except:
@@ -560,18 +563,16 @@ class LogicalIndexStore(LoggingObject):
             if not page.is_valid:
                 continue
 
-            # careful: vstruct returns int-like objects with
-            #   no hash-equivalence
-            possible_roots.add(int(i))
+            possible_roots.add(i)
             for j in xrange(page.key_count + 1):
                 child_page = page.get_child(j)
                 if not is_index_page_number_valid(child_page):
                     continue
-                # careful: vstruct int types
-                impossible_roots.add(int(child_page))
+                impossible_roots.add(child_page)
         ret = possible_roots - impossible_roots
         # note: hardcode that the root is not logical page 0
-        ret.remove(int(0))
+        if 0 in ret:
+            ret.remove(0)
         if len(ret) != 1:
             raise RuntimeError("Unable to determine root index node: %s" % (str(ret)))
         return ret.pop()
