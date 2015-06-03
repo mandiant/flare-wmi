@@ -332,10 +332,10 @@ class Key(LoggingObject):
 class IndexPageHeader(vstruct.VStruct):
     def __init__(self):
         vstruct.VStruct.__init__(self)
-        self.sig = v_uint32()
+        self.sig = enum_uint32(INDEX_PAGE_TYPES)
         self.logical_id = v_uint32()
         self.zero0 = v_uint32()
-        self.zero1 = v_uint32()
+        self.root_page = v_uint32()
         self.record_count = v_uint32()
 
     @property
@@ -521,6 +521,7 @@ class LogicalIndexStore(LoggingObject):
         return self.get_physical_page_buffer(physical_page_number)
 
     def get_page(self, index):
+        """ :rtype: IndexPage """
         if index > self._mapping.header.mapping_entry_count:
             raise InvalidMappingEntryIndex()
 
@@ -542,40 +543,10 @@ class LogicalIndexStore(LoggingObject):
     def _root_page_number(self):
         if self._cim.cim_type == CIM_TYPE_WIN7:
             return self._root_page_number_win7
-
-        # TODO: for xp, we should be able to inspect page[0] of the index.
-        # this algorithm walks all nodes and tracks which nodes are children
-        #   of other nodes. we expect there to be a single node that is never
-        #   linked as a child --- therefore, its the root.
-        possible_roots = set([])
-        impossible_roots = set([])
-        for i in xrange(len(self._mapping.entries)):
-            # careful: vstruct returns int-like objects with
-            #   no hash-equivalence
-            i = int(i)
-            try:
-                page = self.get_page(i)
-            except:
-                # TODO: find out why this is. probably: validate page ranges.
-                self.w("bad unpack: %s", hex(i))
-                continue
-
-            if not page.is_valid:
-                continue
-
-            possible_roots.add(i)
-            for j in xrange(page.key_count + 1):
-                child_page = page.get_child(j)
-                if not is_index_page_number_valid(child_page):
-                    continue
-                impossible_roots.add(child_page)
-        ret = possible_roots - impossible_roots
-        # note: hardcode that the root is not logical page 0
-        if 0 in ret:
-            ret.remove(0)
-        if len(ret) != 1:
-            raise RuntimeError("Unable to determine root index node: %s" % (str(ret)))
-        return ret.pop()
+        elif self._cim.cim_type == CIM_TYPE_XP:
+            return self.get_page(0).header.root_page
+        else:
+            raise RuntimeError("Unexpected CIM type: " + str(self._cim.cim_type))
 
     @cached_property
     def root_page_number(self):
