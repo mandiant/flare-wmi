@@ -15,6 +15,8 @@ from PyQt5.QtCore import QDir
 from cim import CIM
 from cim import Key
 from cim import Index
+from cim import IndexPage
+from cim import INDEX_PAGE_TYPES
 from objects import CIM_TYPE_SIZES
 from objects import TreeNamespace
 from objects import ObjectResolver
@@ -144,6 +146,123 @@ class LogicalDataPagesItem(Item):
     @property
     def name(self):
         return "Logical Data Pages"
+
+
+class PhysicalIndexPageItem(Item):
+    def __init__(self, ctx, index):
+        super(PhysicalIndexPageItem, self).__init__()
+        self._ctx = ctx
+        self.index = index
+
+    def __repr__(self):
+        return "PhysicalIndexPageItem(index: {:s})".format(h(self.index))
+
+    @property
+    def children(self):
+        return []
+
+    @property
+    def type(self):
+        return "meta.physicalIndexPage"
+
+    @property
+    def name(self):
+        return "{:s}".format(h(self.index))
+
+    @property
+    def data(self):
+        return self._ctx.cim.logical_index_store.get_physical_page_buffer(self.index)
+
+    @property
+    def structs(self):
+        page = IndexPage(None, self.index)  # note: we're faking the logical_page_number here
+        page.vsParse(self.data)
+        if page.header.sig == INDEX_PAGE_TYPES.PAGE_TYPE_ACTIVE:
+            return (VstructInstance(0x0, page, "page"),)
+        else:
+            return (VstructInstance(0x0, page.header, "header"), )
+
+
+class PhysicalIndexPagesItem(Item):
+    def __init__(self, ctx):
+        super(PhysicalIndexPagesItem, self).__init__()
+        self._ctx = ctx
+
+    def __repr__(self):
+        return "PhysicalIndexPagesItem(numEntries: {:s})".format(
+            h(len(self.children)))
+
+    @cached_property
+    def children(self):
+        mapping = self._ctx.cim.index_mapping
+        # TODO: does this get all of them?
+        return [PhysicalIndexPageItem(self._ctx, i) for i in
+                    xrange(mapping.header.mapping_entry_count + mapping.free_dword_count)]
+
+    @property
+    def type(self):
+        return "meta"
+
+    @property
+    def name(self):
+        return "Physical Index Pages"
+
+
+class LogicalIndexPageItem(Item):
+    def __init__(self, ctx, index):
+        super(LogicalIndexPageItem, self).__init__()
+        self._ctx = ctx
+        self.index = index
+
+    def __repr__(self):
+        return "LogicalIndexPageItem(index: {:s})".format(h(self.index))
+
+    @property
+    def children(self):
+        return []
+
+    @property
+    def type(self):
+        return "meta.logicalIndexPage"
+
+    @property
+    def name(self):
+        return "{:s}".format(h(self.index))
+
+    @property
+    def data(self):
+        return self._ctx.cim.logical_index_store.get_logical_page_buffer(self.index)
+
+    @property
+    def structs(self):
+        page = self._ctx.cim.logical_index_store.get_page(self.index)
+        if page.header.sig == INDEX_PAGE_TYPES.PAGE_TYPE_ACTIVE:
+            return (VstructInstance(0x0, page, "page"),)
+        else:
+            return (VstructInstance(0x0, page.header, "header"), )
+
+
+class LogicalIndexPagesItem(Item):
+    def __init__(self, ctx):
+        super(LogicalIndexPagesItem, self).__init__()
+        self._ctx = ctx
+
+    def __repr__(self):
+        return "LogicalIndexPagesItem(numEntries: {:s})".format(
+            h(len(self.children)))
+
+    @cached_property
+    def children(self):
+        return [LogicalIndexPageItem(self._ctx, i) for i in
+                    xrange(self._ctx.cim.index_mapping.header.mapping_entry_count)]
+
+    @property
+    def type(self):
+        return "meta"
+
+    @property
+    def name(self):
+        return "Logical Index Pages"
 
 
 class IndexKeyItem(Item):
@@ -425,7 +544,7 @@ class NamespaceListItem(Item):
         ns = TreeNamespace(self._ctx.object_resolver, self._name)
         for namespace in ns.namespaces:
             ret.append(NamespaceItem(self._ctx, namespace.name))
-        return ret
+        return sorted(ret, key=lambda r: r.name)
 
     @property
     def type(self):
@@ -472,6 +591,8 @@ class CimRootItem(Item):
         return [
             PhysicalDataPagesItem(self._ctx),
             LogicalDataPagesItem(self._ctx),
+            PhysicalIndexPagesItem(self._ctx),
+            LogicalIndexPagesItem(self._ctx),
             IndexRootItem(self._ctx),
             ObjectsRootItem(self._ctx),
         ]
@@ -494,9 +615,9 @@ class IndexKeyItemView(QTabWidget, LoggingObject):
             self.addTab(hv, "Target hex view")
 
 
-class DataPageView(QTabWidget, LoggingObject):
+class PhysicalDataPageItemView(QTabWidget, LoggingObject):
     def __init__(self, page_item, parent=None):
-        super(DataPageView, self).__init__(parent)
+        super(PhysicalDataPageItemView, self).__init__(parent)
         self._page_item = page_item
         hv = HexViewWidget(self._page_item.data)
         self.addTab(hv, "Hex view")
@@ -508,6 +629,30 @@ class LogicalDataPageItemView(QTabWidget, LoggingObject):
         self._page_item = page_item
 
         # TODO: hack get_parsers() until we have a unified repo/config
+        vv = VstructViewWidget(get_parsers(), self._page_item.structs, self._page_item.data)
+        self.addTab(vv, "Structures")
+
+        hv = HexViewWidget(self._page_item.data)
+        self.addTab(hv, "Hex view")
+
+
+class PhysicalIndexPageItemView(QTabWidget, LoggingObject):
+    def __init__(self, page_item, parent=None):
+        super(PhysicalIndexPageItemView, self).__init__(parent)
+        self._page_item = page_item
+
+        vv = VstructViewWidget(get_parsers(), self._page_item.structs, self._page_item.data)
+        self.addTab(vv, "Structures")
+
+        hv = HexViewWidget(self._page_item.data)
+        self.addTab(hv, "Hex view")
+
+
+class LogicalIndexPageItemView(QTabWidget, LoggingObject):
+    def __init__(self, page_item, parent=None):
+        super(LogicalIndexPageItemView, self).__init__(parent)
+        self._page_item = page_item
+
         vv = VstructViewWidget(get_parsers(), self._page_item.structs, self._page_item.data)
         self.addTab(vv, "Structures")
 
@@ -627,11 +772,19 @@ class Form(QWidget, LoggingObject):
         emptyLayout(details_layout)
 
         if isinstance(item, PhysicalDataPageItem):
-            v = DataPageView(item, details)
+            v = PhysicalDataPageItemView(item, details)
             details_layout.addWidget(v)
 
         elif isinstance(item, LogicalDataPageItem):
             v = LogicalDataPageItemView(item, details)
+            details_layout.addWidget(v)
+
+        elif isinstance(item, PhysicalIndexPageItem):
+            v = PhysicalIndexPageItemView(item, details)
+            details_layout.addWidget(v)
+
+        elif isinstance(item, LogicalIndexPageItem):
+            v = LogicalIndexPageItemView(item, details)
             details_layout.addWidget(v)
 
         elif isinstance(item, IndexNodeItem):
