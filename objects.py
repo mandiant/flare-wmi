@@ -17,6 +17,8 @@ from common import one
 from common import LoggingObject
 from cim import Key
 from cim import Index
+from cim import CIM_TYPE_XP
+from cim import CIM_TYPE_WIN7
 import vstruct
 from vstruct.primitives import *
 
@@ -36,16 +38,15 @@ class FILETIME(vstruct.primitives.v_prim):
         self._vs_length = 8
         self._vs_value = "\x00" * 8
         self._vs_fmt = "<Q"
-        self._ts = datetime.datetime.min
+        self._ts = datetime.min
 
     def vsParse(self, fbytes, offset=0):
         offend = offset + self._vs_length
         q = struct.unpack("<Q", fbytes[offset:offend])[0]
         try:
-            self._ts = datetime.datetime.utcfromtimestamp(float(q) * 1e-7 - 11644473600 )
+            self._ts = datetime.utcfromtimestamp(float(q) * 1e-7 - 11644473600 )
         except ValueError:
-            print("invalid timestamp: %s" % (h(q)))
-            self._ts = datetime.datetime.min
+            self._ts = datetime.min
         return offend
 
     def vsEmit(self):
@@ -355,39 +356,21 @@ class PropertyReferenceList(vstruct.VStruct):
         self.refs.vsAddElements(self.count, PropertyReference)
 
 
-class ClassDefinition(vstruct.VStruct, LoggingObject):
-    def __init__(self):
-        vstruct.VStruct.__init__(self)
-        LoggingObject.__init__(self)
-
-        self.header = ClassDefinitionHeader()
-        self.qualifiers_list = QualifiersList()
-        self.property_references = PropertyReferenceList()
-        self.junk = v_bytes(size=0)
-        self._data_length = v_uint32()
-        self.data = v_bytes(size=0)
-
-    def pcb_header(self):
-        self["junk"].vsSetLength(self.header.junk_length)
-
-    @property
-    def data_length(self):
-        return self._data_length & 0x7FFFFFFF
-
-    def pcb__data_length(self):
-        self["data"].vsSetLength(self.data_length)
-
-    def __repr__(self):
-        return "ClassDefinition(name: {:s})".format(self.class_name)
+class ClassFieldGetter(LoggingObject):
+    """ fetches values from ClassDefinition, ClassInstance (ClassData) """
+    def __init__(self, buf):
+        """ :type buf: v_bytes """
+        super(ClassFieldGetter, self).__init__()
+        self._buf = buf
 
     def get_string(self, ref):
         s = WMIString()
-        s.vsParse(self.data, offset=int(ref))
+        s.vsParse(self._buf, offset=int(ref))
         return str(s.s)
 
     def get_array(self, ref, item_type):
         Parser = item_type.value_parser
-        data = self.data
+        data = self._buf
 
         arraySize = v_uint32()
         arraySize.vsParse(data, offset=int(ref))
@@ -427,44 +410,77 @@ class ClassDefinition(vstruct.VStruct, LoggingObject):
             return BUILTIN_QUALIFIERS.vsReverseMapping(qualifier.key)
         return self.get_string(qualifier.key)
 
+
+class ClassDefinition(vstruct.VStruct, LoggingObject):
+    def __init__(self):
+        vstruct.VStruct.__init__(self)
+        LoggingObject.__init__(self)
+
+        self.header = ClassDefinitionHeader()
+        self.qualifiers_list = QualifiersList()
+        self.property_references = PropertyReferenceList()
+        self.junk = v_bytes(size=0)
+        self._data_length = v_uint32()
+        self.data = v_bytes(size=0)
+
+        self._fields = ClassFieldGetter(self.data)
+
+    def pcb_header(self):
+        self["junk"].vsSetLength(self.header.junk_length)
+
+    @property
+    def data_length(self):
+        return self._data_length & 0x7FFFFFFF
+
+    def pcb__data_length(self):
+        self["data"].vsSetLength(self.data_length)
+
+    def pcb_data(self):
+        self._fields = ClassFieldGetter(self.data)
+
+    def __repr__(self):
+        return "ClassDefinition(name: {:s})".format(self.class_name)
+
     @property
     def class_name(self):
-        """ return string """
-        return self.get_string(self.header.offset_class_name)
+        """ :rtype: str """
+        return self._fields.get_string(self.header.offset_class_name)
 
     @property
     def super_class_name(self):
-        """ return string """
+        """ :rtype: str """
         return str(self.header.super_class_unicode)
 
     @property
     def timestamp(self):
-        """ return datetime.datetime """
+        """ :rtype: datetime.datetime """
         return self.header.timestamp
 
     @cached_property
     def qualifiers(self):
-        """ get dict of str to str """
+        """ :rtype: Mapping[str, str] """
         ret = {}
-        for i in xrange(self.qualifiers_list.count):
-            q = self.qualifiers_list.qualifiers[i]
-            qk = self.get_qualifier_key(q)
-            qv = self.get_qualifier_value(q)
+        qualrefs = self.qualifiers_list
+        for i in xrange(qualrefs.count):
+            q = qualrefs.qualifiers[i]
+            qk = self._fields.get_qualifier_key(q)
+            qv = self._fields.get_qualifier_value(q)
             ret[str(qk)] = str(qv)
         return ret
 
     @cached_property
     def properties(self):
-        """ get dict of str to Property instances """
+        """ :rtype: Mapping[str, Property] """
         ret = {}
-        for i in xrange(self.property_references.count):
-            propref = self.property_references.refs[i]
+        proprefs = self.property_references
+        for i in xrange(proprefs.count):
+            propref = proprefs.refs[i]
             prop = Property(self, propref)
             ret[prop.name] = prop
         return ret
 
 
-class ClassInstance(vstruct.VStruct, LoggingObject):
+class Win7ClassInstance(vstruct.VStruct, LoggingObject):
     def __init__(self, class_layout):
         vstruct.VStruct.__init__(self)
         LoggingObject.__init__(self)
@@ -472,12 +488,10 @@ class ClassInstance(vstruct.VStruct, LoggingObject):
         self.class_layout = class_layout
         self._buf = None
 
-        self.vsParse(self._buf)
-
         self.name_hash = v_wstr(size=0x40)
         self.ts1 = FILETIME()
         self.ts2 = FILETIME()
-        self.data_length = v_uint32()
+        self.data_length2 = v_uint32()  # length of entire instance data
         self.extra_padding = v_bytes(size=0)
 
         self.toc = vstruct.VArray()
@@ -486,11 +500,13 @@ class ClassInstance(vstruct.VStruct, LoggingObject):
 
         self.qualifiers_list = QualifiersList()
         self.unk1 = v_uint8()
-        self.property_data_length = v_uint32()  # high bit always set
-        self.property_data = v_bytes(size=0)
+        self.data_length = v_uint32()  # high bit always set, length of variable data
+        self.data = v_bytes(size=0)
 
         self._property_index_map = {prop.name: i for i, prop in enumerate(self.class_layout.properties)}
         self._property_type_map = {prop.name: prop.type for prop in self.class_layout.properties}
+
+        self._fields = ClassFieldGetter(self.data)
 
     def set_buffer(self, buf):
         """
@@ -499,12 +515,12 @@ class ClassInstance(vstruct.VStruct, LoggingObject):
         """
         self._buf = buf
 
-    def pcb_data_length(self):
+    def pcb_data_length2(self):
         # hack: at this point, we know set_buffer must have been called
         self["extra_padding"].vsSetLength(self.extra_padding_length())
 
-    def pcb_property_data_length(self):
-        self["property_data"].vsSetLength(self.property_data_length & 0x7FFFFFFF)
+    def pcb_data_length(self):
+        self["data"].vsSetLength(self.data_length & 0x7FFFFFFF)
 
     def pcb_unk1(self):
         if self.unk1 != 0x1:
@@ -556,65 +572,9 @@ class ClassInstance(vstruct.VStruct, LoggingObject):
         else:
             return class_definition.header.unk1 + 0x5
 
-    def get_string(self, ref):
-        s = WMIString()
-        s.vsParse(self.property_data, offset=int(ref))
-        return str(s.s)
-
-    def get_array(self, ref, item_type):
-        if ref == 0:
-            # seems a little fragile. can't have array as first element?
-            # empirically, the first element is the item type name, fortunately
-            return []
-
-        Parser = item_type.value_parser
-        data = self.property_data
-
-        arraySize = v_uint32()
-        arraySize.vsParse(data, offset=int(ref))
-
-        items = []
-        offset = ref + 4  # sizeof(array_size:uint32_t)
-        for i in xrange(arraySize):
-            p = Parser()
-            p.vsParse(data, offset=offset)
-            items.append(self.get_value(p, item_type))
-            offset += len(p)
-        return items
-
-    def get_value(self, value, value_type):
-        """
-        value is a parsed value, might need dereferencing
-        valueType is a CimType
-        """
-        if value_type.is_array:
-            return self.get_array(value, value_type.base_type_clone)
-
-        t = value_type.type
-        if t == CIM_TYPES.CIM_TYPE_STRING:
-            return self.get_string(value)
-        elif t == CIM_TYPES.CIM_TYPE_DATETIME:
-            # TODO: perhaps this should return a parsed datetime?
-            return self.get_string(value)
-        elif t == CIM_TYPES.CIM_TYPE_BOOLEAN:
-            return value != 0
-        elif CIM_TYPES.vsReverseMapping(t):
-            return value
-        else:
-            raise RuntimeError("unknown qualifier type: %s",
-                    str(value_type))
-
-    def get_qualifier_value(self, qualifier):
-        return self.get_value(qualifier.value, qualifier.value_type)
-
-    def get_qualifier_key(self, qualifier):
-        if qualifier.is_builtin_key:
-            return BUILTIN_QUALIFIERS.vsReverseMapping(qualifier.key)
-        return self.get_string(qualifier.key)
-
     @property
     def class_name(self):
-        return self.get_string(0x0)
+        return self._fields.get_string(0x0)
 
     @cached_property
     def qualifiers(self):
@@ -622,8 +582,8 @@ class ClassInstance(vstruct.VStruct, LoggingObject):
         ret = {}
         for i in xrange(self.qualifiers_list.count):
             q = self.qualifiers_list.qualifiers[i]
-            qk = self.get_qualifier_key(q)
-            qv = self.get_qualifier_value(q)
+            qk = self._fields.get_qualifier_key(q)
+            qv = self._fields.get_qualifier_value(q)
             ret[str(qk)] = str(qv)
         return ret
 
@@ -636,14 +596,91 @@ class ClassInstance(vstruct.VStruct, LoggingObject):
             i = self._property_index_map[n]
             t = self._property_type_map[n]
             v = self.toc[i]
-            ret.append(self.get_value(v, t))
+            ret.append(self._fields.get_value(v, t))
         return ret
 
     def get_property_value(self, name):
         i = self._property_index_map[name]
         t = self._property_type_map[name]
         v = self.toc[i]
-        return self.get_value(v, t)
+        return self._fields.get_value(v, t)
+
+    def get_property(self, name):
+        raise NotImplementedError()
+
+
+class XPClassInstance(vstruct.VStruct, LoggingObject):
+    def __init__(self, class_layout):
+        vstruct.VStruct.__init__(self)
+        LoggingObject.__init__(self)
+
+        self.class_layout = class_layout
+        self._buf = None
+
+        self._unk0 = v_uint32()
+        self.ts = FILETIME()
+        self.data_length2 = v_uint32()  # length of all instance data
+        self.extra_padding = v_bytes(size=8)
+
+        self.toc = vstruct.VArray()
+        for prop in self.class_layout.properties:
+            self.toc.vsAddElement(prop.type.value_parser())
+
+        self.qualifiers_list = QualifiersList()
+        self.unk1 = v_uint32()
+        self.data_length = v_uint32()  # high bit always set, length of variable data
+        self.data = v_bytes(size=0)
+
+        self._property_index_map = {prop.name: i for i, prop in enumerate(self.class_layout.properties)}
+        self._property_type_map = {prop.name: prop.type for prop in self.class_layout.properties}
+
+        self._fields = ClassFieldGetter(self.data)
+
+    def set_buffer(self, buf):
+        """
+        Must be called before vsParse.
+        """
+        self._buf = buf
+
+    def pcb_data_length(self):
+        self["data"].vsSetLength(self.data_length & 0x7FFFFFFF)
+
+    def __repr__(self):
+        # TODO: make this nice
+        return "XPClassInstance()".format()
+
+    @property
+    def class_name(self):
+        return self._fields.get_string(0x0)
+
+    @cached_property
+    def qualifiers(self):
+        """ get dict of str to str """
+        ret = {}
+        for i in xrange(self.qualifiers_list.count):
+            q = self.qualifiers_list.qualifiers[i]
+            qk = self._fields.get_qualifier_key(q)
+            qv = self._fields.get_qualifier_value(q)
+            ret[str(qk)] = str(qv)
+        return ret
+
+    @cached_property
+    def properties(self):
+        """ get dict of str to Property instances """
+        ret = []
+        for prop in self.class_layout.properties:
+            n = prop.name
+            i = self._property_index_map[n]
+            t = self._property_type_map[n]
+            v = self.toc[i]
+            ret.append(self._fields.get_value(v, t))
+        return ret
+
+    def get_property_value(self, name):
+        i = self._property_index_map[name]
+        t = self._property_type_map[name]
+        v = self.toc[i]
+        return self._fields.get_value(v, t)
 
     def get_property(self, name):
         raise NotImplementedError()
@@ -689,7 +726,7 @@ class ClassLayout(LoggingObject):
 
     @property
     def instance(self):
-        return ClassInstance(self)
+        return self.object_resolver.class_instance_type(self)
 
     @cached_property
     def properties_toc_length(self):
@@ -739,6 +776,15 @@ class ObjectResolver(LoggingObject):
 
     def I(self, name=None):
         return self._build("I_", name)
+
+    @property
+    def class_instance_type(self):
+        if self._cim.cim_type == CIM_TYPE_XP:
+            return XPClassInstance
+        elif self._cim.cim_type == CIM_TYPE_WIN7:
+            return Win7ClassInstance
+        else:
+            raise RuntimeError("Unexpected CIM type: " + str(self._cim.cim_type))
 
     def get_object(self, query):
         """ fetch the first object buffer matching the query """
