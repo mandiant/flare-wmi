@@ -941,9 +941,7 @@ class ObjectResolver(LoggingObject):
                     self.CI(class_name),
                     self.IL()))
 
-        # HACK: TODO: fixme, use getObjects(q) instead
-        for ref in self._index.lookup_keys(q):
-            ibuf = self.get_object(ref)
+        for ref, ibuf in self.get_objects(q):
             instance = self.get_instance(self.get_cl(namespace_name, class_name), ibuf)
             # TODO: need to parse key here, don't assume its "Name"
             yield self.ClassInstanceSpecifier(namespace_name, class_name, instance.get_property_value("Name"))
@@ -973,7 +971,7 @@ class TreeNamespace(LoggingObject):
 
     @property
     def namespaces(self):
-        """ return a generator direct child namespaces """
+        """ return a generator of direct child namespaces """
         for ns in self._object_resolver.get_ns_children_ns(self.name):
             yield TreeNamespace(self._object_resolver, ns.namespace_name)
 
@@ -1009,7 +1007,7 @@ class TreeClassDefinition(LoggingObject):
     @property
     def instances(self):
         """ get instances of this class definition """
-        for ci in self._object_resolver.get_cd_children_cis(self.ns, self.name):
+        for ci in self._object_resolver.get_cd_children_ci(self.ns, self.name):
             yield TreeClassInstance(self._object_resolver, self.name, ci.class_name, ci.instance_name)
 
 
