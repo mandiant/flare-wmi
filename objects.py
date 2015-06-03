@@ -36,16 +36,16 @@ class FILETIME(vstruct.primitives.v_prim):
         self._vs_length = 8
         self._vs_value = "\x00" * 8
         self._vs_fmt = "<Q"
-        self._ts = datetime.min
+        self._ts = datetime.datetime.min
 
     def vsParse(self, fbytes, offset=0):
         offend = offset + self._vs_length
         q = struct.unpack("<Q", fbytes[offset:offend])[0]
         try:
-            self._ts = datetime.utcfromtimestamp(float(q) * 1e-7 - 11644473600 )
+            self._ts = datetime.datetime.utcfromtimestamp(float(q) * 1e-7 - 11644473600 )
         except ValueError:
             print("invalid timestamp: %s" % (h(q)))
-            self._ts = datetime.min
+            self._ts = datetime.datetime.min
         return offend
 
     def vsEmit(self):
