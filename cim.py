@@ -422,6 +422,10 @@ class IndexPage(vstruct.VStruct, LoggingObject):
         return int(self.children[child_index])
 
 
+class MissingDataFileError(Exception):
+    pass
+
+
 class LogicalDataStore(LoggingObject):
     """
     provides an interface for accessing data by logical page or object id.
@@ -433,6 +437,9 @@ class LogicalDataStore(LoggingObject):
         self._mapping = mapping
 
     def get_physical_page_buffer(self, index):
+        if not os.path.exists(self._file_path):
+            raise MissingDataFileError()
+
         # TODO: keep an open handle
         with open(self._file_path, "rb") as f:
             f.seek(DATA_PAGE_SIZE * index)
@@ -499,6 +506,10 @@ class InvalidLogicalPageNumber(Exception):
     pass
 
 
+class MissingIndexFileError(Exception):
+    pass
+
+
 class LogicalIndexStore(LoggingObject):
     """
     provides an interface for accessing index nodes by logical page id.
@@ -511,6 +522,9 @@ class LogicalIndexStore(LoggingObject):
         self._mapping = mapping
 
     def get_physical_page_buffer(self, index):
+        if not os.path.exists(self._file_path):
+            raise MissingIndexFileError()
+
         # TODO: keep an open file handle
         with open(self._file_path, "rb") as f:
             f.seek(INDEX_PAGE_SIZE * index)
@@ -663,6 +677,10 @@ class Index(LoggingObject):
         return h.hexdigest().upper()
 
 
+class MissingMappingFileError(Exception):
+    pass
+
+
 class CIM(LoggingObject):
     def __init__(self, cim_type, directory):
         super(CIM, self).__init__()
@@ -702,6 +720,10 @@ class CIM(LoggingObject):
             if h.version > max_version:
                 mapping_file_path = fp
                 max_version = h.version
+
+        if mapping_file_path is None:
+            raise MissingMappingFileError()
+
         self.d("current mapping file: %s", mapping_file_path)
         return mapping_file_path
 
@@ -710,6 +732,10 @@ class CIM(LoggingObject):
         fp = self._current_mapping_file
         dm = self._mapping_class()
         im = self._mapping_class()
+
+        if not os.path.exists(fp):
+            raise MissingMappingFileError()
+
         with open(fp, "rb") as f:
             dm.vsParseFd(f)
             im.vsParseFd(f)
