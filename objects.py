@@ -312,12 +312,13 @@ class Property(LoggingObject):
     def __repr__(self):
         return "Property(name: {:s}, type: {:s}, qualifiers: {:s})".format(
             self.name,
-            CIM_TYPES.vsReverseMapping(self.type.getType),
+            CIM_TYPES.vsReverseMapping(self.type.type),
             ",".join("%s=%s" % (k, str(v)) for k, v in self.qualifiers.iteritems()))
 
     @property
     def name(self):
-        return self._class_definition.get_string(self._propref.offset_property_name)
+        # TODO: don't reach
+        return self._class_definition._fields.get_string(self._propref.offset_property_name)
 
     @property
     def type(self):
@@ -329,8 +330,9 @@ class Property(LoggingObject):
         ret = {}
         for i in xrange(self._prop.qualifiers.count):
             q = self._prop.qualifiers.qualifiers[i]
-            qk = self._class_definition.get_qualifier_key(q)
-            qv = self._class_definition.get_qualifier_value(q)
+            # TODO: don't reach
+            qk = self._class_definition._fields.get_qualifier_key(q)
+            qv = self._class_definition._fields.get_qualifier_value(q)
             ret[str(qk)] = str(qv)
         return ret
 
@@ -357,7 +359,7 @@ class PropertyReferenceList(vstruct.VStruct):
 
 
 class ClassFieldGetter(LoggingObject):
-    """ fetches values from ClassDefinition, ClassInstance (ClassData) """
+    """ fetches values from ClassDefinition, ClassInstance """
     def __init__(self, buf):
         """ :type buf: v_bytes """
         super(ClassFieldGetter, self).__init__()
@@ -468,7 +470,8 @@ class ClassDefinition(vstruct.VStruct, LoggingObject):
             ret[str(qk)] = str(qv)
         return ret
 
-    @cached_property
+    #@cached_property
+    @property
     def properties(self):
         """ :rtype: Mapping[str, Property] """
         ret = {}
@@ -480,15 +483,22 @@ class ClassDefinition(vstruct.VStruct, LoggingObject):
         return ret
 
 
-class Win7ClassInstance(vstruct.VStruct, LoggingObject):
-    def __init__(self, class_layout):
+class ClassInstance(vstruct.VStruct, LoggingObject):
+    def __init__(self, cim_type, class_layout):
         vstruct.VStruct.__init__(self)
         LoggingObject.__init__(self)
 
+        self._cim_type = cim_type
         self.class_layout = class_layout
         self._buf = None
 
-        self.name_hash = v_wstr(size=0x40)
+        if self._cim_type == CIM_TYPE_XP:
+            self.name_hash = v_wstr(size=0x20)
+        elif self._cim_type == CIM_TYPE_WIN7:
+            self.name_hash = v_wstr(size=0x40)
+        else:
+            raise RuntimeError("Unexpected CIM type: " + str(self._cim_type))
+
         self.ts1 = FILETIME()
         self.ts2 = FILETIME()
         self.data_length2 = v_uint32()  # length of entire instance data
@@ -496,7 +506,8 @@ class Win7ClassInstance(vstruct.VStruct, LoggingObject):
 
         self.toc = vstruct.VArray()
         for prop in self.class_layout.properties:
-            self.toc.vsAddElement(prop.type.value_parser())
+            P = prop.type.value_parser
+            self.toc.vsAddElement(P())
 
         self.qualifiers_list = QualifiersList()
         self.unk1 = v_uint8()
@@ -515,9 +526,13 @@ class Win7ClassInstance(vstruct.VStruct, LoggingObject):
         """
         self._buf = buf
 
+    def pcb_data(self):
+        self._fields = ClassFieldGetter(self.data)
+
     def pcb_data_length2(self):
         # hack: at this point, we know set_buffer must have been called
-        self["extra_padding"].vsSetLength(self.extra_padding_length())
+        l = self.extra_padding_length()
+        self["extra_padding"].vsSetLength(l)
 
     def pcb_data_length(self):
         self["data"].vsSetLength(self.data_length & 0x7FFFFFFF)
@@ -541,12 +556,15 @@ class Win7ClassInstance(vstruct.VStruct, LoggingObject):
         elif class_definition.header.unk3 == 0x19:
             return class_definition.header.unk1 + 0x5
         elif class_definition.header.unk3 == 0x17:
-            # do math. its a hack.
-            # try both 0x5 and 0x6 + CD.header.unk0, then seek
-            #  to find the qualifiers length and data length, and
-            #  see if they match the data size.
+            # this is an extreme hack: we attempt a few commonly seen values and sanity check them
+            # empirically, it seems CD.header.unk0 is usually 0x5 or 0x6 less than then extra length
+            # so we try each of those, matching up the instance length against the computed field
+            #   lengths and this magical value
+
+            # a temp variable
             s = v_uint32()
 
+            # the length of all toc entries, totally based on the CL
             toc_length = 0
             for prop in self.class_layout.properties:
                 if prop.type.is_array:
@@ -555,19 +573,51 @@ class Win7ClassInstance(vstruct.VStruct, LoggingObject):
                     toc_length += CIM_TYPE_SIZES[prop.type.type]
 
             u1 = class_definition.header.unk1
-            for i in [5, 6]:
-                possible_toc_end = 0x94 + u1 + i + toc_length
-                s.vsParse(self._buf, possible_toc_end)
-                o = int(s)
-                qualifiers_length = o
-                if o > len(self._buf):
+
+            # start right after the hash & timestamps
+            # times 0x2 due to WCHAR (.name_hash is the string, not bytes object)
+            header_length = (len(self.name_hash) * 2) + 0x10
+            o = 0x0
+            o += header_length
+
+            # parse total instance size field
+            s.vsParse(self._buf, o)
+            total_size = s.vsGetValue()
+            # seek past total size field
+            o += 0x4
+
+            # this is where the extra padding is
+            start_extra_padding = o
+
+            # here are the two offsets we'll attemp
+            for i in (5, 6):
+                o = start_extra_padding
+                o += u1 + i
+
+                # seek past toc
+                o += toc_length
+
+                # read qualifiers list size
+                try:
+                    s.vsParse(self._buf, o)
+                except struct.error:
                     continue
-                o = possible_toc_end + qualifiers_length + 1
-                s.vsParse(self._buf, o)
-                p = int(s) & 0x7FFFFFFF
-                if possible_toc_end + qualifiers_length + 5 + p != len(self._buf):
+                # seek past qualifiers list
+                o += s.vsGetValue()
+
+                # theres an extra byte, unk1
+                o += 1
+
+                # we should be at the variable data length field
+                try:
+                    s.vsParse(self._buf, o)
+                except struct.error:
                     continue
-                return u1 + i
+
+                # match the variable size field against the instance data size field
+                variable_size = s.vsGetValue() & 0x7FFFFFFF
+                if (o - header_length + 0x4) + variable_size == total_size:
+                    return u1 + i
             raise RuntimeError("Unable to determine extraPadding len")
         else:
             return class_definition.header.unk1 + 0x5
@@ -609,7 +659,8 @@ class Win7ClassInstance(vstruct.VStruct, LoggingObject):
         raise NotImplementedError()
 
 
-class XPClassInstance(vstruct.VStruct, LoggingObject):
+class CoreClassInstance(vstruct.VStruct, LoggingObject):
+    """ begins with DWORD:0x0 and has no hash field """
     def __init__(self, class_layout):
         vstruct.VStruct.__init__(self)
         LoggingObject.__init__(self)
@@ -636,18 +687,12 @@ class XPClassInstance(vstruct.VStruct, LoggingObject):
 
         self._fields = ClassFieldGetter(self.data)
 
-    def set_buffer(self, buf):
-        """
-        Must be called before vsParse.
-        """
-        self._buf = buf
-
     def pcb_data_length(self):
         self["data"].vsSetLength(self.data_length & 0x7FFFFFFF)
 
     def __repr__(self):
         # TODO: make this nice
-        return "XPClassInstance()".format()
+        return "CoreClassInstance()".format()
 
     @property
     def class_name(self):
@@ -693,7 +738,7 @@ class ClassLayout(LoggingObject):
         self.namespace = namespace
         self.class_definition = class_definition
 
-    @property
+    @cached_property
     def properties(self):
         class_name = self.class_definition.class_name
         class_derivation = []  # initially, ordered from child to parent
@@ -723,10 +768,6 @@ class ClassLayout(LoggingObject):
                 self.class_definition.class_name,
                 map(lambda p: p.name, ret))
         return ret
-
-    @property
-    def instance(self):
-        return self.object_resolver.class_instance_type(self)
 
     @cached_property
     def properties_toc_length(self):
@@ -777,15 +818,6 @@ class ObjectResolver(LoggingObject):
     def I(self, name=None):
         return self._build("I_", name)
 
-    @property
-    def class_instance_type(self):
-        if self._cim.cim_type == CIM_TYPE_XP:
-            return XPClassInstance
-        elif self._cim.cim_type == CIM_TYPE_WIN7:
-            return Win7ClassInstance
-        else:
-            raise RuntimeError("Unexpected CIM type: " + str(self._cim.cim_type))
-
     def get_object(self, query):
         """ fetch the first object buffer matching the query """
         self.d("query: %s", str(query))
@@ -800,7 +832,7 @@ class ObjectResolver(LoggingObject):
     def get_objects(self, query):
         """ return a generator of object buffers matching the query """
         for ref in self.get_keys(query):
-            yield self._cim.logical_data_store.get_object_buffer(ref)
+            yield ref, self._cim.logical_data_store.get_object_buffer(ref)
 
     @property
     def root_namespace(self):
@@ -870,6 +902,15 @@ class ObjectResolver(LoggingObject):
     def ns_cl(self):
         return self.get_cl(SYSTEM_NAMESPACE_NAME, NAMESPACE_CLASS_NAME)
 
+    def get_instance(self, cl, buf):
+        if buf[0x0:0x4] == "\x00\x00\x00\x00":
+            i = CoreClassInstance(cl)
+        else:
+            i = ClassInstance(self._cim.cim_type, cl)
+            i.set_buffer(buf)
+        i.vsParse(buf)
+        return i
+
     NamespaceSpecifier = namedtuple("NamespaceSpecifier", ["namespace_name"])
     def get_ns_children_ns(self, namespace_name):
         q = Key("{}/{}/{}".format(
@@ -877,11 +918,8 @@ class ObjectResolver(LoggingObject):
                     self.CI(NAMESPACE_CLASS_NAME),
                     self.IL()))
 
-        for ns_i in self.get_objects(q):
-            i = self.ns_cl.instance
-            # hack: until we can compute extra_padding_length
-            i.set_buffer(ns_i)
-            i.vsParse(ns_i)
+        for ref, ns_i in self.get_objects(q):
+            i = self.get_instance(self.ns_cl, ns_i)
             yield self.NamespaceSpecifier(namespace_name + "\\" + i.get_property_value("Name"))
 
     ClassDefinitionSpecifier = namedtuple("ClassDefintionSpecifier", ["namespace_name", "class_name"])
@@ -890,7 +928,7 @@ class ObjectResolver(LoggingObject):
                     self.NS(namespace_name),
                     self.CD()))
 
-        for cdbuf in self.get_objects(q):
+        for _, cdbuf in self.get_objects(q):
             cd = ClassDefinition()
             cd.vsParse(cdbuf)
             yield self.ClassDefinitionSpecifier(namespace_name, cd.class_name)
@@ -906,7 +944,7 @@ class ObjectResolver(LoggingObject):
         # HACK: TODO: fixme, use getObjects(q) instead
         for ref in self._index.lookup_keys(q):
             ibuf = self.get_object(ref)
-            instance = self.get_cl(namespace_name, class_name).instance.vsParse(ibuf)
+            instance = self.get_instance(self.get_cl(namespace_name, class_name), ibuf)
             # TODO: need to parse key here, don't assume its "Name"
             yield self.ClassInstanceSpecifier(namespace_name, class_name, instance.get_property_value("Name"))
 
