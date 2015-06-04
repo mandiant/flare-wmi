@@ -402,6 +402,29 @@ class ClassInstanceItem(Item):
     def name(self):
         return str(self._instance_key)
 
+    @property
+    def data(self):
+        return self._ctx.object_resolver.get_ci_buf(self._ns, self._class, self._instance_key)
+
+    @cached_property
+    def ci(self):
+        return self._ctx.object_resolver.get_ci(self._ns, self._class, self._instance_key)
+
+    @cached_property
+    def cd(self):
+        return self._ctx.object_resolver.get_cd(self._ns, self._class)
+
+    @cached_property
+    def cl(self):
+        return self._ctx.object_resolver.get_cl(self._ns, self._class)
+
+    @cached_property
+    def structs(self):
+        ret = [
+            VstructInstance(0x0, self.ci, "instance"),
+        ]
+        return ret
+
 
 class ClassInstanceListItem(Item):
     def __init__(self, ctx, namespace, classname):
@@ -420,7 +443,7 @@ class ClassInstanceListItem(Item):
         ret = []
         cd = TreeClassDefinition(self._ctx.object_resolver, self._ns, self._class)
         for instance in cd.instances:
-            ret.append(ClassInstanceItem(self._ctx, instance.ns, instance.class_name, instance.instance_key))
+            ret.append(ClassInstanceItem(self._ctx, self._ns, self._class, instance.instance_key))
         return sorted(ret, key=lambda r: r.name)
 
 
@@ -711,7 +734,8 @@ class ClassInstanceItemView(QTabWidget, LoggingObject):
         super(ClassInstanceItemView, self).__init__(parent)
         self._ci_item = ci_item
 
-        self.addTab(FixedWidthTextView(dump_instance(ci_item)), "Instance details")
+        self.addTab(FixedWidthTextView(dump_instance(ci_item.ci)), "Instance details")
+        self.addTab(FixedWidthTextView(dump_definition(ci_item.cd, ci_item.cl)), "Definition details")
 
         # TODO: hack get_parsers() until we have a unified repo/config
         vv = VstructViewWidget(get_parsers(), self._ci_item.structs, self._ci_item.data)
@@ -792,6 +816,10 @@ class Form(QWidget, LoggingObject):
 
         elif isinstance(item, ClassDefinitionItem):
             v = ClassDefinitionItemView(item, details)
+            details_layout.addWidget(v)
+
+        elif isinstance(item, ClassInstanceItem):
+            v = ClassInstanceItemView(item, details)
             details_layout.addWidget(v)
 
     def _handle_query(self):

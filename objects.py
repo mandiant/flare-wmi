@@ -940,14 +940,10 @@ class ObjectResolver(LoggingObject):
             self._clcache[c_id] = c_cl
         return c_cl
 
-    def get_ci2(self, namespace_name, class_name, instance_key):
-        cl = self.get_cl(namespace_name, class_name)
-        for i in self.get_cd_children_ci(namespace_name, class_name):
-            for k in cl.class_definition.keys:
-                if not i.get_property_value(k) == instance_key[k]:
-                    continue
-
     def get_ci(self, namespace_name, class_name, instance_key):
+        # TODO: this is a major hack! we should build the hash, but the data to hash
+        #    has not been described correctly..
+
         # CI or KI?
         q = Key("{}/{}/{}".format(
                     self.NS(namespace_name),
@@ -964,6 +960,28 @@ class ObjectResolver(LoggingObject):
                     break
             if this_is_it:
                 return instance
+
+        raise IndexError("Key not found: " + instance_key)
+
+    def get_ci_buf(self, namespace_name, class_name, instance_key):
+        # TODO: this is a major hack!
+
+        # CI or KI?
+        q = Key("{}/{}/{}".format(
+                    self.NS(namespace_name),
+                    self.CI(class_name),
+                    self.IL()))
+
+        cl = self.get_cl(namespace_name, class_name)
+        for _, buf in self.get_objects(q):
+            instance = self.get_instance(self.get_cl(namespace_name, class_name), buf)
+            this_is_it = True
+            for k in cl.class_definition.keys:
+                if not instance.get_property_value(k) == instance_key[k]:
+                    this_is_it = False
+                    break
+            if this_is_it:
+                return buf
 
         raise IndexError("Key not found: " + instance_key)
 
