@@ -44,7 +44,7 @@ def main(type_, path, namespaceName, className):
         print(ci)
         print("%s" % "=" * 80)
         try:
-            dump_instance(o.get_ci(namespaceName, className, instance.instance_key))
+            print(dump_instance(o.get_ci(namespaceName, className, instance.instance_key)))
         except:
             print("ERROR: failed to dump class instance!")
             print traceback.format_exc()

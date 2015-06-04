@@ -21,7 +21,7 @@ def main(type_, path, namespaceName, className):
         cd = o.get_cd(namespaceName, className)
         cl = o.get_cl(namespaceName, className)
         try:
-            dump_definition(cd, cl)
+            print(dump_definition(cd, cl))
         except:
             print("ERROR: failed to dump class definition!")
             print traceback.format_exc()

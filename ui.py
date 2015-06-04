@@ -27,6 +27,8 @@ from ui.tree import Item
 from ui.tree import TreeModel
 from ui.tree import ColumnDef
 from ui.uicommon import emptyLayout
+from formatters import dump_instance
+from formatters import dump_definition
 
 from vstruct.primitives import v_bytes
 from vstruct.primitives import v_zstr
@@ -693,7 +695,8 @@ class ClassDefinitionItemView(QTabWidget, LoggingObject):
         super(ClassDefinitionItemView, self).__init__(parent)
         self._cd_item = cd_item
 
-        self.addTab(FixedWidthTextView(self._class_description()), "Class details")
+        txt = dump_definition(cd_item.cd, cd_item.cl)
+        self.addTab(FixedWidthTextView(txt), "Class details")
 
         # TODO: hack get_parsers() until we have a unified repo/config
         vv = VstructViewWidget(get_parsers(), self._cd_item.structs, self._cd_item.data)
@@ -702,43 +705,13 @@ class ClassDefinitionItemView(QTabWidget, LoggingObject):
         hv = HexViewWidget(self._cd_item.data)
         self.addTab(hv, "Hex view")
 
-    def _class_description(self):
-        cd = self._cd_item.cd
-        cl = self._cd_item.cl
-
-        ret = []
-        ret.append("classname: %s" % cd.class_name)
-        ret.append("super: %s" % cd.super_class_name)
-        ret.append("ts: %s" % cd.timestamp.isoformat("T"))
-        ret.append("qualifiers:")
-        for k, v in cd.qualifiers.iteritems():
-            ret.append("  %s: %s" % (k, str(v)))
-        ret.append("properties:")
-        for propname, prop in cd.properties.iteritems():
-            ret.append("  name: %s" % prop.name)
-            ret.append("    type: %s" % prop.type)
-            ret.append("    order: %s" % prop.entry_number)
-            ret.append("    qualifiers:")
-            for k, v in prop.qualifiers.iteritems():
-                ret.append("      %s: %s" % (k, str(v)))
-        ret.append("layout:")
-        off = 0
-        for prop in cl.properties:
-            # TODO: refactor and merge with other impl
-            ret.append("  (%s)   %s %s" % (h(off), prop.type, prop.name))
-            if prop.type.is_array:
-                off += 0x4
-            else:
-                off += CIM_TYPE_SIZES[prop.type.type]
-        return "\n".join(ret)
-
 
 class ClassInstanceItemView(QTabWidget, LoggingObject):
     def __init__(self, ci_item, parent=None):
         super(ClassInstanceItemView, self).__init__(parent)
         self._ci_item = ci_item
 
-        self.addTab(FixedWidthTextView(self._instance_description()), "Instance details")
+        self.addTab(FixedWidthTextView(dump_instance(ci_item)), "Instance details")
 
         # TODO: hack get_parsers() until we have a unified repo/config
         vv = VstructViewWidget(get_parsers(), self._ci_item.structs, self._ci_item.data)
@@ -746,36 +719,6 @@ class ClassInstanceItemView(QTabWidget, LoggingObject):
 
         hv = HexViewWidget(self._ci_item.data)
         self.addTab(hv, "Hex view")
-
-    def _instance_description(self):
-        cd = self._ci_item.cd
-        cl = self._ci_item.cl
-
-        ret = []
-        ret.append("classname: %s" % cd.class_name)
-        ret.append("super: %s" % cd.super_class_name)
-        ret.append("ts: %s" % cd.timestamp.isoformat("T"))
-        ret.append("qualifiers:")
-        for k, v in cd.qualifiers.iteritems():
-            ret.append("  %s: %s" % (k, str(v)))
-        ret.append("properties:")
-        for propname, prop in cd.properties.iteritems():
-            ret.append("  name: %s" % prop.name)
-            ret.append("    type: %s" % prop.type)
-            ret.append("    order: %s" % prop.entry_number)
-            ret.append("    qualifiers:")
-            for k, v in prop.qualifiers.iteritems():
-                ret.append("      %s: %s" % (k, str(v)))
-        ret.append("layout:")
-        off = 0
-        for prop in cl.properties:
-            # TODO: refactor and merge with other impl
-            ret.append("  (%s)   %s %s" % (h(off), prop.type, prop.name))
-            if prop.type.is_array:
-                off += 0x4
-            else:
-                off += CIM_TYPE_SIZES[prop.type.type]
-        return "\n".join(ret)
 
 
 class Form(QWidget, LoggingObject):
