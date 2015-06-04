@@ -1064,13 +1064,21 @@ class TreeNamespace(LoggingObject):
     @property
     def namespaces(self):
         """ return a generator of direct child namespaces """
+        yielded = set([])
         for ns in self._object_resolver.get_ns_children_ns(self.name):
-            yield TreeNamespace(self._object_resolver, ns.namespace_name)
+            name = ns.namespace_name
+            if name not in yielded:
+                yielded.add(name)
+                yield TreeNamespace(self._object_resolver, ns.namespace_name)
 
     @property
     def classes(self):
+        yielded = set([])
         for cd in self._object_resolver.get_ns_children_cd(self.name):
-            yield TreeClassDefinition(self._object_resolver, self.name, cd.class_name)
+            name = cd.class_name
+            if name not in yielded:
+                yielded.add(name)
+                yield TreeClassDefinition(self._object_resolver, self.name, cd.class_name)
 
 
 class TreeClassDefinition(LoggingObject):
@@ -1099,8 +1107,12 @@ class TreeClassDefinition(LoggingObject):
     @property
     def instances(self):
         """ get instances of this class definition """
+        yielded = set([])
         for ci in self._object_resolver.get_cd_children_ci(self.ns, self.name):
-            yield TreeClassInstance(self._object_resolver, self.name, ci.class_name, ci.instance_key)
+            key = str(ci.instance_key)
+            if key not in yielded:
+                yielded.add(key)
+                yield TreeClassInstance(self._object_resolver, self.name, ci.class_name, ci.instance_key)
 
 
 class TreeClassInstance(LoggingObject):
