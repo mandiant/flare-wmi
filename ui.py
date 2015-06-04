@@ -377,17 +377,16 @@ class IndexRootItem(Item):
 
 
 class ClassInstanceItem(Item):
-    def __init__(self, ctx, namespace, classname, instancename):
+    def __init__(self, ctx, namespace, classname, instance_key):
         super(ClassInstanceItem, self).__init__()
         self._ctx = ctx
         self._ns = namespace
         self._class = classname
-        self._instancename = instancename
+        self._instance_key = instance_key
 
     def __repr__(self):
-        return "ClassInstanceItem(namespace: {:s}, classnamename: {:s}, name: {:s})".format(
-            self._ns,
-            self._class, self.name)
+        return "ClassInstanceItem(namespace: {:s}, classnamename: {:s}, key: {:s})".format(
+            self._ns, self._class, self._instance_key)
 
     @cached_property
     def children(self):
@@ -399,7 +398,7 @@ class ClassInstanceItem(Item):
 
     @property
     def name(self):
-        return "TODO"
+        return str(self._instance_key)
 
 
 class ClassInstanceListItem(Item):
@@ -419,7 +418,7 @@ class ClassInstanceListItem(Item):
         ret = []
         cd = TreeClassDefinition(self._ctx.object_resolver, self._ns, self._class)
         for instance in cd.instances:
-            ret.append(ClassInstanceItem(self._ctx, instance.ns, instance.class_name, instance.instance_name))
+            ret.append(ClassInstanceItem(self._ctx, instance.ns, instance.class_name, instance.instance_key))
         return sorted(ret, key=lambda r: r.name)
 
 

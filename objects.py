@@ -327,13 +327,14 @@ class Property(LoggingObject):
     @property
     def qualifiers(self):
         """ get dict of str to str """
+        # TODO: remove duplication
         ret = {}
         for i in xrange(self._prop.qualifiers.count):
             q = self._prop.qualifiers.qualifiers[i]
             # TODO: don't reach
             qk = self._class_definition._fields.get_qualifier_key(q)
             qv = self._class_definition._fields.get_qualifier_value(q)
-            ret[str(qk)] = str(qv)
+            ret[str(qk)] = qv
         return ret
 
     @property
@@ -460,18 +461,17 @@ class ClassDefinition(vstruct.VStruct, LoggingObject):
 
     @cached_property
     def qualifiers(self):
-        """ :rtype: Mapping[str, str] """
+        """ :rtype: Mapping[str, Variant]"""
         ret = {}
         qualrefs = self.qualifiers_list
         for i in xrange(qualrefs.count):
             q = qualrefs.qualifiers[i]
             qk = self._fields.get_qualifier_key(q)
             qv = self._fields.get_qualifier_value(q)
-            ret[str(qk)] = str(qv)
+            ret[str(qk)] = qv
         return ret
 
-    #@cached_property
-    @property
+    @cached_property
     def properties(self):
         """ :rtype: Mapping[str, Property] """
         ret = {}
@@ -481,6 +481,46 @@ class ClassDefinition(vstruct.VStruct, LoggingObject):
             prop = Property(self, propref)
             ret[prop.name] = prop
         return ret
+
+    @property
+    def keys(self):
+        """
+        get names of Key properties for instances
+
+        :rtype: str
+        """
+        ret = []
+        for propname, prop in self.properties.iteritems():
+            for k, v in prop.qualifiers.iteritems():
+                # TODO: don't hardcode BUILTIN_QUALIFIERS.PROP_KEY symbol name
+                if k == "PROP_KEY" and v == True:
+                    ret.append(propname)
+        return ret
+
+
+class InstanceKey(object):
+    """ the key that uniquely identifies an instance """
+    def __init__(self):
+        object.__setattr__(self, '_d', {})
+
+    def __setattr__(self, key, value):
+        self._d[key] = value
+
+    def __getattr__(self, item):
+        return self._d[item]
+
+    def __setitem__(self, key, item):
+        self._d[key] = item
+
+    def __getitem__(self, item):
+        return self._d[item]
+
+    def __repr__(self):
+        return "InstanceKey({:s})".format(str(self._d))
+
+    def __str__(self):
+        return ",".join(["{:s}={:s}".format(str(k), str(v)) for k, v in self._d.iteritems()])
+
 
 
 class ClassInstance(vstruct.VStruct, LoggingObject):
@@ -545,7 +585,7 @@ class ClassInstance(vstruct.VStruct, LoggingObject):
 
     def __repr__(self):
         # TODO: make this nice
-        return "ClassInstance(classhash: {:s})".format(self._def.nameHash)
+        return "ClassInstance(classhash: {:s}, key: {:s})".format(self.name_hash, self.key)
 
     def extra_padding_length(self):
         class_definition = self.class_layout.class_definition
@@ -629,12 +669,13 @@ class ClassInstance(vstruct.VStruct, LoggingObject):
     @cached_property
     def qualifiers(self):
         """ get dict of str to str """
+        # TODO: remove duplication
         ret = {}
         for i in xrange(self.qualifiers_list.count):
             q = self.qualifiers_list.qualifiers[i]
             qk = self._fields.get_qualifier_key(q)
             qv = self._fields.get_qualifier_value(q)
-            ret[str(qk)] = str(qv)
+            ret[str(qk)] = qv
         return ret
 
     @cached_property
@@ -655,12 +696,19 @@ class ClassInstance(vstruct.VStruct, LoggingObject):
         v = self.toc[i]
         return self._fields.get_value(v, t)
 
-    def get_property(self, name):
-        raise NotImplementedError()
+    @property
+    def key(self):
+        ret = InstanceKey()
+        for prop_name in self.class_layout.class_definition.keys:
+            ret[prop_name] = self.get_property_value(prop_name)
+        return ret
 
 
 class CoreClassInstance(vstruct.VStruct, LoggingObject):
-    """ begins with DWORD:0x0 and has no hash field """
+    """
+    begins with DWORD:0x0 and has no hash field
+    seen at least for __NAMESPACE on an XP repo
+    """
     def __init__(self, class_layout):
         vstruct.VStruct.__init__(self)
         LoggingObject.__init__(self)
@@ -701,12 +749,13 @@ class CoreClassInstance(vstruct.VStruct, LoggingObject):
     @cached_property
     def qualifiers(self):
         """ get dict of str to str """
+        # TODO: remove duplication
         ret = {}
         for i in xrange(self.qualifiers_list.count):
             q = self.qualifiers_list.qualifiers[i]
             qk = self._fields.get_qualifier_key(q)
             qv = self._fields.get_qualifier_value(q)
-            ret[str(qk)] = str(qv)
+            ret[str(qk)] = qv
         return ret
 
     @cached_property
@@ -891,8 +940,32 @@ class ObjectResolver(LoggingObject):
             self._clcache[c_id] = c_cl
         return c_cl
 
-    def get_ci(self, namespace_name, class_name, instance_name):
-        pass
+    def get_ci2(self, namespace_name, class_name, instance_key):
+        cl = self.get_cl(namespace_name, class_name)
+        for i in self.get_cd_children_ci(namespace_name, class_name):
+            for k in cl.class_definition.keys:
+                if not i.get_property_value(k) == instance_key[k]:
+                    continue
+
+    def get_ci(self, namespace_name, class_name, instance_key):
+        # CI or KI?
+        q = Key("{}/{}/{}".format(
+                    self.NS(namespace_name),
+                    self.CI(class_name),
+                    self.IL()))
+
+        cl = self.get_cl(namespace_name, class_name)
+        for _, buf in self.get_objects(q):
+            instance = self.get_instance(self.get_cl(namespace_name, class_name), buf)
+            this_is_it = True
+            for k in cl.class_definition.keys:
+                if not instance.get_property_value(k) == instance_key[k]:
+                    this_is_it = False
+                    break
+            if this_is_it:
+                return instance
+
+        raise IndexError("Key not found: " + instance_key)
 
     @property
     def ns_cd(self):
@@ -933,7 +1006,7 @@ class ObjectResolver(LoggingObject):
             cd.vsParse(cdbuf)
             yield self.ClassDefinitionSpecifier(namespace_name, cd.class_name)
 
-    ClassInstanceSpecifier = namedtuple("ClassInstanceSpecifier", ["namespace_name", "class_name", "instance_name"])
+    ClassInstanceSpecifier = namedtuple("ClassInstanceSpecifier", ["namespace_name", "class_name", "instance_key"])
     def get_cd_children_ci(self, namespace_name, class_name):
         # CI or KI?
         q = Key("{}/{}/{}".format(
@@ -944,7 +1017,8 @@ class ObjectResolver(LoggingObject):
         for ref, ibuf in self.get_objects(q):
             instance = self.get_instance(self.get_cl(namespace_name, class_name), ibuf)
             # TODO: need to parse key here, don't assume its "Name"
-            yield self.ClassInstanceSpecifier(namespace_name, class_name, instance.get_property_value("Name"))
+            print("{:s} {:s}: {:s}".format(namespace_name, class_name, ref))
+            yield self.ClassInstanceSpecifier(namespace_name, class_name, instance.key)
 
 
 def get_class_id(namespace, classname):
@@ -1008,22 +1082,22 @@ class TreeClassDefinition(LoggingObject):
     def instances(self):
         """ get instances of this class definition """
         for ci in self._object_resolver.get_cd_children_ci(self.ns, self.name):
-            yield TreeClassInstance(self._object_resolver, self.name, ci.class_name, ci.instance_name)
+            yield TreeClassInstance(self._object_resolver, self.name, ci.class_name, ci.instance_key)
 
 
 class TreeClassInstance(LoggingObject):
-    def __init__(self, object_resolver, namespace_name, class_name, instance_name):
+    def __init__(self, object_resolver, namespace_name, class_name, instance_key):
         super(TreeClassInstance, self).__init__()
         self._object_resolver = object_resolver
         self.ns = namespace_name
         self.class_name = class_name
-        self.instance_name = instance_name
+        self.instance_key = instance_key
 
     def __repr__(self):
-        return "ClassInstance(namespace: {:s}, class: {:s}, name: {:s})".format(
+        return "ClassInstance(namespace: {:s}, class: {:s}, key: {:s})".format(
             self.ns,
             self.class_name,
-            self.instance_name)
+            self.instance_key)
 
     @property
     def klass(self):

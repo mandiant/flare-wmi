@@ -11,8 +11,6 @@ from common import h
 def dump_class_def(cd, cl):
     print(cd.tree())
 
-
-
     print("classname: %s" % cd.class_name)
     print("super: %s" % cd.super_class_name)
     print("ts: %s" % cd.timestamp.isoformat("T"))
@@ -35,6 +33,9 @@ def dump_class_def(cd, cl):
             off += 0x4
         else:
             off += CIM_TYPE_SIZES[prop.type.type]
+    print("keys:")
+    for key in cd.keys:
+        print("  %s" % (key))
 
 
 def main(type_, path, namespaceName, className):
