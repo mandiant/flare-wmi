@@ -677,20 +677,23 @@ class IndexNodeItemView(QTabWidget, LoggingObject):
         self.addTab(hv, "Hex view")
 
 
+class FixedWidthTextView(QTextEdit):
+    def __init__(self, s, *args, **kwargs):
+        super(FixedWidthTextView, self).__init__(*args, **kwargs)
+        self.setReadOnly(True)
+        f = QFontDatabase.systemFont(QFontDatabase.FixedFont)
+        td = QTextDocument()
+        td.setDefaultFont(f)
+        td.setPlainText(s)
+        self.setDocument(td)
+
+
 class ClassDefinitionItemView(QTabWidget, LoggingObject):
     def __init__(self, cd_item, parent=None):
         super(ClassDefinitionItemView, self).__init__(parent)
         self._cd_item = cd_item
 
-        te = QTextEdit()
-        te.setReadOnly(True)
-        f = QFontDatabase.systemFont(QFontDatabase.FixedFont)
-        td = QTextDocument()
-        td.setDefaultFont(f)
-        td.setPlainText(self._class_description())
-        te.setDocument(td)
-
-        self.addTab(te, "Class details")
+        self.addTab(FixedWidthTextView(self._class_description()), "Class details")
 
         # TODO: hack get_parsers() until we have a unified repo/config
         vv = VstructViewWidget(get_parsers(), self._cd_item.structs, self._cd_item.data)
