@@ -501,7 +501,7 @@ class LogicalDataStore(LoggingObject):
                 found_length += len(next_page_buffer)
             i += 1
 
-        return "".join(data)
+        return b"".join(data)
 
 
 class InvalidMappingEntryIndex(Exception):

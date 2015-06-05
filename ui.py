@@ -79,7 +79,7 @@ class PhysicalDataPagesItem(Item):
     @cached_property
     def children(self):
         return [PhysicalDataPageItem(self._ctx, i) for i in
-                    xrange(self._ctx.cim.data_mapping.header.physical_page_count)]
+                    range(self._ctx.cim.data_mapping.header.physical_page_count)]
 
     @property
     def type(self):
@@ -140,7 +140,7 @@ class LogicalDataPagesItem(Item):
     @cached_property
     def children(self):
         return [LogicalDataPageItem(self._ctx, i) for i in
-                    xrange(self._ctx.cim.data_mapping.header.mapping_entry_count)]
+                    range(self._ctx.cim.data_mapping.header.mapping_entry_count)]
 
     @property
     def type(self):
@@ -200,7 +200,7 @@ class PhysicalIndexPagesItem(Item):
         mapping = self._ctx.cim.index_mapping
         # TODO: does this get all of them?
         return [PhysicalIndexPageItem(self._ctx, i) for i in
-                    xrange(mapping.header.mapping_entry_count + mapping.free_dword_count)]
+                    range(mapping.header.mapping_entry_count + mapping.free_dword_count)]
 
     @property
     def type(self):
@@ -257,7 +257,7 @@ class LogicalIndexPagesItem(Item):
     @cached_property
     def children(self):
         return [LogicalIndexPageItem(self._ctx, i) for i in
-                    xrange(self._ctx.cim.index_mapping.header.mapping_entry_count)]
+                    range(self._ctx.cim.index_mapping.header.mapping_entry_count)]
 
     @property
     def type(self):
@@ -312,7 +312,7 @@ class IndexNodeItem(Item):
     def children(self):
         page = self._ctx.cim.logical_index_store.get_page(self._page_number)
         ret = []
-        for i in xrange(page.key_count):
+        for i in range(page.key_count):
             ret.append(IndexNodeItem(self._ctx, page.get_child(i)))
             ret.append(IndexKeyItem(self._ctx, page.get_key(i)))
         ret.append(IndexNodeItem(self._ctx, page.get_child(page.key_count)))
@@ -338,7 +338,7 @@ class IndexNodeItem(Item):
         ]
 
         data_offset = page.vsGetOffset("data")
-        for i in xrange(page.key_count):
+        for i in range(page.key_count):
             string_part_count = page.string_definition_table[i]
 
             for j in range(string_part_count):
