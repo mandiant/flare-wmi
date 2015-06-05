@@ -400,6 +400,8 @@ class ClassFieldGetter(LoggingObject):
             return self.get_string(value)
         elif t == CIM_TYPES.CIM_TYPE_BOOLEAN:
             return value != 0
+        elif t == CIM_TYPES.CIM_TYPE_DATETIME:
+            return self.get_string(value)
         elif CIM_TYPES.vsReverseMapping(t):
             return value
         else:
