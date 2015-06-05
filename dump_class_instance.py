@@ -5,12 +5,33 @@ import hexdump
 
 from cim import CIM
 from cim import Index
+from objects import InstanceKey
 from objects import ObjectResolver
 from formatters import dump_instance
 
 
+# this is surprising... what happens to unicode data?
+ENCODING = "ascii"
+def compute_instance_hash(index, instance):
+    keys = instance.class_layout.class_definition.keys
+    key = instance.key
+    print(key)
+    parts = []
+    for k in keys:
+        print(k, key[k])
+        parts.append(key[k].encode(ENCODING) + "\x00".encode(ENCODING))
 
-def main(type_, path, namespaceName, className):
+    import itertools
+    for u in itertools.permutations(parts):
+        hexdump.hexdump("\xff\xff".join(u))
+        print("  -->" + index.hash("\xff\xff".join(u)))
+        print("  -->" + index.hash("\xff".join(u)))
+        print("  -->" + index.hash("".join(u)))
+    print(str(keys))
+    return ""
+
+
+def main(type_, path, namespaceName, className, key_specifier=None):
     if type_ not in ("xp", "win7"):
         raise RuntimeError("Invalid mapping type: {:s}".format(type_))
 
@@ -18,37 +39,35 @@ def main(type_, path, namespaceName, className):
     index = Index(c.cim_type, c.logical_index_store)
     o = ObjectResolver(c, index)
 
-    print("%s" % "=" * 80)
-    print("namespace: %s" % namespaceName)
     cd = o.get_cd(namespaceName, className)
     cl = o.get_cl(namespaceName, className)
-    # this is surprising... what happens to unicode data?
-    ENCODING = "ascii"
-    for instance in o.get_cd_children_ci(namespaceName, className):
-        print("instance")
-        print(instance.instance_key)
-        keys = instance.instance_key
-        parts = []
-        for k in cd.keys:
-            print(k, keys[k])
-            parts.append(keys[k].encode(ENCODING) + "\x00".encode(ENCODING))
 
-        import itertools
-        for u in itertools.permutations(parts):
-            hexdump.hexdump("\xff\xff".join(u))
-            print("  -->" + index.hash("\xff\xff".join(u)))
-            print("  -->" + index.hash("\xff".join(u)))
-            print("  -->" + index.hash("".join(u)))
-        print(str(keys))
-        ci = o.get_ci(namespaceName, className, instance.instance_key)
-        print(ci)
+    instances = []
+    if key_specifier:
+        key_values = key_specifier.split(",")
+        key = InstanceKey()
+        for key_value in key_values:
+            if "=" not in key_value:
+                raise RuntimeError("Invalid key specifier: " + str(key_value))
+            k, _, v = key_value.partition("=")
+            key[k] = v
+        print(str(key))
+        ci = o.get_ci(namespaceName, className, key)
+        instances.append(ci)
+
+    else:
+        for instance in o.get_cd_children_ci(namespaceName, className):
+            ci = o.get_ci(namespaceName, className, instance.instance_key)
+            instances.append(ci)
+
+    for instance in instances:
         print("%s" % "=" * 80)
+        print(compute_instance_hash(index, instance))
         try:
-            print(dump_instance(o.get_ci(namespaceName, className, instance.instance_key)))
+            print(dump_instance(instance))
         except:
             print("ERROR: failed to dump class instance!")
             print traceback.format_exc()
-        return
 
 
 if __name__ == "__main__":
