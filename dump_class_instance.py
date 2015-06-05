@@ -23,10 +23,10 @@ def compute_instance_hash(index, instance):
 
     import itertools
     for u in itertools.permutations(parts):
-        hexdump.hexdump("\xff\xff".join(u))
-        print("  -->" + index.hash("\xff\xff".join(u)))
-        print("  -->" + index.hash("\xff".join(u)))
-        print("  -->" + index.hash("".join(u)))
+        hexdump.hexdump(b"\xff\xff".join(u))
+        print("  -->" + index.hash(b"\xff\xff".join(u)))
+        print("  -->" + index.hash(b"\xff".join(u)))
+        print("  -->" + index.hash(b"".join(u)))
     print(str(keys))
     return ""
 
@@ -67,7 +67,7 @@ def main(type_, path, namespaceName, className, key_specifier=None):
             print(dump_instance(instance))
         except:
             print("ERROR: failed to dump class instance!")
-            print traceback.format_exc()
+            print(traceback.format_exc())
 
 
 if __name__ == "__main__":

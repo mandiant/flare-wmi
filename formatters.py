@@ -14,15 +14,15 @@ def dump_definition(cd, cl):
     ret.append("super: %s" % cd.super_class_name)
     ret.append("ts: %s" % cd.timestamp.isoformat("T"))
     ret.append("qualifiers:")
-    for k, v in cd.qualifiers.iteritems():
+    for k, v in cd.qualifiers.items():
         ret.append("  %s: %s" % (k, str(v)))
     ret.append("properties:")
-    for propname, prop in cd.properties.iteritems():
+    for propname, prop in cd.properties.items():
         ret.append("  name: %s" % prop.name)
         ret.append("    type: %s" % prop.type)
         ret.append("    order: %s" % prop.entry_number)
         ret.append("    qualifiers:")
-        for k, v in prop.qualifiers.iteritems():
+        for k, v in prop.qualifiers.items():
             ret.append("      %s: %s" % (k, str(v)))
     ret.append("layout:")
     off = 0
@@ -54,11 +54,11 @@ def dump_instance(i):
     ret.append("timestamp1: %s" % i.ts1)
     ret.append("timestamp2: %s" % i.ts2)
     ret.append("properties:")
-    for propname, prop in cd.properties.iteritems():
+    for propname, prop in cd.properties.items():
         value = i.get_property_value(prop.name)
         if not value:
             continue
-        quals = ",".join(["{:s}={:s}".format(str(k), str(v)) for k, v in prop.qualifiers.iteritems()])
+        quals = ",".join(["{:s}={:s}".format(str(k), str(v)) for k, v in prop.qualifiers.items()])
         if quals != "":
             quals = "  [{:s}]".format(quals)
             ret.append(quals)

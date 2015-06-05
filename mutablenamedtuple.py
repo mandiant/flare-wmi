@@ -20,7 +20,7 @@ def _mutablenamedtuple__init(self, *args, **kwargs):
     for i, arg in enumerate(args):
         setattr(self, self.__fields__[i], arg)
 
-    for k, v in kwargs.iteritems():
+    for k, v in kwargs.items():
         if k not in self.__fields__:
             raise RuntimeError("{fieldname} not a valid field in {classname}".format(
                                fieldname=k, classname=self.__class__.__name__))

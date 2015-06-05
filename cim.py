@@ -112,14 +112,14 @@ class MappingWin7(vstruct.VStruct):
         self._reverse_mapping = None
 
     def pcb_header(self):
-        for i in xrange(self.header.mapping_entry_count):
+        for i in range(self.header.mapping_entry_count):
             self.entries.vsAddElement(EntryWin7())
 
     def pcb_free_dword_count(self):
         self["free"].vsSetLength(self.free_dword_count * 0x4)
 
     def _build_reverse_mapping(self):
-        for i in xrange(self.header.mapping_entry_count):
+        for i in range(self.header.mapping_entry_count):
             self._reverse_mapping[self.entries[i].page_number] = i
 
     def get_physical_page_number(self, logical_page_number):
@@ -161,14 +161,14 @@ class MappingXP(vstruct.VStruct):
         self._reverse_mapping = None
 
     def pcb_header(self):
-        for i in xrange(self.header.mapping_entry_count):
+        for i in range(self.header.mapping_entry_count):
             self.entries.vsAddElement(EntryXP())
 
     def pcb_free_dword_count(self):
         self["free"].vsSetLength(self.free_dword_count * 0x4)
 
     def _build_reverse_mapping(self):
-        for i in xrange(self.header.mapping_entry_count):
+        for i in range(self.header.mapping_entry_count):
             self._reverse_mapping[self.entries[i].page_number] = i
 
     def get_physical_page_number(self, logical_page_number):
@@ -210,7 +210,7 @@ class TOC(vstruct.VArray):
 
     def vsParse(self, bytez, offset=0, fast=False):
         self.count = 0
-        endoffset = bytez.find("\x00" * 0x10, offset)
+        endoffset = bytez.find(b"\x00" * 0x10, offset)
         while offset < endoffset + 0x10:
             t = TOCEntry()
             offset = t.vsParse(bytez, offset=offset)
@@ -250,7 +250,7 @@ class DataPage(LoggingObject):
         """
         target_id = key.data_id
         target_size = key.data_length
-        for i in xrange(self.toc.count):
+        for i in range(self.toc.count):
             toc = self.toc[i]
             if toc.record_id == target_id:
                 if toc.size < target_size:
@@ -276,7 +276,7 @@ class DataPage(LoggingObject):
         """
         ObjectItem = namedtuple("ObjectItem", ["offset", "buffer"])
         ret = []
-        for i in xrange(self.toc.count):
+        for i in range(self.toc.count):
             toc = self.toc[i]
             buf = self._buf[toc.offset:toc.offset + toc.size]
             ret.append(ObjectItem(toc.offset, buf))
@@ -401,7 +401,7 @@ class IndexPage(vstruct.VStruct, LoggingObject):
 
     def _get_string_part(self, string_index):
         string_offset = self.string_table[string_index]
-        return self.data[string_offset:self.data.find("\x00", string_offset)].decode("utf-8")
+        return self.data[string_offset:self.data.find(b"\x00", string_offset)].decode("utf-8")
 
     def _get_string(self, string_def_index):
         string_part_count = self.string_definition_table[string_def_index]
@@ -423,7 +423,8 @@ class IndexPage(vstruct.VStruct, LoggingObject):
     def get_key(self, key_index):
         if key_index not in self._keys:
             string_def_index = self.keys[key_index]
-            self._keys[key_index] = Key(self._get_string(string_def_index))
+            s = self._get_string(string_def_index)
+            self._keys[key_index] = Key(s)
         return self._keys[key_index]
 
     def get_child(self, child_index):
@@ -636,7 +637,7 @@ class Index(LoggingObject):
         self.d("index lookup: %s: page: %s", key.human_format, h(page.logical_page_number))
 
         matches = []
-        for i in xrange(key_count):
+        for i in range(key_count):
             k = page.get_key(i)
             sk = str(k)
 
@@ -715,7 +716,7 @@ class CIM(LoggingObject):
         self.d("finding current mapping file")
         mapping_file_path = None
         max_version = 0
-        for i in xrange(MAX_MAPPING_FILES):
+        for i in range(MAX_MAPPING_FILES):
             fn = "MAPPING{:d}.MAP".format(i + 1)
             fp = os.path.join(self._directory, fn)
             if not os.path.exists(fp):

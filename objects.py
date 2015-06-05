@@ -313,7 +313,7 @@ class Property(LoggingObject):
         return "Property(name: {:s}, type: {:s}, qualifiers: {:s})".format(
             self.name,
             CIM_TYPES.vsReverseMapping(self.type.type),
-            ",".join("%s=%s" % (k, str(v)) for k, v in self.qualifiers.iteritems()))
+            ",".join("%s=%s" % (k, str(v)) for k, v in self.qualifiers.items()))
 
     @property
     def name(self):
@@ -329,7 +329,7 @@ class Property(LoggingObject):
         """ get dict of str to str """
         # TODO: remove duplication
         ret = {}
-        for i in xrange(self._prop.qualifiers.count):
+        for i in range(self._prop.qualifiers.count):
             q = self._prop.qualifiers.qualifiers[i]
             # TODO: don't reach
             qk = self._class_definition._fields.get_qualifier_key(q)
@@ -380,7 +380,7 @@ class ClassFieldGetter(LoggingObject):
 
         items = []
         offset = ref + 4  # sizeof(array_size:uint32_t)
-        for i in xrange(arraySize):
+        for i in range(arraySize):
             p = Parser()
             p.vsParse(data, offset=offset)
             items.append(self.get_value(p, item_type))
@@ -447,6 +447,21 @@ class ClassDefinition(vstruct.VStruct, LoggingObject):
         return "ClassDefinition(name: {:s})".format(self.class_name)
 
     @property
+    def keys(self):
+        """
+        get names of Key properties for instances
+
+        :rtype: str
+        """
+        ret = []
+        for propname, prop in self.properties.items():
+            for k, v in prop.qualifiers.items():
+                # TODO: don't hardcode BUILTIN_QUALIFIERS.PROP_KEY symbol name
+                if k == "PROP_KEY" and v == True:
+                    ret.append(propname)
+        return ret
+
+    @property
     def class_name(self):
         """ :rtype: str """
         return self._fields.get_string(self.header.offset_class_name)
@@ -466,7 +481,7 @@ class ClassDefinition(vstruct.VStruct, LoggingObject):
         """ :rtype: Mapping[str, Variant]"""
         ret = {}
         qualrefs = self.qualifiers_list
-        for i in xrange(qualrefs.count):
+        for i in range(qualrefs.count):
             q = qualrefs.qualifiers[i]
             qk = self._fields.get_qualifier_key(q)
             qv = self._fields.get_qualifier_value(q)
@@ -478,26 +493,12 @@ class ClassDefinition(vstruct.VStruct, LoggingObject):
         """ :rtype: Mapping[str, Property] """
         ret = {}
         proprefs = self.property_references
-        for i in xrange(proprefs.count):
+        for i in range(proprefs.count):
             propref = proprefs.refs[i]
             prop = Property(self, propref)
             ret[prop.name] = prop
         return ret
 
-    @property
-    def keys(self):
-        """
-        get names of Key properties for instances
-
-        :rtype: str
-        """
-        ret = []
-        for propname, prop in self.properties.iteritems():
-            for k, v in prop.qualifiers.iteritems():
-                # TODO: don't hardcode BUILTIN_QUALIFIERS.PROP_KEY symbol name
-                if k == "PROP_KEY" and v == True:
-                    ret.append(propname)
-        return ret
 
 
 class InstanceKey(object):
@@ -673,7 +674,7 @@ class ClassInstance(vstruct.VStruct, LoggingObject):
         """ get dict of str to str """
         # TODO: remove duplication
         ret = {}
-        for i in xrange(self.qualifiers_list.count):
+        for i in range(self.qualifiers_list.count):
             q = self.qualifiers_list.qualifiers[i]
             qk = self._fields.get_qualifier_key(q)
             qv = self._fields.get_qualifier_value(q)
@@ -753,7 +754,7 @@ class CoreClassInstance(vstruct.VStruct, LoggingObject):
         """ get dict of str to str """
         # TODO: remove duplication
         ret = {}
-        for i in xrange(self.qualifiers_list.count):
+        for i in range(self.qualifiers_list.count):
             q = self.qualifiers_list.qualifiers[i]
             qk = self._fields.get_qualifier_key(q)
             qv = self._fields.get_qualifier_value(q)
@@ -807,7 +808,7 @@ class ClassLayout(LoggingObject):
 
         self.d("%s derivation: %s",
                 self.class_definition.class_name,
-                map(lambda c: c.class_name, class_derivation))
+                list(map(lambda c: c.class_name, class_derivation)))
 
         ret = []
         while len(class_derivation) > 0:
@@ -817,7 +818,7 @@ class ClassLayout(LoggingObject):
 
         self.d("%s property layout: %s",
                 self.class_definition.class_name,
-                map(lambda p: p.name, ret))
+                list(map(lambda p: p.name, ret)))
         return ret
 
     @cached_property
