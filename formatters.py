@@ -50,6 +50,9 @@ def dump_instance(i):
     cd = cl.class_definition
     ret.append("classname: %s" % cd.class_name)
     ret.append("super: %s" % cd.super_class_name)
+    ret.append("key: %s" % str(i.key))
+    ret.append("timestamp1: %s" % i.ts1)
+    ret.append("timestamp2: %s" % i.ts2)
     ret.append("properties:")
     for propname, prop in cd.properties.iteritems():
         value = i.get_property_value(prop.name)
