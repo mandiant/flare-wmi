@@ -328,6 +328,15 @@ class Key(LoggingObject):
     def data_length(self):
         return int(self._get_data_part(self.KEY_INDEX_DATA_SIZE))
 
+    def get_part(self, part_prefix):
+        for part in str(self._string).split("/"):
+            if part.startswith(part_prefix):
+                return part.partition(".")[0]
+        return IndexError("Part prefix not found: " + part_prefix)
+
+    def get_part_hash(self, part_prefix):
+        return self.get_part(part_prefix).partition("_")[2]
+
 
 class IndexPageHeader(vstruct.VStruct):
     def __init__(self):

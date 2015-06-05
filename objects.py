@@ -519,7 +519,7 @@ class InstanceKey(object):
         return "InstanceKey({:s})".format(str(self._d))
 
     def __str__(self):
-        return ",".join(["{:s}={:s}".format(str(k), str(v)) for k, v in self._d.iteritems()])
+        return ",".join(["{:s}={:s}".format(str(k), str(self[k])) for k in sorted(self._d.keys())])
 
 
 
@@ -834,8 +834,13 @@ class ObjectResolver(LoggingObject):
         super(ObjectResolver, self).__init__()
         self._cim = cim
         self._index = index
-        self._cdcache = {}
-        self._clcache = {}
+
+        self._cdcache = {}  # type: Mapping[str, ClassDefinition]
+        self._clcache = {}  # type: Mapping[str, ClassLayout]
+
+        # until we can correctly compute instance key hashes, maintain a cache mapping
+        #   from encountered keys (serialized) to the instance hashes
+        self._ihashcache = {}  # type: Mapping[str,str]
 
     def _build(self, prefix, name=None):
         if name is None:
@@ -861,7 +866,9 @@ class ObjectResolver(LoggingObject):
     def KI(self, name=None):
         return self._build("KI_", name)
 
-    def IL(self, name=None):
+    def IL(self, name=None, hash=None):
+        if hash is not None:
+            return "IL_" + hash
         return self._build("IL_", name)
 
     def I(self, name=None):
@@ -948,11 +955,11 @@ class ObjectResolver(LoggingObject):
         q = Key("{}/{}/{}".format(
                     self.NS(namespace_name),
                     self.CI(class_name),
-                    self.IL()))
+                    self.IL(hash=self._ihashcache.get(str(instance_key), ""))))
 
         cl = self.get_cl(namespace_name, class_name)
         for _, buf in self.get_objects(q):
-            instance = self.get_instance(self.get_cl(namespace_name, class_name), buf)
+            instance = self.parse_instance(self.get_cl(namespace_name, class_name), buf)
             this_is_it = True
             for k in cl.class_definition.keys:
                 if not instance.get_property_value(k) == instance_key[k]:
@@ -961,7 +968,7 @@ class ObjectResolver(LoggingObject):
             if this_is_it:
                 return instance
 
-        raise IndexError("Key not found: " + instance_key)
+        raise IndexError("Key not found: " + str(instance_key))
 
     def get_ci_buf(self, namespace_name, class_name, instance_key):
         # TODO: this is a major hack!
@@ -970,11 +977,11 @@ class ObjectResolver(LoggingObject):
         q = Key("{}/{}/{}".format(
                     self.NS(namespace_name),
                     self.CI(class_name),
-                    self.IL()))
+                    self.IL(hash=self._ihashcache.get(str(instance_key), ""))))
 
         cl = self.get_cl(namespace_name, class_name)
         for _, buf in self.get_objects(q):
-            instance = self.get_instance(self.get_cl(namespace_name, class_name), buf)
+            instance = self.parse_instance(self.get_cl(namespace_name, class_name), buf)
             this_is_it = True
             for k in cl.class_definition.keys:
                 if not instance.get_property_value(k) == instance_key[k]:
@@ -993,7 +1000,7 @@ class ObjectResolver(LoggingObject):
     def ns_cl(self):
         return self.get_cl(SYSTEM_NAMESPACE_NAME, NAMESPACE_CLASS_NAME)
 
-    def get_instance(self, cl, buf):
+    def parse_instance(self, cl, buf):
         if buf[0x0:0x4] == "\x00\x00\x00\x00":
             i = CoreClassInstance(cl)
         else:
@@ -1010,7 +1017,7 @@ class ObjectResolver(LoggingObject):
                     self.IL()))
 
         for ref, ns_i in self.get_objects(q):
-            i = self.get_instance(self.ns_cl, ns_i)
+            i = self.parse_instance(self.ns_cl, ns_i)
             yield self.NamespaceSpecifier(namespace_name + "\\" + i.get_property_value("Name"))
 
     ClassDefinitionSpecifier = namedtuple("ClassDefintionSpecifier", ["namespace_name", "class_name"])
@@ -1026,16 +1033,16 @@ class ObjectResolver(LoggingObject):
 
     ClassInstanceSpecifier = namedtuple("ClassInstanceSpecifier", ["namespace_name", "class_name", "instance_key"])
     def get_cd_children_ci(self, namespace_name, class_name):
-        # CI or KI?
+        # TODO: CI or KI?
         q = Key("{}/{}/{}".format(
                     self.NS(namespace_name),
                     self.CI(class_name),
                     self.IL()))
 
         for ref, ibuf in self.get_objects(q):
-            instance = self.get_instance(self.get_cl(namespace_name, class_name), ibuf)
-            # TODO: need to parse key here, don't assume its "Name"
-            print("{:s} {:s}: {:s}".format(namespace_name, class_name, ref))
+            instance = self.parse_instance(self.get_cl(namespace_name, class_name), ibuf)
+            # str(instance.key) is sorted k-v pairs, should be unique
+            self._ihashcache[str(instance.key)] = ref.get_part_hash("IL_")
             yield self.ClassInstanceSpecifier(namespace_name, class_name, instance.key)
 
 
