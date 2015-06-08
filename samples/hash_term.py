@@ -1,20 +1,17 @@
-import sys
 import logging
 
 from cim import CIM
-from cim import Key
 from cim import Index
-from objects import ObjectResolver
 
 
-def main(type_, path, key):
+def main(type_, path, *s):
     if type_ not in ("xp", "win7"):
         raise RuntimeError("Invalid mapping type: {:s}".format(type_))
 
     c = CIM(type_, path)
-    k = Key("__." + key)
-    sys.stdout.write(c.logical_data_store.get_object_buffer(k))
-    sys.stdout.flush()
+    i = Index(c.cim_type, c.logical_index_store)
+    for ss in s:
+        print("XX_%s\t%s" % (str(i.hash(ss.encode("utf-16le"))), str(ss)))
 
 
 if __name__ == "__main__":

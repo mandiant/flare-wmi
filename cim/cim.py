@@ -1,6 +1,3 @@
-"""
-doc
-"""
 import os
 import hashlib
 import logging
@@ -10,12 +7,13 @@ from funcy.objects import cached_property
 import vstruct
 from vstruct.primitives import *
 
-from common import h
-from common import LoggingObject
+from .common import h
+from .common import LoggingObject
 
+
+# TODO: remove this in top level
 logging.basicConfig(level=logging.DEBUG)
 g_logger = logging.getLogger("cim.mapping")
-
 logging.getLogger("cim.IndexPage").setLevel(logging.WARNING)
 logging.getLogger("cim.Index").setLevel(logging.WARNING)
 
@@ -682,7 +680,7 @@ class Index(LoggingObject):
         elif self.cim_type == CIM_TYPE_WIN7:
             h = hashlib.sha256()
         else:
-            raise RuntimeError("Unexpected CIM type: {:s}".format(self.cim_type))
+            raise RuntimeError("Unexpected CIM type: {:s}".format(str(self.cim_type)))
         h.update(s)
         return h.hexdigest().upper()
 

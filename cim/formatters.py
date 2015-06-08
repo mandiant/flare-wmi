@@ -1,5 +1,5 @@
-from common import h
-from objects import CIM_TYPE_SIZES
+from .common import h
+from .objects import CIM_TYPE_SIZES
 
 
 def dump_definition(cd, cl):

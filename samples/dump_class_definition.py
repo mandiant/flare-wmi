@@ -3,8 +3,8 @@ import traceback
 
 from cim import CIM
 from cim import Index
-from objects import ObjectResolver
-from formatters import dump_definition
+from cim.objects import ObjectResolver
+from cim.formatters import dump_definition
 
 
 def main(type_, path, namespaceName, className):
@@ -24,7 +24,6 @@ def main(type_, path, namespaceName, className):
             print(dump_definition(cd, cl))
         except:
             print("ERROR: failed to dump class definition!")
-            print traceback.format_exc()
         className = cd.super_class_name
 
 

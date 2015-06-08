@@ -5,9 +5,9 @@ import hexdump
 
 from cim import CIM
 from cim import Index
-from objects import InstanceKey
-from objects import ObjectResolver
-from formatters import dump_instance
+from cim.objects import InstanceKey
+from cim.objects import ObjectResolver
+from cim.formatters import dump_instance
 
 
 # this is surprising... what happens to unicode data?

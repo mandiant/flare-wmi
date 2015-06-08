@@ -11,17 +11,18 @@ from datetime import datetime
 from collections import namedtuple
 
 from funcy.objects import cached_property
-
-from common import h
-from common import one
-from common import LoggingObject
-from cim import Key
-from cim import Index
-from cim import CIM_TYPE_XP
-from cim import CIM_TYPE_WIN7
 import vstruct
 from vstruct.primitives import *
 
+from .common import h
+from .common import one
+from .common import LoggingObject
+from .cim import Key
+from .cim import Index
+from .cim import CIM_TYPE_XP
+from .cim import CIM_TYPE_WIN7
+
+# TODO: remove this from the top level
 logging.basicConfig(level=logging.DEBUG)
 g_logger = logging.getLogger("cim.objects")
 
@@ -525,7 +526,6 @@ class InstanceKey(object):
         return ",".join(["{:s}={:s}".format(str(k), str(self[k])) for k in sorted(self._d.keys())])
 
 
-
 class ClassInstance(vstruct.VStruct, LoggingObject):
     def __init__(self, cim_type, class_layout):
         vstruct.VStruct.__init__(self)
@@ -806,8 +806,7 @@ class ClassLayout(LoggingObject):
         # note, derivation now ordered from parent to child
         class_derivation.reverse()
 
-        self.d("%s derivation: %s",
-                self.class_definition.class_name,
+        self.d("%s derivation: %s", self.class_definition.class_name,
                 list(map(lambda c: c.class_name, class_derivation)))
 
         ret = []
@@ -869,9 +868,9 @@ class ObjectResolver(LoggingObject):
     def KI(self, name=None):
         return self._build("KI_", name)
 
-    def IL(self, name=None, hash=None):
-        if hash is not None:
-            return "IL_" + hash
+    def IL(self, name=None, known_hash=None):
+        if known_hash is not None:
+            return "IL_" + known_hash
         return self._build("IL_", name)
 
     def I(self, name=None):
@@ -958,7 +957,7 @@ class ObjectResolver(LoggingObject):
         q = Key("{}/{}/{}".format(
                     self.NS(namespace_name),
                     self.CI(class_name),
-                    self.IL(hash=self._ihashcache.get(str(instance_key), ""))))
+                    self.IL(known_hash=self._ihashcache.get(str(instance_key), ""))))
 
         cl = self.get_cl(namespace_name, class_name)
         for _, buf in self.get_objects(q):
@@ -980,7 +979,7 @@ class ObjectResolver(LoggingObject):
         q = Key("{}/{}/{}".format(
                     self.NS(namespace_name),
                     self.CI(class_name),
-                    self.IL(hash=self._ihashcache.get(str(instance_key), ""))))
+                    self.IL(known_hash=self._ihashcache.get(str(instance_key), ""))))
 
         cl = self.get_cl(namespace_name, class_name)
         for _, buf in self.get_objects(q):
