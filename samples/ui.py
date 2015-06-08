@@ -2,40 +2,36 @@ import os
 import logging
 from collections import namedtuple
 
-from hexview import HexViewWidget
-from vstructui import VstructViewWidget
-
 from funcy.objects import cached_property
 from PyQt5.QtGui import *
 from PyQt5.QtWidgets import *
 from PyQt5.QtWidgets import QApplication
 from PyQt5 import uic
 from PyQt5.QtCore import QDir
+from hexview import HexViewWidget
+from vstructui import VstructViewWidget
+from vstructui import get_parsers
+from vstructui import VstructInstance
+from vstruct.primitives import v_bytes
+from vstruct.primitives import v_zstr
 
 from cim import CIM
 from cim import Key
 from cim import Index
 from cim import IndexPage
 from cim import INDEX_PAGE_TYPES
-from objects import CIM_TYPE_SIZES
-from objects import TreeNamespace
-from objects import TreeClassDefinition
-from objects import ObjectResolver
-from common import h
-from common import LoggingObject
+from cim.objects import TreeNamespace
+from cim.objects import TreeClassDefinition
+from cim.objects import ObjectResolver
+from cim.common import h
+from cim.common import LoggingObject
+from cim.formatters import dump_instance
+from cim.formatters import dump_definition
+
 from ui.tree import Item
 from ui.tree import TreeModel
 from ui.tree import ColumnDef
 from ui.uicommon import emptyLayout
-from formatters import dump_instance
-from formatters import dump_definition
-
-from vstruct.primitives import v_bytes
-from vstruct.primitives import v_zstr
-
-from vstructui import get_parsers
-from vstructui import VstructInstance
-
 
 
 Context = namedtuple("Context", ["cim", "index", "object_resolver"])
