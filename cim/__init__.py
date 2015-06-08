@@ -1,7 +1,7 @@
 __version__ = "0.1a1"
 
 from .cim import *
-import cim.common
-import cim.formatters
-import cim.mutablenamedtuple
-import cim.objects
+from . import common
+from . import formatters
+from . import mutablenamedtuple
+from . import objects
