@@ -257,7 +257,7 @@ class QualifierReference(vstruct.VStruct):
 
     def __repr__(self):
         return "QualifierReference(type: {:s}, isBuiltinKey: {:b}, keyref: {:s})".format(
-                self.value_type,
+                str(self.value_type),
                 self.is_builtin_key,
                 h(self.key)
             )
