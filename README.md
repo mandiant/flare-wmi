@@ -48,7 +48,7 @@ scripts that inspect the database. The scripts `dump_class_definition.py` and
 `dump_class_instance.py` provide sample code.
 
 
-=== `ui.py`
+### `ui.py`
 
 The package also provides a basic GUI interface based on PyQt5. Users can inspect
 a CIM repository visually using the following command:
@@ -57,7 +57,7 @@ a CIM repository visually using the following command:
 python cim.py <xp|win7> /path/to/CIM/directory
 ```
 
-=== `dump_keys.py`
+### `dump_keys.py`
 
 Print all the keys in the database index using a human readable format (hashes are shortened).
 
@@ -74,7 +74,7 @@ Print all the keys in the database index using a human readable format (hashes a
     NS_0B28/CD_8E99...2805.3207675482.430
 
 
-=== `dump_class_definition.py`
+### `dump_class_definition.py`
 
 Print the class definition, layout, and inheritance chain for a given class name.
 
@@ -217,7 +217,7 @@ Print the class definition, layout, and inheritance chain for a given class name
     000000de (04)   _data_length: 0x8000038e (2147484558)
     000000e2 (910)   data: 004e544576656e744c6f674576656e74436f6e737...
 
-=== `dump_class_instance.py`
+### `dump_class_instance.py`
 
 Dump the property field values for the given class instance, or property fields for all instances with the given
 class. Use the format `PropName1=PropValue1,PropName2=PropValue2` to specify the instance key.
@@ -269,7 +269,7 @@ class. Use the format `PropName1=PropValue1,PropName2=PropValue2` to specify the
       ProductName=Microsoft Windows
 
 
-=== `dump_object.py`
+### `dump_object.py`
 
 Dump the raw binary data for the given object ID.
 
@@ -300,7 +300,7 @@ Dump the raw binary data for the given object ID.
     0000170: 6e72 6174 6500                           nrate.
     
     
-=== `hash_term.py`
+### `hash_term.py`
 
 Hash the given terms using the hashing algorithm used in the supplied CIM repository.
 The script encodes the given terms as UTF-16LE prior to performing the hashing operation.
