@@ -116,6 +116,7 @@ CIM_TYPES.CIM_TYPE_UINT8 = 0x11
 CIM_TYPES.CIM_TYPE_UINT16 = 0x12
 CIM_TYPES.CIM_TYPE_UINT32= 0x13
 CIM_TYPES.CIM_TYPE_UINT64 = 0x15
+CIM_TYPES.CIM_TYPE_REFERENCE = 0x66
 CIM_TYPES.CIM_TYPE_DATETIME = 0x65
 
 CIM_TYPE_SIZES = {
@@ -128,7 +129,8 @@ CIM_TYPE_SIZES = {
     CIM_TYPES.CIM_TYPE_UINT32: 4,
     CIM_TYPES.CIM_TYPE_UINT64: 8,
     # looks like: stringref to "\x00 00000000000030.000000:000"
-    CIM_TYPES.CIM_TYPE_DATETIME: 4
+    CIM_TYPES.CIM_TYPE_DATETIME: 4,
+    CIM_TYPES.CIM_TYPE_REFERENCE: 4,
 }
 
 
@@ -233,8 +235,12 @@ BUILTIN_QUALIFIERS.CLASS_UNK = 0x7
 BUILTIN_QUALIFIERS.PROP_TYPE = 0xA
 
 BUILTIN_PROPERTIES = v_enum()
+BUILTIN_PROPERTIES.PRIMARY_KEY = 0x1
+BUILTIN_PROPERTIES.READ = 0x3
+BUILTIN_PROPERTIES.WRITE = 0x4
 BUILTIN_PROPERTIES.PROVIDER = 0x6
-BUILTIN_PROPERTIES.REFERENCE = 0x66
+BUILTIN_PROPERTIES.DYNAMIC = 0x7
+BUILTIN_PROPERTIES.TYPE = 0xA
 
 class QualifierReference(vstruct.VStruct):
     # ref:4 + unk0:1 + valueType:4 = 9
@@ -367,15 +373,15 @@ class PropertyReference(vstruct.VStruct):
         return BUILTIN_PROPERTIES.vsReverseMapping(key)
 
     def __repr__(self):
-        if self.is_builtin_property:
-            return "PropertyReference(isBuiltinKey: false, nameref: {:s}, structref: {:s})".format(
-                h(self.offset_property_name),
-                h(self.offset_property_struct))
-        else:
+       if self.is_builtin_property:
             return "PropertyReference(isBuiltinKey: true, name: {:s}, structref: {:s})".format(
                 self.builtin_property_name,
                 h(self.offset_property_struct))
-
+       else:
+            return "PropertyReference(isBuiltinKey: false, nameref: {:s}, structref: {:s})".format(
+                h(self.offset_property_name),
+                h(self.offset_property_struct))
+ 
 
 class PropertyReferenceList(vstruct.VStruct):
     def __init__(self):
