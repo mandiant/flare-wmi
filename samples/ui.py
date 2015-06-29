@@ -1,5 +1,6 @@
 import os
 import logging
+import traceback
 from collections import namedtuple
 
 from funcy.objects import cached_property
@@ -714,7 +715,10 @@ class ClassDefinitionItemView(QTabWidget, LoggingObject):
         super(ClassDefinitionItemView, self).__init__(parent)
         self._cd_item = cd_item
 
-        txt = dump_definition(cd_item.cd, cd_item.cl)
+        try:
+            txt = dump_definition(cd_item.cd, cd_item.cl)
+        except:
+            txt = traceback.format_exc()
         self.addTab(FixedWidthTextView(txt), "Class details")
 
         # TODO: hack get_parsers() until we have a unified repo/config
