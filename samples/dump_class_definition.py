@@ -24,6 +24,7 @@ def main(type_, path, namespaceName, className):
             print(dump_definition(cd, cl))
         except:
             print("ERROR: failed to dump class definition!")
+            print(traceback.format_exc())
         className = cd.super_class_name
 
 
