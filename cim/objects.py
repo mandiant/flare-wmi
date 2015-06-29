@@ -232,6 +232,9 @@ BUILTIN_QUALIFIERS.CLASS_NAMESPACE = 0x6
 BUILTIN_QUALIFIERS.CLASS_UNK = 0x7
 BUILTIN_QUALIFIERS.PROP_TYPE = 0xA
 
+BUILTIN_PROPERTIES = v_enum()
+BUILTIN_PROPERTIES.PROVIDER = 0x6
+BUILTIN_PROPERTIES.REFERENCE = 0x66
 
 class QualifierReference(vstruct.VStruct):
     # ref:4 + unk0:1 + valueType:4 = 9
@@ -319,7 +322,10 @@ class Property(LoggingObject):
     @property
     def name(self):
         # TODO: don't reach
-        return self._class_definition._fields.get_string(self._propref.offset_property_name)
+        if self._propref.is_builtin_property:
+            return self._propref.builtin_property_name
+        else:
+            return self._class_definition._fields.get_string(self._propref.offset_property_name)
 
     @property
     def type(self):
@@ -348,6 +354,27 @@ class PropertyReference(vstruct.VStruct):
         vstruct.VStruct.__init__(self)
         self.offset_property_name = v_uint32()
         self.offset_property_struct = v_uint32()
+
+    @property
+    def is_builtin_property(self):
+        return self.offset_property_name & 0x80000000 > 0
+
+    @property
+    def builtin_property_name(self):
+        if not self.is_builtin_property:
+            raise RuntimeError("property is not builtin")
+        key = self.offset_property_name & 0x7FFFFFFF
+        return BUILTIN_PROPERTIES.vsReverseMapping(key)
+
+    def __repr__(self):
+        if self.is_builtin_property:
+            return "PropertyReference(isBuiltinKey: false, nameref: {:s}, structref: {:s})".format(
+                h(self.offset_property_name),
+                h(self.offset_property_struct))
+        else:
+            return "PropertyReference(isBuiltinKey: true, name: {:s}, structref: {:s})".format(
+                self.builtin_property_name,
+                h(self.offset_property_struct))
 
 
 class PropertyReferenceList(vstruct.VStruct):
@@ -1021,6 +1048,8 @@ class ObjectResolver(LoggingObject):
         for ref, ns_i in self.get_objects(q):
             i = self.parse_instance(self.ns_cl, ns_i)
             yield self.NamespaceSpecifier(namespace_name + "\\" + i.get_property_value("Name"))
+        if namespace_name == ROOT_NAMESPACE_NAME:
+            yield self.NamespaceSpecifier(SYSTEM_NAMESPACE_NAME)
 
     ClassDefinitionSpecifier = namedtuple("ClassDefintionSpecifier", ["namespace_name", "class_name"])
     def get_ns_children_cd(self, namespace_name):
