@@ -6,6 +6,7 @@
 #   class instance: "root\\CIMV2" Microsoft_BDD_Info NS_68577372C66A7B20658487FBD959AA154EF54B5F935DCC5663E9228B44322805/CI_6FCB95E1CB11D0950DA7AE40A94D774F02DCD34701D9645E00AB9444DBCF640B/IL_EEC4121F2A07B61ABA16414812AA9AFC39AB0A136360A5ACE2240DC19B0464EB.1606.116085.3740
 
 import logging
+import traceback
 import functools
 from datetime import datetime
 from collections import namedtuple
@@ -106,6 +107,59 @@ class ClassDefinitionHeader(vstruct.VStruct):
             self.vsSetField("super_class_ascii", v_str(size=0))
             self.vsSetField("unk4", v_str(size=0))
 
+
+comment = """
+
+enum VARENUM {  VT_EMPTY             = 0,
+  VT_NULL              = 1,
+  VT_I2                = 2,
+  VT_I4                = 3,
+  VT_R4                = 4,
+  VT_R8                = 5,
+  VT_CY                = 6,
+  VT_DATE              = 7,
+  VT_BSTR              = 8,
+  VT_DISPATCH          = 9,
+  VT_ERROR             = 10,
+  VT_BOOL              = 11,
+  VT_VARIANT           = 12,
+  VT_UNKNOWN           = 13,
+  VT_DECIMAL           = 14,
+  VT_I1                = 16,
+  VT_UI1               = 17,
+  VT_UI2               = 18,
+  VT_UI4               = 19,
+  VT_I8                = 20,
+  VT_UI8               = 21,
+  VT_INT               = 22,
+  VT_UINT              = 23,
+  VT_VOID              = 24,
+  VT_HRESULT           = 25,
+  VT_PTR               = 26,
+  VT_SAFEARRAY         = 27,
+  VT_CARRAY            = 28,
+  VT_USERDEFINED       = 29,
+  VT_LPSTR             = 30,
+  VT_LPWSTR            = 31,
+  VT_RECORD            = 36,
+  VT_INT_PTR           = 37,
+  VT_UINT_PTR          = 38,
+  VT_FILETIME          = 64,
+  VT_BLOB              = 65,
+  VT_STREAM            = 66,
+  VT_STORAGE           = 67,
+  VT_STREAMED_OBJECT   = 68,
+  VT_STORED_OBJECT     = 69,
+  VT_BLOB_OBJECT       = 70,
+  VT_CF                = 71,
+  VT_CLSID             = 72,
+  VT_VERSIONED_STREAM  = 73,
+  VT_BSTR_BLOB         = 0xfff,
+  VT_VECTOR            = 0x1000,
+  VT_ARRAY             = 0x2000,
+  VT_BYREF             = 0x4000
+};
+"""
 
 CIM_TYPES = v_enum()
 CIM_TYPES.CIM_TYPE_LANGID = 0x3
@@ -1077,7 +1131,13 @@ class ObjectResolver(LoggingObject):
                     self.IL()))
 
         for ref, ibuf in self.get_objects(q):
-            instance = self.parse_instance(self.get_cl(namespace_name, class_name), ibuf)
+            try:
+                instance = self.parse_instance(self.get_cl(namespace_name, class_name), ibuf)
+            except:
+                g_logger.error("failed to parse instance: %s %s at %s", namespace_name, class_name, ref)
+                g_logger.error(traceback.format_exc())
+                continue
+
             # str(instance.key) is sorted k-v pairs, should be unique
             self._ihashcache[str(instance.key)] = ref.get_part_hash("IL_")
             yield self.ClassInstanceSpecifier(namespace_name, class_name, instance.key)
@@ -1094,7 +1154,7 @@ class TreeNamespace(LoggingObject):
         self.name = name
 
     def __repr__(self):
-        return "Namespace(name: {:s})".format(self.name)
+        return "\\{namespace:s}".format(namespace=self.name)
 
     @property
     def namespace(self):
@@ -1133,7 +1193,7 @@ class TreeClassDefinition(LoggingObject):
         self.name = name
 
     def __repr__(self):
-        return "ClassDefinition(namespace: {:s}, name: {:s})".format(self.ns, self.name)
+        return "\\{namespace:s}:{klass:s}".format(namespace=self.ns, klass=self.name)
 
     @property
     def namespace(self):
@@ -1156,7 +1216,7 @@ class TreeClassDefinition(LoggingObject):
             key = str(ci.instance_key)
             if key not in yielded:
                 yielded.add(key)
-                yield TreeClassInstance(self._object_resolver, self.name, ci.class_name, ci.instance_key)
+                yield TreeClassInstance(self._object_resolver, self.ns, ci.class_name, ci.instance_key)
 
 
 class TreeClassInstance(LoggingObject):
@@ -1168,10 +1228,8 @@ class TreeClassInstance(LoggingObject):
         self.instance_key = instance_key
 
     def __repr__(self):
-        return "ClassInstance(namespace: {:s}, class: {:s}, key: {:s})".format(
-            self.ns,
-            self.class_name,
-            self.instance_key)
+        return "\\{namespace:s}:{klass:s}.{key:s}".format(
+            namespace=self.ns, klass=self.class_name, key=repr(self.instance_key))
 
     @property
     def klass(self):
@@ -1183,11 +1241,23 @@ class TreeClassInstance(LoggingObject):
         """ get parent namespace """
         return TreeNamespace(self._object_resolver, self.ns)
 
+    @property
+    def cl(self):
+        return self._object_resolver.get_cl(self.ns, self.class_name)
+
+    @property
+    def cd(self):
+        return self._object_resolver.get_cd(self.ns, self.class_name)
+
+    @property
+    def ci(self):
+        return self._object_resolver.get_ci(self.ns, self.class_name, self.instance_key)
+
 
 class Tree(LoggingObject):
     def __init__(self, cim):
         super(Tree, self).__init__()
-        self._object_resolver = ObjectResolver(cim, Index(cim.getCimType, cim.logical_index_store))
+        self._object_resolver = ObjectResolver(cim, Index(cim.cim_type, cim.logical_index_store))
 
     def __repr__(self):
         return "Tree"
