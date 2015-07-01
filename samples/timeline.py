@@ -1,31 +1,39 @@
 import logging
 import traceback
 
+g_logger = logging.getLogger("cim.timeline")
+
 from cim import CIM
-from cim import Index
-from cim.objects import ObjectResolver
-from cim.formatters import dump_definition
+from cim.objects import Tree
 
 
-def main(type_, path, namespaceName, className):
+def format_ts(ts):
+    return ts.isoformat("T") + "Z"
+
+
+def rec_namespace(namespace):
+    for klass in namespace.classes:
+        print("{ts:s},ClassDefinition.timestamp,{id:s}".format(
+            ts=format_ts(klass.cd.header.timestamp), id=repr(klass)))
+        for instance in klass.instances:
+            try:
+                print("{ts:s},ClassInstance.timestamp1,{id:s}".format(
+                    ts=format_ts(instance.ci.ts1), id=repr(instance)))
+                print("{ts:s},ClassInstance.timestamp2,{id:s}".format(
+                    ts=format_ts(instance.ci.ts2), id=repr(instance)))
+            except:
+                g_logger.error(traceback.format_exc())
+    for ns in namespace.namespaces:
+        rec_namespace(ns)
+
+
+def main(type_, path):
     if type_ not in ("xp", "win7"):
         raise RuntimeError("Invalid mapping type: {:s}".format(type_))
 
     c = CIM(type_, path)
-    i = Index(c.cim_type, c.logical_index_store)
-    o = ObjectResolver(c, i)
-
-    while className != "":
-        print("%s" % "=" * 80)
-        print("namespace: %s" % namespaceName)
-        cd = o.get_cd(namespaceName, className)
-        cl = o.get_cl(namespaceName, className)
-        try:
-            print(dump_definition(cd, cl))
-        except:
-            print("ERROR: failed to dump class definition!")
-            print(traceback.format_exc())
-        className = cd.super_class_name
+    tree = Tree(c)
+    rec_namespace(tree.root)
 
 
 if __name__ == "__main__":
