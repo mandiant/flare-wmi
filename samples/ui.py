@@ -852,7 +852,6 @@ class CimUiForm(QWidget, LoggingObject):
             self.w("unknown query schema: %s", query_text)
 
     def _handle_moniker_query(self, moniker):
-        self.d("%s %s %s %s", str(moniker), str(moniker.namespace), str(moniker.klass), str(moniker.instance))
         if moniker.instance:
             item = ClassInstanceItem(self._ctx, moniker.namespace, moniker.klass, moniker.instance)
             model_item = QStandardItem(str(moniker))
@@ -872,9 +871,7 @@ class CimUiForm(QWidget, LoggingObject):
 
     def _handle_results_item_activated(self, itemIndex):
         emptyLayout(self._ui.queryResultsViewLayout)
-
         item = self._query_model.itemFromIndex(itemIndex).data()
-        self.d("item changed: %s", item)
 
         if isinstance(item, Key):
             buf = self._ctx.object_resolver.get_object(item)
@@ -884,10 +881,12 @@ class CimUiForm(QWidget, LoggingObject):
 
         elif isinstance(item, ClassDefinitionItem):
             v = ClassDefinitionItemView(item, self._ui.queryResultsViewFrame)
+            self._save_buffer = item.data
             self._ui.queryResultsViewLayout.addWidget(v)
 
         elif isinstance(item, ClassInstanceItem):
             v = ClassInstanceItemView(item, self._ui.queryResultsViewFrame)
+            self._save_buffer = item.data
             self._ui.queryResultsViewLayout.addWidget(v)
 
         elif isinstance(item, NamespaceItem):
