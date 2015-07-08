@@ -968,6 +968,8 @@ class ObjectResolver(LoggingObject):
         """ fetch the first object buffer matching the query """
         self.d("query: %s", str(query))
         ref = one(self._index.lookup_keys(query))
+        if not ref:
+            raise IndexError("Failed to find: {:s}".format(str(query)))
         # TODO: should ensure this query has a unique result
         return self._cim.logical_data_store.get_object_buffer(ref)
 

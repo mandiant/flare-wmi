@@ -18,7 +18,11 @@ def main(type_, path, namespaceName, className):
     while className != "":
         print("%s" % "=" * 80)
         print("namespace: %s" % namespaceName)
-        cd = o.get_cd(namespaceName, className)
+        try:
+            cd = o.get_cd(namespaceName, className)
+        except IndexError:
+            print("ERROR: failed to find requested class definition")
+            return
         cl = o.get_cl(namespaceName, className)
         try:
             print(dump_definition(cd, cl))
