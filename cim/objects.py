@@ -292,6 +292,7 @@ BUILTIN_PROPERTIES = v_enum()
 BUILTIN_PROPERTIES.PRIMARY_KEY = 0x1
 BUILTIN_PROPERTIES.READ = 0x3
 BUILTIN_PROPERTIES.WRITE = 0x4
+BUILTIN_PROPERTIES.VOLATILE = 0x5
 BUILTIN_PROPERTIES.PROVIDER = 0x6
 BUILTIN_PROPERTIES.DYNAMIC = 0x7
 BUILTIN_PROPERTIES.TYPE = 0xA
@@ -1266,3 +1267,65 @@ class Tree(LoggingObject):
     def root(self):
         """ get root namespace """
         return TreeNamespace(self._object_resolver, ROOT_NAMESPACE_NAME)
+
+
+class Moniker(LoggingObject):
+    def __init__(self, string):
+        super(Moniker, self).__init__()
+        self._string = string
+        self.hostname = None  # type: str
+        self.namespace = None  # type: str
+        self.klass = None  # type: str
+        self.instance = None  # type: dict of str to str
+        self._parse()
+
+    def __str__(self):
+        return self._string
+
+    def __repr__(self):
+        return "Moniker({:s})".format(self._string)
+
+    def _parse(self):
+        """
+        supported schemas:
+            //./root/cimv2 --> namespace
+            //HOSTNAME/root/cimv2 --> namespace
+            winmgmts://./root/cimv2 --> namespace
+            //./root/cimv2:Win32_Service --> class
+            //./root/cimv2:Win32_Service.Name="Beep" --> instance
+            //./root/cimv2:Win32_Service.Name='Beep' --> instance
+
+        we'd like to support this, but can't differentiate this
+          from a class:
+            //./root/cimv2/Win32_Service --> class
+        """
+        s = self._string
+        s = s.replace("\\", "/")
+
+        if s.startswith("winmgmts:"):
+            s = s[len("winmgmts:"):]
+
+        if not s.startswith("//"):
+            raise RuntimeError("Moniker doesn't contain '//': %s" % (s))
+        s = s[len("//"):]
+
+        self.hostname, _, s = s.partition("/")
+        if self.hostname == ".":
+            self.hostname = "localhost"
+
+        s, _, keys = s.partition(".")
+        if keys == "":
+            keys = None
+        # s must now not contain any special characters
+        # we'll process the keys later
+
+        self.namespace, _, self.klass = s.partition(":")
+        if self.klass == "":
+            self.klass = None
+        self.namespace = self.namespace.replace("/", "\\")
+
+        if keys is not None:
+            self.instance = {}
+            for key in keys.split(","):
+                k, _, v = key.partition("=")
+                self.instance[k] = v.strip("\"'")

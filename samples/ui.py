@@ -24,6 +24,7 @@ from cim import INDEX_PAGE_TYPES
 from cim.objects import TreeNamespace
 from cim.objects import TreeClassDefinition
 from cim.objects import ObjectResolver
+from cim.objects import Moniker
 from cim.common import h
 from cim.common import LoggingObject
 from cim.formatters import dump_instance
@@ -745,9 +746,9 @@ class ClassInstanceItemView(QTabWidget, LoggingObject):
         self.addTab(hv, "Hex view")
 
 
-class Form(QWidget, LoggingObject):
+class CimUiForm(QWidget, LoggingObject):
     def __init__(self, ctx, parent=None):
-        super(Form, self).__init__(parent)
+        super(CimUiForm, self).__init__(parent)
         self._ctx = ctx
         self._tree_model = TreeModel(
                 CimRootItem(ctx),
@@ -769,7 +770,6 @@ class Form(QWidget, LoggingObject):
         tv.activated.connect(self._handle_browse_item_activated)
 
         self._query_model = QStandardItemModel(self._ui.queryResultsList)
-        self._query_model_item_map = {}
         self._ui.queryResultsList.setModel(self._query_model)
         self._ui.queryInputLineEdit.returnPressed.connect(self._handle_query)
         self._ui.queryInputActionButton.clicked.connect(self._handle_query)
@@ -826,7 +826,6 @@ class Form(QWidget, LoggingObject):
         viewLayout = self._ui.queryResultsViewLayout
         emptyLayout(viewLayout)
         self._query_model.clear()
-        self._query_model_item_map = {}
 
         query_text = self._ui.queryInputLineEdit.text()
         self.d("query: %s", query_text)
@@ -834,23 +833,68 @@ class Form(QWidget, LoggingObject):
             self.d("key query")
             for o in self._ctx.object_resolver.get_keys(Key(query_text)):
                 self.d("  query result: %s", o)
-                self._query_model_item_map[o.human_format] = o
                 item = QStandardItem(o.human_format)
+                item.setData(o)
                 self._query_model.appendRow(item)
+        elif query_text.lower().startswith("root"):
+            self.d("logical query (missing host)")
+            m = Moniker("//./" + query_text)
+            self._handle_moniker_query(m)
+        elif query_text.lower().startswith("//"):
+            self.d("logical query")
+            m = Moniker(query_text)
+            self._handle_moniker_query(m)
+        elif query_text.lower().startswith("winmgmts:"):
+            self.d("logical query (winmgmnts)")
+            m = Moniker(query_text)
+            self._handle_moniker_query(m)
         else:
             self.w("unknown query schema: %s", query_text)
+
+    def _handle_moniker_query(self, moniker):
+        self.d("%s %s %s %s", str(moniker), str(moniker.namespace), str(moniker.klass), str(moniker.instance))
+        if moniker.instance:
+            item = ClassInstanceItem(self._ctx, moniker.namespace, moniker.klass, moniker.instance)
+            model_item = QStandardItem(str(moniker))
+            model_item.setData(item)
+            self._query_model.appendRow(model_item)
+        elif moniker.klass:
+            model_item = QStandardItem(str(moniker))
+            model_item.setData(ClassDefinitionItem(self._ctx, moniker.namespace, moniker.klass))
+            self._query_model.appendRow(model_item)
+        elif moniker.namespace:
+            item = NamespaceItem(self._ctx, moniker.namespace)
+            model_item = QStandardItem(str(moniker))
+            model_item.setData(item)
+            self._query_model.appendRow(model_item)
+        else:
+            self.w("no meaningful moniker fields: %s", str(moniker))
 
     def _handle_results_item_activated(self, itemIndex):
         emptyLayout(self._ui.queryResultsViewLayout)
 
-        item = self._query_model.itemFromIndex(itemIndex)
-        o = self._query_model_item_map[item.text()]
-        self.d("item changed: %s", o)
+        item = self._query_model.itemFromIndex(itemIndex).data()
+        self.d("item changed: %s", item)
 
-        buf = self._ctx.object_resolver.get_object(o)
-        self._save_buffer = buf
-        hv = HexViewWidget(buf, self._ui.queryResultsViewFrame)
-        self._ui.queryResultsViewLayout.addWidget(hv)
+        if isinstance(item, Key):
+            buf = self._ctx.object_resolver.get_object(item)
+            self._save_buffer = buf
+            hv = HexViewWidget(buf, self._ui.queryResultsViewFrame)
+            self._ui.queryResultsViewLayout.addWidget(hv)
+
+        elif isinstance(item, ClassDefinitionItem):
+            v = ClassDefinitionItemView(item, self._ui.queryResultsViewFrame)
+            self._ui.queryResultsViewLayout.addWidget(v)
+
+        elif isinstance(item, ClassInstanceItem):
+            v = ClassInstanceItemView(item, self._ui.queryResultsViewFrame)
+            self._ui.queryResultsViewLayout.addWidget(v)
+
+        elif isinstance(item, NamespaceItem):
+            l = QLabel(self._ui.queryResultsViewFrame)
+            l.setText("Don't know how to display namespaces yet")
+            self.w("dont know how to display namespaces")
+            self._ui.queryResultsViewLayout.addWidget(l)
 
     def _handle_save(self):
         if self._save_buffer is None:
@@ -876,7 +920,7 @@ def main(type_, path):
     ctx = Context(c, index, object_resolver)
 
     app = QApplication(sys.argv)
-    screen = Form(ctx)
+    screen = CimUiForm(ctx)
     screen.show()
     sys.exit(app.exec_())
 
