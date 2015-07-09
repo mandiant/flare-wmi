@@ -77,36 +77,6 @@ class WMIString(vstruct.VStruct):
         return self.s.vsGetValue()
 
 
-class ClassDefinitionHeader(vstruct.VStruct):
-    def __init__(self):
-        vstruct.VStruct.__init__(self)
-        self.super_class_unicode_length = v_uint32()
-        self.super_class_unicode = v_wstr(size=0)  # not present if no superclass
-        self.timestamp = FILETIME()
-        self.unk0 = v_uint8()
-        self.unk1 = v_uint32()
-        self.offset_class_name = v_uint32()
-        self.junk_length = v_uint32()
-
-        # junk type:
-        #   0x19 - has 0xC5000000 at after about 0x10 bytes of 0xFF
-        #     into `junk`
-        self.unk3 = v_uint32()
-        self.super_class_ascii = WMIString()  # not present if no superclass
-
-        # has to do with junk
-        # if junk type:
-        #   0x19 - then 0x11
-        #   0x18 - then 0x10
-        #   0x17 - then 0x0F
-        self.unk4 = v_uint32()  # not present if no superclass
-
-    def pcb_super_class_unicode_length(self):
-        self["super_class_unicode"].vsSetLength(self.super_class_unicode_length * 2)
-        if self.super_class_unicode_length == 0:
-            self.vsSetField("super_class_ascii", v_str(size=0))
-            self.vsSetField("unk4", v_str(size=0))
-
 
 comment = """
 
@@ -505,6 +475,72 @@ class ClassFieldGetter(LoggingObject):
         return self.get_string(qualifier.key)
 
 
+class ClassDefinitionHeader(vstruct.VStruct):
+    def __init__(self):
+        vstruct.VStruct.__init__(self)
+        self.super_class_unicode_length = v_uint32()
+        self.super_class_unicode = v_wstr(size=0)  # not present if no superclass
+        self.timestamp = FILETIME()
+        self.unk0 = v_uint8()
+        self.unk1 = v_uint32()
+        self.offset_class_name = v_uint32()
+        self.property_default_values_length = v_uint32()
+        self.unk3 = v_uint32()
+        self.super_class_ascii = WMIString()  # not present if no superclass
+        self.unk4 = v_uint32()  # not present if no superclass
+
+    def pcb_super_class_unicode_length(self):
+        self["super_class_unicode"].vsSetLength(self.super_class_unicode_length * 2)
+        if self.super_class_unicode_length == 0:
+            self.vsSetField("super_class_ascii", v_str(size=0))
+            self.vsSetField("unk4", v_str(size=0))
+
+
+PropertyDefaultsState = namedtuple("PropertyDefaultsState", ["is_inherited", "has_default_value"])
+
+
+def compute_property_state_length(num_properties):
+    """
+    get number of bytes required to describe state of a bunch of properties.
+    two bits per property, rounded up to the nearest byte.
+    :rtype: int
+    """
+    required_bits = 2 * num_properties
+    if required_bits % 8 == 0:
+        delta_to_nearest_byte = 0
+    else:
+        delta_to_nearest_byte = 8 - (required_bits % 8)
+    total_bits = required_bits + delta_to_nearest_byte
+    total_bytes = total_bits // 8
+    return total_bytes
+
+
+class PropertyDefaultValues(vstruct.VArray):
+    # two bits per property, rounded up to the nearest byte
+    def __init__(self, properties):
+        vstruct.VArray.__init__(self)
+        self._properties = properties
+
+        self.state = vstruct.VArray()
+        total_bytes = compute_property_state_length(len(self._properties))
+        self.state.vsAddElements(total_bytes, v_uint8)
+
+        self.default_values_toc = vstruct.VArray()
+        for prop in self._properties:
+            P = prop.type.value_parser
+            self.default_values_toc.vsAddElement(P())
+
+    def get_state_by_index(self, prop_index):
+        if prop_index > len(self._properties):
+            raise RuntimeError("invalid prop_index")
+
+        state_index = prop_index // 4
+        byte_of_state = self.state[state_index]
+        rotations = prop_index % 4
+        state_flags = (byte_of_state >> (2 * rotations)) & 0x3
+        return PropertyDefaultsState(state_flags & 0b10 == 0, state_flags & 0b01 > 0)
+
+
 class ClassDefinition(vstruct.VStruct, LoggingObject):
     def __init__(self):
         vstruct.VStruct.__init__(self)
@@ -513,14 +549,16 @@ class ClassDefinition(vstruct.VStruct, LoggingObject):
         self.header = ClassDefinitionHeader()
         self.qualifiers_list = QualifiersList()
         self.property_references = PropertyReferenceList()
-        self.junk = v_bytes(size=0)
+        # useful with the PropertyDefaultValues structure, but that requires
+        #  a complete list of properties from the ClassLayout
+        self.property_default_values_data = v_bytes(size=0)
         self._data_length = v_uint32()
         self.data = v_bytes(size=0)
 
         self._fields = ClassFieldGetter(self.data)
 
-    def pcb_header(self):
-        self["junk"].vsSetLength(self.header.junk_length)
+    def pcb_property_references(self):
+        self["property_default_values_data"].vsSetLength(self.header.property_default_values_length)
 
     @property
     def data_length(self):
@@ -533,7 +571,14 @@ class ClassDefinition(vstruct.VStruct, LoggingObject):
         self._fields = ClassFieldGetter(self.data)
 
     def __repr__(self):
-        return "ClassDefinition(name: {:s})".format(self.class_name)
+        # TODO: fixme
+        return "ClassDefinition(name: {:s})".format("1" or self.class_name)
+
+    def is_inherited_property(self, prop_index):
+        pass
+
+    def has_default_value(self, prop_index):
+        pass
 
     @property
     def keys(self):
@@ -579,7 +624,14 @@ class ClassDefinition(vstruct.VStruct, LoggingObject):
 
     @cached_property
     def properties(self):
-        """ :rtype: Mapping[str, Property] """
+        """
+        Get the Properties specific to this Class Definition.
+        That is, don't return Properties inherited from ancestors.
+        Note, you can't compute default values using only this field, since
+          the complete class layout is required.
+
+        :rtype: Mapping[str, Property]
+        """
         ret = {}
         proprefs = self.property_references
         for i in range(proprefs.count):
@@ -587,7 +639,6 @@ class ClassDefinition(vstruct.VStruct, LoggingObject):
             prop = Property(self, propref)
             ret[prop.name] = prop
         return ret
-
 
 
 class InstanceKey(object):
@@ -633,6 +684,9 @@ class ClassInstance(vstruct.VStruct, LoggingObject):
         self.ts1 = FILETIME()
         self.ts2 = FILETIME()
         self.data_length2 = v_uint32()  # length of entire instance data
+        #self.offset_instance_class_name = v_uint32()
+        #self.unk0 = v_uint8()
+        #self.property_state_data = v_bytes(size=compute_property_state_length(len(self.class_layout.properties)))
         self.extra_padding = v_bytes(size=0)
 
         self.toc = vstruct.VArray()
@@ -873,6 +927,11 @@ class CoreClassInstance(vstruct.VStruct, LoggingObject):
 
 class ClassLayout(LoggingObject):
     def __init__(self, object_resolver, namespace, class_definition):
+        """
+        :type object_resolver: ObjectResolver
+        :type namespace: str
+        :type class_definition: ClassDefinition
+        """
         super(ClassLayout, self).__init__()
         self.object_resolver = object_resolver
         self.namespace = namespace
@@ -881,7 +940,8 @@ class ClassLayout(LoggingObject):
     @cached_property
     def properties(self):
         class_name = self.class_definition.class_name
-        class_derivation = []  # initially, ordered from child to parent
+        # initially, ordered from child to parent
+        class_derivation = []  # type: Sequence[ClassDefinition]
         while class_name != "":
             cd = self.object_resolver.get_cd(self.namespace, class_name)
             class_derivation.append(cd)
@@ -897,19 +957,33 @@ class ClassLayout(LoggingObject):
         self.d("%s derivation: %s", self.class_definition.class_name,
                 list(map(lambda c: c.class_name, class_derivation)))
 
-        ret = []
+        props = {}
         while len(class_derivation) > 0:
             cd = class_derivation.pop(0)
             for prop in sorted(cd.properties.values(), key=lambda p: p.entry_number):
-                ret.append(prop)
+                props[prop.entry_number] = prop
+        props = props.values()
+
+        state_buf = self.class_definition.property_default_values_data
+        import hexdump
+        hexdump.hexdump(state_buf)
+        offset = 0x0
+        for prop in props:
+            l = CIM_TYPE_SIZES[prop.type.type]
+            if prop.type.is_array:
+                l = 0x4
+            print("  ", prop.name, prop.type, hex(l), hex(offset))
+            offset += l
+        state = PropertyDefaultValues(props)
+        state.vsParse(state_buf)
 
         self.d("%s property layout: %s",
                 self.class_definition.class_name,
-                list(map(lambda p: p.name, ret)))
-        return ret
+                list(map(lambda p: p.name, props)))
+        return props
 
     @cached_property
-    def properties_toc_length(self):
+    def properties_length(self):
         off = 0
         for prop in self.properties:
             if prop.type.is_array:
@@ -1271,6 +1345,7 @@ class Tree(LoggingObject):
         return TreeNamespace(self._object_resolver, ROOT_NAMESPACE_NAME)
 
 
+# TODO: this probably doesn't go here
 class Moniker(LoggingObject):
     def __init__(self, string):
         super(Moniker, self).__init__()
