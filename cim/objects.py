@@ -324,16 +324,23 @@ class QualifiersList(vstruct.VStruct):
 
 
 class _Property(vstruct.VStruct):
+    """
+    this is the on-disk property definition structure
+    """
     def __init__(self):
         vstruct.VStruct.__init__(self)
         self.type = CimType()  # the on-disk type for this property's value
         self.entry_number = v_uint16()  # the on-disk order for this property
-        self.unk1 = v_uint32()
-        self.unk2 = v_uint32()
+        self.offset = v_uint32()
+        self.level = v_uint32()
         self.qualifiers = QualifiersList()
 
 
 class Property(LoggingObject):
+    """
+    this is the logical property object parsed from a standalone class definition.
+    it is not aware of default values and inheritance behavior.
+    """
     def __init__(self, class_def, propref):
         super(Property, self).__init__()
         self._class_definition = class_def
@@ -481,19 +488,22 @@ class ClassDefinitionHeader(vstruct.VStruct):
         self.super_class_unicode_length = v_uint32()
         self.super_class_unicode = v_wstr(size=0)  # not present if no superclass
         self.timestamp = FILETIME()
-        self.unk0 = v_uint8()
-        self.unk1 = v_uint32()
+        self.data_length = v_uint32()  # size of data from this point forwards
+        self.unk1 = v_uint8()
         self.offset_class_name = v_uint32()
         self.property_default_values_length = v_uint32()
-        self.unk3 = v_uint32()
+        self.super_class_ascii_length = v_uint32()  # len(super class ascii string) + 8
         self.super_class_ascii = WMIString()  # not present if no superclass
-        self.unk4 = v_uint32()  # not present if no superclass
+        self.super_class_ascii_length2 = v_uint32()  # not present if no superclass, length of super class ascii string
 
     def pcb_super_class_unicode_length(self):
         self["super_class_unicode"].vsSetLength(self.super_class_unicode_length * 2)
         if self.super_class_unicode_length == 0:
+
+    def pcb_super_class_ascii_length(self):
+        if self.super_class_ascii_length == 0x4:
             self.vsSetField("super_class_ascii", v_str(size=0))
-            self.vsSetField("unk4", v_str(size=0))
+            self.vsSetField("super_class_ascii_length2", v_str(size=0))
 
 
 PropertyDefaultsState = namedtuple("PropertyDefaultsState", ["is_inherited", "has_default_value"])
