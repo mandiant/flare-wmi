@@ -498,7 +498,6 @@ class ClassDefinitionHeader(vstruct.VStruct):
 
     def pcb_super_class_unicode_length(self):
         self["super_class_unicode"].vsSetLength(self.super_class_unicode_length * 2)
-        if self.super_class_unicode_length == 0:
 
     def pcb_super_class_ascii_length(self):
         if self.super_class_ascii_length == 0x4:
@@ -551,6 +550,208 @@ class PropertyDefaultValues(vstruct.VArray):
         return PropertyDefaultsState(state_flags & 0b10 == 0, state_flags & 0b01 > 0)
 
 
+DataItem = namedtuple("DataItem", ["name", "offset", "struct"])
+
+
+class CimTypeArray(vstruct.VStruct, LoggingObject):
+    def __init__(self, cim_type):
+        vstruct.VStruct.__init__(self)
+        LoggingObject.__init__(self)
+        self._type = cim_type
+        self.count = v_uint32()
+        self.elements = vstruct.VArray()
+
+    def pcb_count(self):
+        self.elements.vsAddElements(self.count, self._type)
+
+
+class ClassDefinitionData(vstruct.VStruct, LoggingObject):
+    def __init__(self, class_name_offset, prop_list, qualifier_list):
+        """
+        :type class_name_offset: int
+        :type prop_list: PropertyReferenceList
+        :type qualifier_list: QualifiersList
+        """
+        vstruct.VStruct.__init__(self)
+        LoggingObject.__init__(self)
+
+        self._size = v_uint32()
+        self.items = vstruct.VStruct()
+        self._items = []
+        self._items.append(DataItem("class_name", class_name_offset, WMIString()))
+        self.data = ""
+
+        for i in range(prop_list.count):
+            prop_ref = prop_list.refs[i]  # type: PropertyReference
+            if not prop_ref.is_builtin_property:
+                self._items.append(DataItem(
+                    "prop:{:d}.name".format(i), prop_ref.offset_property_name, WMIString()))
+            self._items.append(DataItem(
+                "prop:{:d}.value".format(i), prop_ref.offset_property_struct, _Property()))
+
+                # TODO: how do we parse into the _Property to fetch the qualifiers?
+
+        for i in range(qualifier_list.count):
+            qual_ref = qualifier_list.qualifiers[i]
+            if qual_ref.is_builtin_key:
+                pass
+            else:
+                self._items.append(DataItem(
+                    "qualifier:{:d}.name".format(i), qual_ref.key, WMIString()))
+
+            field_name = "qualifier:{:d}.value".format(i)
+            if qual_ref.value_type.is_array:
+                P = qual_ref.value_type.value_parser()
+                self._items.append(DataItem(field_name, qual_ref.value, CimTypeArray(P)))
+            else:
+                t = qual_ref.value_type.type
+                if t == CIM_TYPES.CIM_TYPE_STRING:
+                    self._items.append(DataItem(field_name, qual_ref.value, WMIString()))
+                elif t == CIM_TYPES.CIM_TYPE_DATETIME:
+                    self._items.append(DataItem(field_name, qual_ref.value, WMIString()))
+
+        self._items = sorted(self._items, key=lambda i: i.offset)
+
+    @property
+    def size(self):
+        return self._size & 0x7FFFFFFF
+
+    def vsParse(self, bytez, offset=0, fast=False):
+        import hexdump
+        hexdump.hexdump(bytez)
+        soffset = offset
+        consumed_bytes = 0
+        items = self._items[:]
+
+        offset = self["_size"].vsParse(bytez, offset=offset)
+
+        padding_count = 0
+        while len(items) > 0:
+            item = items.pop(0)
+            if item.offset > consumed_bytes:
+                field_name = "padding_{:d}".format(padding_count)
+                delta_bytes = item.offset - consumed_bytes
+                v = v_bytes(size=delta_bytes)
+                self.items.vsAddField(field_name, v)
+                offset += delta_bytes
+                consumed_bytes += delta_bytes
+                padding_count += 1
+
+            v = item.struct
+            v.vsParse(bytez, offset=offset)
+            self.items.vsAddField(item.name, v)
+            offset += len(v)
+            consumed_bytes += len(v)
+
+        if consumed_bytes != self.size - 4:
+            field_name = "padding_{:d}".format(padding_count)
+            delta_bytes = self.size - consumed_bytes
+            v = v_bytes(size=delta_bytes)
+            self.items.vsAddField(field_name, v)
+            offset += delta_bytes
+            consumed_bytes += delta_bytes
+
+        self.data = bytez[soffset + 0x4:soffset + self.size]
+        return offset
+
+
+class E(vstruct.VStruct, LoggingObject):
+    def __init__(self, cd, buf):
+        vstruct.VStruct.__init__(self)
+        LoggingObject.__init__(self)
+
+        self._size = v_uint32()
+        self.items = vstruct.VStruct()
+        self._items = []
+        self._items.append(DataItem("class_name", class_name_offset, WMIString()))
+        self.data = ""
+
+        for i in range(prop_list.count):
+            prop_ref = prop_list.refs[i]  # type: PropertyReference
+            if not prop_ref.is_builtin_property:
+                self._items.append(DataItem(
+                    "prop:{:d}.name".format(i), prop_ref.offset_property_name, WMIString()))
+            self._items.append(DataItem(
+                "prop:{:d}.value".format(i), prop_ref.offset_property_struct, _Property()))
+
+                # TODO: how do we parse into the _Property to fetch the qualifiers?
+
+        for i in range(qualifier_list.count):
+            qual_ref = qualifier_list.qualifiers[i]
+            if qual_ref.is_builtin_key:
+                pass
+            else:
+                self._items.append(DataItem(
+                    "qualifier:{:d}.name".format(i), qual_ref.key, WMIString()))
+
+            field_name = "qualifier:{:d}.value".format(i)
+            if qual_ref.value_type.is_array:
+                P = qual_ref.value_type.value_parser()
+                self._items.append(DataItem(field_name, qual_ref.value, CimTypeArray(P)))
+            else:
+                t = qual_ref.value_type.type
+                if t == CIM_TYPES.CIM_TYPE_STRING:
+                    self._items.append(DataItem(field_name, qual_ref.value, WMIString()))
+                elif t == CIM_TYPES.CIM_TYPE_DATETIME:
+                    self._items.append(DataItem(field_name, qual_ref.value, WMIString()))
+
+        self._items = sorted(self._items, key=lambda i: i.offset)
+
+    @property
+    def size(self):
+        return self._size & 0x7FFFFFFF
+
+    def vsParse(self, bytez, offset=0, fast=False):
+        import hexdump
+        hexdump.hexdump(bytez)
+        soffset = offset
+        consumed_bytes = 0
+        items = self._items[:]
+
+        offset = self["_size"].vsParse(bytez, offset=offset)
+
+        padding_count = 0
+        while len(items) > 0:
+            item = items.pop(0)
+            if item.offset > consumed_bytes:
+                field_name = "padding_{:d}".format(padding_count)
+                delta_bytes = item.offset - consumed_bytes
+                v = v_bytes(size=delta_bytes)
+                self.items.vsAddField(field_name, v)
+                offset += delta_bytes
+                consumed_bytes += delta_bytes
+                padding_count += 1
+
+            v = item.struct
+            v.vsParse(bytez, offset=offset)
+            self.items.vsAddField(item.name, v)
+            offset += len(v)
+            consumed_bytes += len(v)
+
+        if consumed_bytes != self.size - 4:
+            field_name = "padding_{:d}".format(padding_count)
+            delta_bytes = self.size - consumed_bytes
+            v = v_bytes(size=delta_bytes)
+            self.items.vsAddField(field_name, v)
+            offset += delta_bytes
+            consumed_bytes += delta_bytes
+
+        self.data = bytez[soffset + 0x4:soffset + self.size]
+        return offset
+
+
+class MethodData(vstruct.VStruct, LoggingObject):
+    def __init__(self):
+        vstruct.VStruct.__init__(self)
+        LoggingObject.__init__(self)
+
+        self.size = v_uint32()
+        self.data = v_bytes(size=0)
+
+    def pcb_size(self):
+        self["data"].vsSetLength(self.size)
+
+
 class ClassDefinition(vstruct.VStruct, LoggingObject):
     def __init__(self):
         vstruct.VStruct.__init__(self)
@@ -564,31 +765,72 @@ class ClassDefinition(vstruct.VStruct, LoggingObject):
         self.property_default_values_data = v_bytes(size=0)
         self._data_length = v_uint32()
         self.data = v_bytes(size=0)
+        self.method_data = MethodData()
 
         self._fields = ClassFieldGetter(self.data)
 
     def pcb_property_references(self):
         self["property_default_values_data"].vsSetLength(self.header.property_default_values_length)
+        # TODO: add fields
+
+    def pcb__data_length(self):
+        self["data"].vsSetLength(self.data_length)
 
     @property
     def data_length(self):
         return self._data_length & 0x7FFFFFFF
 
-    def pcb__data_length(self):
-        self["data"].vsSetLength(self.data_length)
+    #def pcb_property_default_values_data(self):
+    #    self.data = ClassDefinitionData(
+    #        int(self.header.offset_class_name), self.property_references, self.qualifiers_list)
 
     def pcb_data(self):
+        print(self.tree())
         self._fields = ClassFieldGetter(self.data)
+
+    def pcb_method_data(self):
+        # everything is done at this point...
+
+        for i in range(self.property_references.count):
+            pref = self.property_references.refs[i]  # type: PropertyReference
+            if not pref.is_builtin_property:
+                pass
+                #self._items.append(DataItem(
+                #    "prop:{:d}.name".format(i), prop_ref.offset_property_name, WMIString()))
+            #self._items.append(DataItem(
+            #    "prop:{:d}.value".format(i), prop_ref.offset_property_struct, _Property()))
+            # TODO: how do we parse into the _Property to fetch the qualifiers?
+
+        for i in range(self.qualifier_references.count):
+            qref = self.qualifier_references.qualifiers[i]
+            if qref.is_builtin_key:
+                pass
+            else:
+                pass
+                #self._items.append(DataItem(
+                #    "qualifier:{:d}.name".format(i), qual_ref.key, WMIString()))
+
+            field_name = "qualifier:{:d}.value".format(i)
+            if qref.value_type.is_array:
+                P = qref.value_type.value_parser()
+                #self._items.append(DataItem(field_name, qref.value, CimTypeArray(P)))
+            else:
+                t = qref.value_type.type
+                if t == CIM_TYPES.CIM_TYPE_STRING:
+                    pass
+                    #self._items.append(DataItem(field_name, qref.value, WMIString()))
+                elif t == CIM_TYPES.CIM_TYPE_DATETIME:
+                    pass
+                    #self._items.append(DataItem(field_name, qref.value, WMIString()))
+
+    def vsParse(self, sbytes, offset=0, fast=False):
+        vstruct.VStruct.vsParse(self, sbytes, offset=offset, fast=fast)
+
+
 
     def __repr__(self):
         # TODO: fixme
         return "ClassDefinition(name: {:s})".format("1" or self.class_name)
-
-    def is_inherited_property(self, prop_index):
-        pass
-
-    def has_default_value(self, prop_index):
-        pass
 
     @property
     def keys(self):
@@ -682,7 +924,6 @@ class ClassInstance(vstruct.VStruct, LoggingObject):
 
         self._cim_type = cim_type
         self.class_layout = class_layout
-        self._buf = None
 
         if self._cim_type == CIM_TYPE_XP:
             self.name_hash = v_wstr(size=0x20)
@@ -694,10 +935,10 @@ class ClassInstance(vstruct.VStruct, LoggingObject):
         self.ts1 = FILETIME()
         self.ts2 = FILETIME()
         self.data_length2 = v_uint32()  # length of entire instance data
-        #self.offset_instance_class_name = v_uint32()
-        #self.unk0 = v_uint8()
-        #self.property_state_data = v_bytes(size=compute_property_state_length(len(self.class_layout.properties)))
-        self.extra_padding = v_bytes(size=0)
+        self.offset_instance_class_name = v_uint32()
+        self.unk0 = v_uint8()
+        property_state_length = compute_property_state_length(len(self.class_layout.properties))
+        self.property_state_data = v_bytes(size=property_state_length)
 
         self.toc = vstruct.VArray()
         for prop in self.class_layout.properties:
@@ -714,21 +955,6 @@ class ClassInstance(vstruct.VStruct, LoggingObject):
 
         self._fields = ClassFieldGetter(self.data)
 
-    def set_buffer(self, buf):
-        """
-        This is a hack until we can correctly compute extra_padding_length without trial and error.
-        Must be called before vsParse.
-        """
-        self._buf = buf
-
-    def pcb_data(self):
-        self._fields = ClassFieldGetter(self.data)
-
-    def pcb_data_length2(self):
-        # hack: at this point, we know set_buffer must have been called
-        l = self.extra_padding_length()
-        self["extra_padding"].vsSetLength(l)
-
     def pcb_data_length(self):
         self["data"].vsSetLength(self.data_length & 0x7FFFFFFF)
 
@@ -741,81 +967,6 @@ class ClassInstance(vstruct.VStruct, LoggingObject):
     def __repr__(self):
         # TODO: make this nice
         return "ClassInstance(classhash: {:s}, key: {:s})".format(self.name_hash, self.key)
-
-    def extra_padding_length(self):
-        class_definition = self.class_layout.class_definition
-        if class_definition.header.unk3 == 0x18:
-            return class_definition.header.unk1 + 0x6
-
-        # these are all the same, split up to be explicit
-        elif class_definition.header.unk3 == 0x19:
-            return class_definition.header.unk1 + 0x5
-        elif class_definition.header.unk3 == 0x17:
-            # this is an extreme hack: we attempt a few commonly seen values and sanity check them
-            # empirically, it seems CD.header.unk0 is usually 0x5 or 0x6 less than then extra length
-            # so we try each of those, matching up the instance length against the computed field
-            #   lengths and this magical value
-
-            # a temp variable
-            s = v_uint32()
-
-            # the length of all toc entries, totally based on the CL
-            toc_length = 0
-            for prop in self.class_layout.properties:
-                if prop.type.is_array:
-                    toc_length += 0x4
-                else:
-                    toc_length += CIM_TYPE_SIZES[prop.type.type]
-
-            u1 = class_definition.header.unk1
-
-            # start right after the hash & timestamps
-            # times 0x2 due to WCHAR (.name_hash is the string, not bytes object)
-            header_length = (len(self.name_hash) * 2) + 0x10
-            o = 0x0
-            o += header_length
-
-            # parse total instance size field
-            s.vsParse(self._buf, o)
-            total_size = s.vsGetValue()
-            # seek past total size field
-            o += 0x4
-
-            # this is where the extra padding is
-            start_extra_padding = o
-
-            # here are the two offsets we'll attemp
-            for i in (5, 6):
-                o = start_extra_padding
-                o += u1 + i
-
-                # seek past toc
-                o += toc_length
-
-                # read qualifiers list size
-                try:
-                    s.vsParse(self._buf, o)
-                except struct.error:
-                    continue
-                # seek past qualifiers list
-                o += s.vsGetValue()
-
-                # theres an extra byte, unk1
-                o += 1
-
-                # we should be at the variable data length field
-                try:
-                    s.vsParse(self._buf, o)
-                except struct.error:
-                    continue
-
-                # match the variable size field against the instance data size field
-                variable_size = s.vsGetValue() & 0x7FFFFFFF
-                if (o - header_length + 0x4) + variable_size == total_size:
-                    return u1 + i
-            raise RuntimeError("Unable to determine extraPadding len")
-        else:
-            return class_definition.header.unk1 + 0x5
 
     @property
     def class_name(self):
@@ -935,6 +1086,9 @@ class CoreClassInstance(vstruct.VStruct, LoggingObject):
         raise NotImplementedError()
 
 
+DerivationEntry = namedtuple("DerivationEntry", ["cd", "cl"])
+
+
 class ClassLayout(LoggingObject):
     def __init__(self, object_resolver, namespace, class_definition):
         """
@@ -949,47 +1103,28 @@ class ClassLayout(LoggingObject):
 
     @cached_property
     def properties(self):
-        class_name = self.class_definition.class_name
-        # initially, ordered from child to parent
-        class_derivation = []  # type: Sequence[ClassDefinition]
-        while class_name != "":
-            cd = self.object_resolver.get_cd(self.namespace, class_name)
-            class_derivation.append(cd)
-            if cd.super_class_name:
-                self.d("parent of %s is %s", class_name, cd.super_class_name)
-            else:
-                self.d("%s has no parent", class_name)
-            class_name = cd.super_class_name
+        cd = self.class_definition
+        super_class_name = self.class_definition.super_class_name
 
-        # note, derivation now ordered from parent to child
-        class_derivation.reverse()
+        props = None
+        if super_class_name == "":
+            props = BoundProperties()
+        else:
+            parent_cl = self.object_resolver.get_cl(self.namespace, super_class_name)
+            props = BoundProperties(parent_cl.properties)
 
-        self.d("%s derivation: %s", self.class_definition.class_name,
-                list(map(lambda c: c.class_name, class_derivation)))
+            # TODO: this needs to be bound to the current cd, not some parent...
+            for prop in parent_cl.properties:
+                props[prop.name] = prop
 
-        props = {}
-        while len(class_derivation) > 0:
-            cd = class_derivation.pop(0)
-            for prop in sorted(cd.properties.values(), key=lambda p: p.entry_number):
-                props[prop.entry_number] = prop
-        props = props.values()
+        for prop in cd.properties.values():
+            props[prop.name] = prop
 
-        state_buf = self.class_definition.property_default_values_data
-        import hexdump
-        hexdump.hexdump(state_buf)
-        offset = 0x0
-        for prop in props:
-            l = CIM_TYPE_SIZES[prop.type.type]
-            if prop.type.is_array:
-                l = 0x4
-            print("  ", prop.name, prop.type, hex(l), hex(offset))
-            offset += l
-        state = PropertyDefaultValues(props)
-        state.vsParse(state_buf)
-
-        self.d("%s property layout: %s",
-                self.class_definition.class_name,
-                list(map(lambda p: p.name, props)))
+        default_values_buf = cd.property_default_values_data
+        default_values = PropertyDefaultValues(props.values())
+        default_values.vsParse(default_values_buf)
+        props.default_values = default_values
+        # TODO: order by slot id
         return props
 
     @cached_property
@@ -1001,6 +1136,110 @@ class ClassLayout(LoggingObject):
             else:
                 off += CIM_TYPE_SIZES[prop.type.type]
         return off
+
+
+# TODO: perhaps this is a BoundPropertyDefinition?
+class BoundProperty(LoggingObject):
+    def __init__(self, props, prop):
+        """
+        :type props: BoundProperties
+        :type prop:  Property
+        """
+        super(BoundProperty, self).__init__()
+        self._props = props
+        self._prop = prop
+
+    @property
+    def type(self):
+        return self._prop.type
+
+    @property
+    def qualifiers(self):
+        return self._prop.qualifiers
+
+    @property
+    def name(self):
+        return self._prop.name
+
+    @property
+    def entry_number(self):
+        return self._prop.entry_number
+
+    def __repr__(self):
+        return "Property(name: {:s}, type: {:s}, qualifiers: {:s})".format(
+            self.name,
+            CIM_TYPES.vsReverseMapping(self.type.type),
+            ",".join("%s=%s" % (k, str(v)) for k, v in self.qualifiers.items()))
+
+    @property
+    def is_inherited(self):
+        pass
+
+    @property
+    def has_default_value(self):
+        pass
+
+    @property
+    def default_value(self):
+        pass
+
+
+class BoundProperties(LoggingObject):
+    """
+    here's a somewhat magic class that increases the WTF factor of the code;
+    however, it keeps some data structures hidden.
+
+    properties may have default values. this is flagged via the property_default_values
+      field within the class definition. a bound property is explicitly tied to a specific class
+      definition, which allows it to retrieve its default value.
+
+    default values may (or may not) be inherited from ancestor class definitions. so,
+      bound properties must be able to resolve the associated property in parent class
+      definitions, and get their default value. we model via a singly linked list of
+      bound property sets, from child to parent. if an inherited default value is request, the
+      child can traverse the list to fetch the value.
+
+    for convenience, the bound properties set (this class) operates like a dict/list
+      hybrid: caller can lookup by bound properties by name, or iterate bound property objects.
+    """
+    def __init__(self, parent=None):
+        super(BoundProperties, self).__init__()
+        self._parent = parent  # type: BoundProperties or None
+        self._properties = {}  # type: Mapping[str, BoundProperty]
+        # intended to be externally set prior to use of this BoundProperies class
+        self.default_values = None  # type: PropertyDefaultValues
+
+    def __setitem__(self, key, value):
+        """
+        :type key: str
+        :type value: Property
+        """
+        self._properties[key] = BoundProperty(self, value)
+
+    def __getitem__(self, key):
+        """
+        :rtype: Sequence[BoundProperty]
+        """
+        if isinstance(key, int):
+            return self._properties[list(self.keys())[key]]
+            pass
+        else:
+            return self._properties[key]
+
+    def keys(self):
+        """
+        :rtype: Sequence[str]
+        """
+        return self._properties.keys()
+
+    def values(self):
+        """
+        :rtype: Sequence[BoundProperty]
+        """
+        return self._properties.values()
+
+    def __len__(self):
+        return len(self._properties)
 
 
 class ObjectResolver(LoggingObject):
@@ -1181,7 +1420,6 @@ class ObjectResolver(LoggingObject):
             i = CoreClassInstance(cl)
         else:
             i = ClassInstance(self._cim.cim_type, cl)
-            i.set_buffer(buf)
         i.vsParse(buf)
         return i
 
