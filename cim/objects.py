@@ -727,9 +727,6 @@ class ClassInstance(vstruct.VStruct, LoggingObject):
         self.unk1 = v_uint8()
         self.data = DataRegion()
 
-        self._property_index_map = {prop.name: i for i, prop in enumerate(self.class_layout.properties.values())}
-        self._property_type_map = {prop.name: prop.type for prop in self.class_layout.properties.values()}
-
     def __repr__(self):
         # TODO: make this nice
         return "ClassInstance(classhash: {:s}, key: {:s})".format(self.name_hash, self.key)
@@ -752,21 +749,19 @@ class ClassInstance(vstruct.VStruct, LoggingObject):
 
     @cached_property
     def properties(self):
-        """ get dict of str to Property instances """
-        ret = []
+        """ get dict of str to concrete Property values"""
+        ret = {}
         for prop in self.class_layout.properties.values():
             n = prop.name
-            i = self._property_index_map[n]
-            t = self._property_type_map[n]
+            i = prop.index
+            t = prop.type
             v = self.toc[i]
-            ret.append(self.data.get_value(v, t))
+            ret[n] = self.data.get_value(v, t)
         return ret
 
     def get_property_value(self, name):
-        i = self._property_index_map[name]
-        t = self._property_type_map[name]
-        v = self.toc[i]
-        return self.data.get_value(v, t)
+        p = self.class_layout.properties[name]
+        return self.data.get_value(self.toc[p.index], p.type)
 
     @property
     def key(self):
@@ -801,9 +796,6 @@ class CoreClassInstance(vstruct.VStruct, LoggingObject):
         self.unk1 = v_uint32()
         self.data = DataRegion()
 
-        self._property_index_map = {prop.name: i for i, prop in enumerate(self.class_layout.properties.values())}
-        self._property_type_map = {prop.name: prop.type for prop in self.class_layout.properties.values()}
-
     def __repr__(self):
         # TODO: make this nice
         return "CoreClassInstance()".format()
@@ -826,21 +818,19 @@ class CoreClassInstance(vstruct.VStruct, LoggingObject):
 
     @cached_property
     def properties(self):
-        """ get dict of str to Property instances """
-        ret = []
+        """ get dict of str to concrete Property values"""
+        ret = {}
         for prop in self.class_layout.properties.values():
             n = prop.name
-            i = self._property_index_map[n]
-            t = self._property_type_map[n]
+            i = prop.index
+            t = prop.type
             v = self.toc[i]
-            ret.append(self.data.get_value(v, t))
+            ret[n] = self.data.get_value(v, t)
         return ret
 
     def get_property_value(self, name):
-        i = self._property_index_map[name]
-        t = self._property_type_map[name]
-        v = self.toc[i]
-        return self.data.get_value(v, t)
+        p = self.class_layout.properties[name]
+        return self.data.get_value(self.toc[p.index], p.type)
 
     def get_property(self, name):
         raise NotImplementedError()
