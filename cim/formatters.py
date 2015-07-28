@@ -29,7 +29,7 @@ def dump_definition(cd, cl):
     ret.append("layout:")
     off = 0
     if cl is not None:
-        for prop in cl.properties.values():
+        for prop in sorted(cl.properties.values(), key=lambda p:p.index):
             ret.append("  (%s)   %s %s" % (h(off), prop.type, prop.name))
             if prop.type.is_array:
                 off += 0x4
@@ -76,7 +76,7 @@ def dump_layout(cd, cl):
     ret.append("layout:")
     off = 0
     if cl is not None:
-        for prop in cl.properties.values():
+        for prop in sorted(cl.properties.values(), key=lambda p:p.index):
             ret.append("  (%s)   %s %s" % (h(off), prop.type, prop.name))
             if prop.type.is_array:
                 off += 0x4
