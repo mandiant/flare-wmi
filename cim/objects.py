@@ -68,7 +68,7 @@ class WMIString(vstruct.VStruct):
     def __init__(self):
         vstruct.VStruct.__init__(self)
         self.zero = v_uint8()
-        self.s = v_zstr()
+        self.s = v_zstr_utf8()
 
     def __repr__(self):
         return repr(self.s)
@@ -603,10 +603,8 @@ class ClassDefinition(vstruct.VStruct, LoggingObject):
 
     def pcb_property_references(self):
         self["property_default_values_data"].vsSetLength(self.header.property_default_values_length)
-        # TODO: add fields
 
     def __repr__(self):
-        # TODO: fixme
         return "ClassDefinition(name: {:s})".format(self.class_name)
 
     @property
@@ -620,7 +618,7 @@ class ClassDefinition(vstruct.VStruct, LoggingObject):
         for propname, prop in self.properties.items():
             for k, v in prop.qualifiers.items():
                 # TODO: don't hardcode BUILTIN_QUALIFIERS.PROP_KEY symbol name
-                if k == "PROP_KEY" and v == True:
+                if k == "PROP_QUALIFIER_KEY" and v == True:
                     ret.append(propname)
         return ret
 
@@ -651,8 +649,7 @@ class ClassDefinition(vstruct.VStruct, LoggingObject):
             ret[str(qk)] = qv
         return ret
 
-    # TODO: cached_property
-    @property
+    @cached_property
     def properties(self):
         """
         Get the Properties specific to this Class Definition.
@@ -842,10 +839,6 @@ class CoreClassInstance(vstruct.VStruct, LoggingObject):
 class ClassLayoutProperty(LoggingObject):
     def __init__(self, prop, class_layout):
         """
-        TODO: its unclear which cl should be passed here.
-            - the one one which the prop is defined?
-            - the leaf cl from which we're trying to get default values?  <--
-
         :type prop:  ClassDefinitionProperty
         :type class_layout: ClassLayout
         """
@@ -934,7 +927,6 @@ class ClassLayout(LoggingObject):
         self.class_definition = class_definition
 
     def __repr__(self):
-        # TODO: fixme
         return "ClassLayout(name: {:s})".format(self.class_definition.class_name)
 
     @cached_property
