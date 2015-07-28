@@ -68,11 +68,11 @@ def dump_layout(cd, cl):
         ret.append("    qualifiers:")
         for k, v in prop.qualifiers.items():
             ret.append("      %s: %s" % (k, str(v)))
-        ret.append("    is inherited: %s" % str(prop.is_inherited))
         ret.append("    has default value: %s" % str(prop.has_default_value))
         if prop.has_default_value:
+            ret.append("      is inherited: %s" % str(prop.is_inherited))
             dv = str(prop.default_value)
-            ret.append("    default value: %s" % (dv))
+            ret.append("      default value: %s" % (dv))
     ret.append("layout:")
     off = 0
     if cl is not None:

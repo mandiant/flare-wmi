@@ -15,23 +15,21 @@ def main(type_, path, namespaceName, className):
     i = Index(c.cim_type, c.logical_index_store)
     o = ObjectResolver(c, i)
 
-    while className != "":
-        print("%s" % "=" * 80)
-        print("namespace: %s" % namespaceName)
-        try:
-            cd = o.get_cd(namespaceName, className)
-        except IndexError:
-            print("ERROR: failed to find requested class definition")
-            return
-        print(cd.tree())
-        cl = o.get_cl(namespaceName, className)
-        print(cl.derivation)
-        try:
-            print(dump_layout(cd, cl))
-        except:
-            print("ERROR: failed to dump class definition!")
-            print(traceback.format_exc())
-        className = cd.super_class_name
+    print("%s" % "=" * 80)
+    print("namespace: %s" % namespaceName)
+    try:
+        cd = o.get_cd(namespaceName, className)
+    except IndexError:
+        print("ERROR: failed to find requested class definition")
+        return
+    print(cd.tree())
+    cl = o.get_cl(namespaceName, className)
+    print(cl.derivation)
+    try:
+        print(dump_layout(cd, cl))
+    except:
+        print("ERROR: failed to dump class definition!")
+        print(traceback.format_exc())
 
 
 if __name__ == "__main__":

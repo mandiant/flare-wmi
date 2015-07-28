@@ -349,9 +349,6 @@ class _ClassDefinitionProperty(vstruct.VStruct):
         self.level = v_uint32()
         self.qualifiers = QualifiersList()
 
-    def pcb_level(self):
-        print(self.tree())
-
 
 class ClassDefinitionProperty(LoggingObject):
     """
@@ -366,9 +363,6 @@ class ClassDefinitionProperty(LoggingObject):
         # this is the raw struct, without references/strings resolved
         self._prop = _ClassDefinitionProperty()
         property_offset = self._propref.offset_property_struct
-        print(h(property_offset))
-        import hexdump
-        hexdump.hexdump(self._class_definition.property_data.data)
         self._prop.vsParse(self._class_definition.property_data.data, offset=property_offset)
 
     def __repr__(self):
@@ -500,7 +494,7 @@ class ClassFieldGetter(LoggingObject):
         elif CIM_TYPES.vsReverseMapping(t):
             return value
         else:
-            raise RuntimeError("unknown qualifier type: %s", str(value_type))
+            raise RuntimeError("unknown type: %s", str(value_type))
 
     def get_qualifier_value(self, qualifier):
         return self.get_value(qualifier.value, qualifier.value_type)
@@ -565,7 +559,6 @@ class PropertyDefaultValues(vstruct.VArray):
 
         self.default_values_toc = vstruct.VArray()
         for prop in self._properties:
-            print(prop._prop._prop.tree())
             P = prop.type.value_parser
             self.default_values_toc.vsAddElement(P())
 
@@ -573,24 +566,11 @@ class PropertyDefaultValues(vstruct.VArray):
         if prop_index > len(self._properties):
             raise RuntimeError("invalid prop_index")
 
-
-        print("get state", prop_index, "-------------------------------")
-        for u, _ in self.state:
-            b = self.state[int(u)]
-            print(bin(b))
-
-
         state_index = prop_index // 4
-        print("index", state_index)
         byte_of_state = self.state[state_index]
-        print("byte", bin(byte_of_state))
         rotations = prop_index % 4
-        print("rotations", rotations)
         state_flags = (byte_of_state >> (2 * rotations)) & 0x3
-        print("state", bin(state_flags))
-        s =  PropertyDefaultsState(state_flags & 0b10 == 1, state_flags & 0b01 == 0)
-        print(s)
-        return s
+        return PropertyDefaultsState(state_flags & 0b10 == 1, state_flags & 0b01 == 0)
 
 
 class DataRegion(vstruct.VStruct, LoggingObject):
@@ -654,7 +634,7 @@ class DataRegion(vstruct.VStruct, LoggingObject):
         elif CIM_TYPES.vsReverseMapping(t):
             return value
         else:
-            raise RuntimeError("unknown qualifier type: %s", str(value_type))
+            raise RuntimeError("unknown type: %s", str(value_type))
 
     def get_qualifier_value(self, qualifier):
         return self.get_value(qualifier.value, qualifier.value_type)
@@ -998,8 +978,30 @@ class ClassLayoutProperty(LoggingObject):
     def default_value(self):
         if not self.has_default_value:
             raise RuntimeError("property has no default value!")
-        # TODO: need to do more parsing here for complex types
-        return self.class_layout.property_default_values.default_values_toc(self.index)
+
+        if not self.is_inherited:
+            # then the data is stored nicely in the CD prop data section
+            v = self.class_layout.property_default_values.default_values_toc[self.index]
+            return self.class_layout.class_definition.property_data.get_value(v, self.type)
+        else:
+            # we have to walk up the derivation path looking for the default value
+            rderivation = self.class_layout.derivation[:]
+            rderivation.reverse()
+
+            for ancestor_cl in rderivation:
+                defaults = ancestor_cl.property_default_values
+                state = defaults.get_state_by_index(self.index)
+                if not state.has_default_value:
+                    raise RuntimeError("prop with inherited default value has bad ancestor (no default value)")
+
+                if state.is_inherited:
+                    # keep trucking! look further up the ancestry tree.
+                    continue
+
+                # else, this must be where the default value is defined
+                v = defaults.default_values_toc[self.index]
+                return ancestor_cl.class_definition.property_data.get_value(v, self.type)
+            raise RuntimeError("unable to find ancestor class with default value")
 
 
 class ClassLayout(LoggingObject):
