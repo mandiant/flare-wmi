@@ -325,7 +325,6 @@ class ClassDefinitionProperty(LoggingObject):
 
     @property
     def name(self):
-        # TODO: don't reach
         if self._propref.is_builtin_property:
             return self._propref.builtin_property_name
         else:
@@ -422,7 +421,7 @@ class ClassDefinitionHeader(vstruct.VStruct):
             self.vsSetField("super_class_ascii_length2", v_str(size=0))
 
 
-PropertyDefaultsState = namedtuple("PropertyDefaultsState", ["is_inherited", "has_default_value"])
+ClassDefinitionPropertyState = namedtuple("ClassDefinitionPropertyState", ["is_inherited", "has_default_value"])
 
 
 def compute_property_state_length(num_properties):
@@ -441,38 +440,46 @@ def compute_property_state_length(num_properties):
     return total_bytes
 
 
-class PropertyDefaultValues(vstruct.VArray):
+class PropertyStates(vstruct.VArray):
     # two bits per property, rounded up to the nearest byte
-    def __init__(self, properties):
+    def __init__(self, bit_struct, num_properties):
         vstruct.VArray.__init__(self)
-        self._properties = properties
+        self._bit_struct = bit_struct
+        self._num_properties = num_properties
 
-        self.state = vstruct.VArray()
-        total_bytes = compute_property_state_length(len(self._properties))
-        self.state.vsAddElements(total_bytes, v_uint8)
+        total_bytes = compute_property_state_length(self._num_properties)
+        self.vsAddElements(total_bytes, v_uint8)
 
-        self.default_values_toc = vstruct.VArray()
-        for prop in self._properties:
-            P = prop.type.value_parser
-            self.default_values_toc.vsAddElement(P())
-
-    def get_state_by_index(self, prop_index):
-        if prop_index > len(self._properties):
+    def get_by_index(self, prop_index):
+        if prop_index > self._num_properties:
             raise RuntimeError("invalid prop_index")
 
         #print("-------------------")
         #print("index", prop_index)
         state_index = prop_index // 4
         #print("state_index", state_index)
-        byte_of_state = self.state[state_index]
+        byte_of_state = self[state_index]
         #print("byte", bin(byte_of_state))
         rotations = prop_index % 4
         #print("rotations", rotations)
         state_flags = (byte_of_state >> (2 * rotations)) & 0x3
         #print("flags", bin(state_flags))
-        p = PropertyDefaultsState(state_flags & 0b10 > 0, state_flags & 0b01 == 0)
+        p = self._bit_struct(state_flags & 0b10 > 0, state_flags & 0b01 == 0)
         #print(p)
         return p
+
+
+class PropertyDefaultValues(vstruct.VArray):
+    # two bits per property, rounded up to the nearest byte
+    def __init__(self, properties):
+        vstruct.VArray.__init__(self)
+        self._properties = properties
+
+        self.state = PropertyStates(ClassDefinitionPropertyState, len(self._properties))
+        self.default_values_toc = vstruct.VArray()
+        for prop in self._properties:
+            P = prop.type.value_parser
+            self.default_values_toc.vsAddElement(P())
 
 
 class DataRegion(vstruct.VStruct, LoggingObject):
@@ -655,6 +662,86 @@ class InstanceKey(object):
             return ",".join(["{:s}={:s}".format(str(k), str(self[k])) for k in sorted(self._d.keys())])
 
 
+class ClassInstanceProperty(LoggingObject):
+    def __init__(self, prop, class_instance, state, value):
+        """
+        :type prop:  ClassLayoutProperty
+        :type class_instance: ClassInstance
+        :type value: variant
+        """
+        super(ClassInstanceProperty, self).__init__()
+        self._prop = prop
+        self.class_instance = class_instance
+        self._value = value
+        self.state = state
+
+    # its a little ugly that we repeat Property fields for
+    #    the base Property class, ClassLayouts, and ClassInstances
+    # but we favor composition over inheritance
+
+    @property
+    def type(self):
+        return self._prop.type
+
+    @property
+    def qualifiers(self):
+        return self._prop.qualifiers
+
+    @property
+    def name(self):
+        return self._prop.name
+
+    @property
+    def index(self):
+        return self._prop.index
+
+    @property
+    def offset(self):
+        return self._prop.offset
+
+    @property
+    def level(self):
+        return self._prop.level
+
+    def __repr__(self):
+        return "Property(name: {name:s}, type: {type_:s}, qualifiers: {quals:s}, value: {val:s})".format(
+            name=self.name,
+            type_=CIM_TYPES.vsReverseMapping(self.type.type),
+            quals=",".join("%s=%s" % (k, str(v)) for k, v in self.qualifiers.items()),
+            val=str(self.value))
+
+    @property
+    def is_inherited(self):
+        return self._prop.is_inherited
+
+    @property
+    def has_default_value(self):
+        return self._prop.has_default_value
+
+    @property
+    def default_value(self):
+        return self._prop.default_value
+
+    @property
+    def is_initialized(self):
+        return self.state.is_initialized
+
+    @property
+    def is_default_value(self):
+        if self.is_initialized:
+            return self.state.use_default_value
+        return False
+
+    @property
+    def value(self):
+        if not self.is_initialized:
+            raise RuntimeError("property is not initialized")
+        return self._value
+
+
+InstancePropertyState = namedtuple("InstancePropertyState", ["use_default_value", "is_initialized"])
+
+
 class ClassInstance(vstruct.VStruct, LoggingObject):
     def __init__(self, cim_type, class_layout):
         vstruct.VStruct.__init__(self)
@@ -675,11 +762,10 @@ class ClassInstance(vstruct.VStruct, LoggingObject):
         self.data_length2 = v_uint32()  # length of entire instance data
         self.offset_instance_class_name = v_uint32()
         self.unk0 = v_uint8()
-        property_state_length = compute_property_state_length(len(self.class_layout.properties))
-        self.property_state_data = v_bytes(size=property_state_length)
+        self.property_state = PropertyStates(InstancePropertyState, len(self.class_layout.properties))
 
         self.toc = vstruct.VArray()
-        for prop in self.class_layout.properties.values():
+        for prop in sorted(self.class_layout.properties.values(), key=lambda p: p.index):
             P = prop.type.value_parser
             self.toc.vsAddElement(P())
 
@@ -711,23 +797,29 @@ class ClassInstance(vstruct.VStruct, LoggingObject):
     def properties(self):
         """ get dict of str to concrete Property values"""
         ret = {}
+        print("props for ", self.class_layout.class_definition.class_name)
         for prop in self.class_layout.properties.values():
-            n = prop.name
-            i = prop.index
-            t = prop.type
-            v = self.toc[i]
-            ret[n] = self.data.get_value(v, t)
+            print("  ", prop)
+            state = self.property_state.get_by_index(prop.index)
+            print("    state", state)
+            v = None
+            if state.is_initialized:
+                if state.use_default_value:
+                    v = prop.default_value
+                else:
+                    print("    entry", self.toc[prop.index], prop.type)
+                    v = self.data.get_value(self.toc[prop.index], prop.type)
+            ret[prop.name] = ClassInstanceProperty(prop, self, state, v)
         return ret
 
-    def get_property_value(self, name):
-        p = self.class_layout.properties[name]
-        return self.data.get_value(self.toc[p.index], p.type)
+    def get_property(self, name):
+        return self.properties[name]
 
     @property
     def key(self):
         ret = InstanceKey()
         for prop_name in self.class_layout.class_definition.keys:
-            ret[prop_name] = self.get_property_value(prop_name)
+            ret[prop_name] = self.get_property(prop_name).value
         return ret
 
 
@@ -746,6 +838,7 @@ class CoreClassInstance(vstruct.VStruct, LoggingObject):
         self._unk0 = v_uint32()
         self.ts = FILETIME()
         self.data_length2 = v_uint32()  # length of all instance data
+        # TODO: what to do here about initialized values???
         self.extra_padding = v_bytes(size=8)
 
         self.toc = vstruct.VArray()
@@ -779,6 +872,7 @@ class CoreClassInstance(vstruct.VStruct, LoggingObject):
     @cached_property
     def properties(self):
         """ get dict of str to concrete Property values"""
+        # TODO
         ret = {}
         for prop in self.class_layout.properties.values():
             n = prop.name
@@ -788,12 +882,9 @@ class CoreClassInstance(vstruct.VStruct, LoggingObject):
             ret[n] = self.data.get_value(v, t)
         return ret
 
-    def get_property_value(self, name):
+    def get_property(self, name):
         p = self.class_layout.properties[name]
         return self.data.get_value(self.toc[p.index], p.type)
-
-    def get_property(self, name):
-        raise NotImplementedError()
 
 
 class ClassLayoutProperty(LoggingObject):
@@ -838,11 +929,11 @@ class ClassLayoutProperty(LoggingObject):
 
     @property
     def is_inherited(self):
-        return self.class_layout.property_default_values.get_state_by_index(self.index).is_inherited
+        return self.class_layout.property_default_values.state.get_by_index(self.index).is_inherited
 
     @property
     def has_default_value(self):
-        return self.class_layout.property_default_values.get_state_by_index(self.index).has_default_value
+        return self.class_layout.property_default_values.state.get_by_index(self.index).has_default_value
 
     @property
     def default_value(self):
@@ -860,7 +951,7 @@ class ClassLayoutProperty(LoggingObject):
 
             for ancestor_cl in rderivation:
                 defaults = ancestor_cl.property_default_values
-                state = defaults.get_state_by_index(self.index)
+                state = defaults.state.get_by_index(self.index)
                 if not state.has_default_value:
                     raise RuntimeError("prop with inherited default value has bad ancestor (no default value)")
 
@@ -934,7 +1025,6 @@ class ClassLayout(LoggingObject):
             else:
                 off += CIM_TYPE_SIZES[prop.type.type]
         return off
-
 
 
 class ObjectResolver(LoggingObject):
@@ -1072,7 +1162,7 @@ class ObjectResolver(LoggingObject):
             instance = self.parse_instance(self.get_cl(namespace_name, class_name), buf)
             this_is_it = True
             for k in cl.class_definition.keys:
-                if not instance.get_property_value(k) == instance_key[k]:
+                if not instance.get_property(k).value == instance_key[k]:
                     this_is_it = False
                     break
             if this_is_it:
@@ -1094,7 +1184,7 @@ class ObjectResolver(LoggingObject):
             instance = self.parse_instance(self.get_cl(namespace_name, class_name), buf)
             this_is_it = True
             for k in cl.class_definition.keys:
-                if not instance.get_property_value(k) == instance_key[k]:
+                if not instance.get_property(k).value == instance_key[k]:
                     this_is_it = False
                     break
             if this_is_it:
@@ -1127,7 +1217,7 @@ class ObjectResolver(LoggingObject):
 
         for ref, ns_i in self.get_objects(q):
             i = self.parse_instance(self.ns_cl, ns_i)
-            yield self.NamespaceSpecifier(namespace_name + "\\" + i.get_property_value("Name"))
+            yield self.NamespaceSpecifier(namespace_name + "\\" + i.get_property("Name").value)
         if namespace_name == ROOT_NAMESPACE_NAME:
             yield self.NamespaceSpecifier(SYSTEM_NAMESPACE_NAME)
 

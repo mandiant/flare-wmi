@@ -62,7 +62,7 @@ def main(type_, path, namespaceName, className, key_specifier=None):
 
     for instance in instances:
         print("%s" % "=" * 80)
-        print(compute_instance_hash(index, instance))
+        #print(compute_instance_hash(index, instance))
         try:
             print(dump_instance(instance))
         except:

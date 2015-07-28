@@ -103,17 +103,19 @@ def dump_instance(i):
     ret.append("timestamp1: %s" % i.ts1)
     ret.append("timestamp2: %s" % i.ts2)
     ret.append("properties:")
-    for propname, prop in cd.properties.items():
-        value = i.get_property_value(prop.name)
-        if not value:
-            continue
+    for propname, prop in i.properties.items():
         quals = ",".join(["{:s}={:s}".format(str(k), str(v)) for k, v in prop.qualifiers.items()])
         if quals != "":
             quals = "  [{:s}]".format(quals)
             ret.append(quals)
 
-        ret.append("  {key:s}={value:s}".format(
-            key=prop.name,
-            value=str(value)))
+        if prop.is_initialized:
+            ret.append("  {key:s}={value:s}".format(
+                key=prop.name,
+                value=str(prop.value)))
+            if prop.is_default_value:
+                ret.append("    default value: true")
+        else:
+            ret.append("  {key:s}=nil".format(key=prop.name))
         ret.append("")
     return "\n".join(ret)
