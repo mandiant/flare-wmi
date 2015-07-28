@@ -28,7 +28,7 @@ from cim.objects import Moniker
 from cim.common import h
 from cim.common import LoggingObject
 from cim.formatters import dump_instance
-from cim.formatters import dump_definition
+from cim.formatters import dump_layout
 
 from ui.tree import Item
 from ui.tree import TreeModel
@@ -717,7 +717,7 @@ class ClassDefinitionItemView(QTabWidget, LoggingObject):
         self._cd_item = cd_item
 
         try:
-            txt = dump_definition(cd_item.cd, cd_item.cl)
+            txt = dump_layout(cd_item.cd, cd_item.cl)
         except:
             txt = traceback.format_exc()
         self.addTab(FixedWidthTextView(txt), "Class details")
@@ -736,7 +736,7 @@ class ClassInstanceItemView(QTabWidget, LoggingObject):
         self._ci_item = ci_item
 
         self.addTab(FixedWidthTextView(dump_instance(ci_item.ci)), "Instance details")
-        self.addTab(FixedWidthTextView(dump_definition(ci_item.cd, ci_item.cl)), "Definition details")
+        self.addTab(FixedWidthTextView(dump_layout(ci_item.cd, ci_item.cl)), "Definition details")
 
         # TODO: hack get_parsers() until we have a unified repo/config
         vv = VstructViewWidget(get_parsers(), self._ci_item.structs, self._ci_item.data)
