@@ -447,64 +447,6 @@ class PropertyReferenceList(vstruct.VStruct):
         self.refs.vsAddElements(self.count, PropertyReference)
 
 
-# TODO: remove and prefer DataRegion
-class ClassFieldGetter(LoggingObject):
-    """ fetches values from ClassDefinition, ClassInstance """
-    def __init__(self, buf):
-        """ :type buf: v_bytes """
-        super(ClassFieldGetter, self).__init__()
-        self._buf = buf
-
-    def get_string(self, ref):
-        s = WMIString()
-        s.vsParse(self._buf, offset=int(ref))
-        return str(s.s)
-
-    def get_array(self, ref, item_type):
-        Parser = item_type.value_parser
-        data = self._buf
-
-        arraySize = v_uint32()
-        arraySize.vsParse(data, offset=int(ref))
-
-        items = []
-        offset = ref + 4  # sizeof(array_size:uint32_t)
-        for i in range(arraySize):
-            p = Parser()
-            p.vsParse(data, offset=offset)
-            items.append(self.get_value(p, item_type))
-            offset += len(p)
-        return items
-
-    def get_value(self, value, value_type):
-        """
-        value: is a parsed value, might need dereferencing
-        value_type: is a CimType
-        """
-        if value_type.is_array:
-            return self.get_array(value, value_type.base_type_clone)
-
-        t = value_type.type
-        if t == CIM_TYPES.CIM_TYPE_STRING:
-            return self.get_string(value)
-        elif t == CIM_TYPES.CIM_TYPE_BOOLEAN:
-            return value != 0
-        elif t == CIM_TYPES.CIM_TYPE_DATETIME:
-            return self.get_string(value)
-        elif CIM_TYPES.vsReverseMapping(t):
-            return value
-        else:
-            raise RuntimeError("unknown type: %s", str(value_type))
-
-    def get_qualifier_value(self, qualifier):
-        return self.get_value(qualifier.value, qualifier.value_type)
-
-    def get_qualifier_key(self, qualifier):
-        if qualifier.is_builtin_key:
-            return BUILTIN_QUALIFIERS.vsReverseMapping(qualifier.key)
-        return self.get_string(qualifier.key)
-
-
 class ClassDefinitionHeader(vstruct.VStruct):
     def __init__(self):
         vstruct.VStruct.__init__(self)
@@ -783,16 +725,10 @@ class ClassInstance(vstruct.VStruct, LoggingObject):
 
         self.qualifiers_list = QualifiersList()
         self.unk1 = v_uint8()
-        self.data_length = v_uint32()  # high bit always set, length of variable data
-        self.data = v_bytes(size=0)
+        self.data = DataRegion()
 
         self._property_index_map = {prop.name: i for i, prop in enumerate(self.class_layout.properties.values())}
         self._property_type_map = {prop.name: prop.type for prop in self.class_layout.properties.values()}
-
-        self._fields = ClassFieldGetter(self.data)
-
-    def pcb_data_length(self):
-        self["data"].vsSetLength(self.data_length & 0x7FFFFFFF)
 
     def __repr__(self):
         # TODO: make this nice
@@ -800,7 +736,7 @@ class ClassInstance(vstruct.VStruct, LoggingObject):
 
     @property
     def class_name(self):
-        return self._fields.get_string(0x0)
+        return self.data.get_string(0x0)
 
     @cached_property
     def qualifiers(self):
@@ -809,8 +745,8 @@ class ClassInstance(vstruct.VStruct, LoggingObject):
         ret = {}
         for i in range(self.qualifiers_list.count):
             q = self.qualifiers_list.qualifiers[i]
-            qk = self._fields.get_qualifier_key(q)
-            qv = self._fields.get_qualifier_value(q)
+            qk = self.data.get_qualifier_key(q)
+            qv = self.data.get_qualifier_value(q)
             ret[str(qk)] = qv
         return ret
 
@@ -818,19 +754,19 @@ class ClassInstance(vstruct.VStruct, LoggingObject):
     def properties(self):
         """ get dict of str to Property instances """
         ret = []
-        for prop in self.class_layout.properties:
+        for prop in self.class_layout.properties.values():
             n = prop.name
             i = self._property_index_map[n]
             t = self._property_type_map[n]
             v = self.toc[i]
-            ret.append(self._fields.get_value(v, t))
+            ret.append(self.data.get_value(v, t))
         return ret
 
     def get_property_value(self, name):
         i = self._property_index_map[name]
         t = self._property_type_map[name]
         v = self.toc[i]
-        return self._fields.get_value(v, t)
+        return self.data.get_value(v, t)
 
     @property
     def key(self):
@@ -858,21 +794,15 @@ class CoreClassInstance(vstruct.VStruct, LoggingObject):
         self.extra_padding = v_bytes(size=8)
 
         self.toc = vstruct.VArray()
-        for prop in self.class_layout.properties:
+        for prop in self.class_layout.properties.values():
             self.toc.vsAddElement(prop.type.value_parser())
 
         self.qualifiers_list = QualifiersList()
         self.unk1 = v_uint32()
-        self.data_length = v_uint32()  # high bit always set, length of variable data
-        self.data = v_bytes(size=0)
+        self.data = DataRegion()
 
-        self._property_index_map = {prop.name: i for i, prop in enumerate(self.class_layout.properties)}
-        self._property_type_map = {prop.name: prop.type for prop in self.class_layout.properties}
-
-        self._fields = ClassFieldGetter(self.data)
-
-    def pcb_data_length(self):
-        self["data"].vsSetLength(self.data_length & 0x7FFFFFFF)
+        self._property_index_map = {prop.name: i for i, prop in enumerate(self.class_layout.properties.values())}
+        self._property_type_map = {prop.name: prop.type for prop in self.class_layout.properties.values()}
 
     def __repr__(self):
         # TODO: make this nice
@@ -880,7 +810,7 @@ class CoreClassInstance(vstruct.VStruct, LoggingObject):
 
     @property
     def class_name(self):
-        return self._fields.get_string(0x0)
+        return self.data.get_string(0x0)
 
     @cached_property
     def qualifiers(self):
@@ -889,8 +819,8 @@ class CoreClassInstance(vstruct.VStruct, LoggingObject):
         ret = {}
         for i in range(self.qualifiers_list.count):
             q = self.qualifiers_list.qualifiers[i]
-            qk = self._fields.get_qualifier_key(q)
-            qv = self._fields.get_qualifier_value(q)
+            qk = self.data.get_qualifier_key(q)
+            qv = self.data.get_qualifier_value(q)
             ret[str(qk)] = qv
         return ret
 
@@ -898,19 +828,19 @@ class CoreClassInstance(vstruct.VStruct, LoggingObject):
     def properties(self):
         """ get dict of str to Property instances """
         ret = []
-        for prop in self.class_layout.properties:
+        for prop in self.class_layout.properties.values():
             n = prop.name
             i = self._property_index_map[n]
             t = self._property_type_map[n]
             v = self.toc[i]
-            ret.append(self._fields.get_value(v, t))
+            ret.append(self.data.get_value(v, t))
         return ret
 
     def get_property_value(self, name):
         i = self._property_index_map[name]
         t = self._property_type_map[name]
         v = self.toc[i]
-        return self._fields.get_value(v, t)
+        return self.data.get_value(v, t)
 
     def get_property(self, name):
         raise NotImplementedError()
@@ -1053,7 +983,7 @@ class ClassLayout(LoggingObject):
     @cached_property
     def properties_length(self):
         off = 0
-        for prop in self.properties:
+        for prop in self.properties.values():
             if prop.type.is_array:
                 off += 0x4
             else:
