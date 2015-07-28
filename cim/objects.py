@@ -236,6 +236,8 @@ class CimType(vstruct.VStruct):
             return v_uint64
         elif self.type == CIM_TYPES.CIM_TYPE_DATETIME:
             return v_uint32
+        elif self.type == CIM_TYPES.CIM_TYPE_REFERENCE:
+            return v_uint32
         else:
             raise RuntimeError("unknown qualifier type: %s", h(self.type))
 
@@ -251,12 +253,24 @@ class CimType(vstruct.VStruct):
         return BaseType(self.type, self.value_parser)
 
 
+class CimTypeArray(vstruct.VStruct, LoggingObject):
+    def __init__(self, cim_type):
+        vstruct.VStruct.__init__(self)
+        LoggingObject.__init__(self)
+        self._type = cim_type
+        self.count = v_uint32()
+        self.elements = vstruct.VArray()
+
+    def pcb_count(self):
+        self.elements.vsAddElements(self.count, self._type)
+
+
 BUILTIN_QUALIFIERS = v_enum()
-BUILTIN_QUALIFIERS.PROP_KEY = 0x1
-BUILTIN_QUALIFIERS.PROP_READ_ACCESS = 0x3
-BUILTIN_QUALIFIERS.CLASS_NAMESPACE = 0x6
-BUILTIN_QUALIFIERS.CLASS_UNK = 0x7
-BUILTIN_QUALIFIERS.PROP_TYPE = 0xA
+BUILTIN_QUALIFIERS.PROP_QUALIFIER_KEY = 0x1
+BUILTIN_QUALIFIERS.PROP_QUALIFIER_READ_ACCESS = 0x3
+BUILTIN_QUALIFIERS.CLASS_QUALIFIER_PROVIDER = 0x6
+BUILTIN_QUALIFIERS.CLASS_QUALIFIER_DYNAMIC = 0x7
+BUILTIN_QUALIFIERS.PROP_QUALIFIER_TYPE = 0xA
 
 BUILTIN_PROPERTIES = v_enum()
 BUILTIN_PROPERTIES.PRIMARY_KEY = 0x1
@@ -266,6 +280,7 @@ BUILTIN_PROPERTIES.VOLATILE = 0x5
 BUILTIN_PROPERTIES.PROVIDER = 0x6
 BUILTIN_PROPERTIES.DYNAMIC = 0x7
 BUILTIN_PROPERTIES.TYPE = 0xA
+
 
 class QualifierReference(vstruct.VStruct):
     # ref:4 + unk0:1 + valueType:4 = 9
@@ -319,37 +334,42 @@ class QualifiersList(vstruct.VStruct):
         return offset
 
     def vsParseFd(self, fd):
-        # TODO
         raise NotImplementedError()
 
 
-class _Property(vstruct.VStruct):
+class _ClassDefinitionProperty(vstruct.VStruct):
     """
     this is the on-disk property definition structure
     """
     def __init__(self):
         vstruct.VStruct.__init__(self)
         self.type = CimType()  # the on-disk type for this property's value
-        self.entry_number = v_uint16()  # the on-disk order for this property
+        self.index = v_uint16()  # the on-disk order for this property
         self.offset = v_uint32()
         self.level = v_uint32()
         self.qualifiers = QualifiersList()
 
+    def pcb_level(self):
+        print(self.tree())
 
-class Property(LoggingObject):
+
+class ClassDefinitionProperty(LoggingObject):
     """
     this is the logical property object parsed from a standalone class definition.
     it is not aware of default values and inheritance behavior.
     """
     def __init__(self, class_def, propref):
-        super(Property, self).__init__()
+        super(ClassDefinitionProperty, self).__init__()
         self._class_definition = class_def
         self._propref = propref
 
         # this is the raw struct, without references/strings resolved
-        self._prop = _Property()
+        self._prop = _ClassDefinitionProperty()
         property_offset = self._propref.offset_property_struct
-        self._prop.vsParse(self._class_definition.data, offset=property_offset)
+        print(h(property_offset))
+        import hexdump
+        hexdump.hexdump(self._class_definition.property_data.data)
+        self._prop.vsParse(self._class_definition.property_data.data, offset=property_offset)
 
     def __repr__(self):
         return "Property(name: {:s}, type: {:s}, qualifiers: {:s})".format(
@@ -363,11 +383,23 @@ class Property(LoggingObject):
         if self._propref.is_builtin_property:
             return self._propref.builtin_property_name
         else:
-            return self._class_definition._fields.get_string(self._propref.offset_property_name)
+            return self._class_definition.property_data.get_string(self._propref.offset_property_name)
 
     @property
     def type(self):
         return self._prop.type
+
+    @property
+    def index(self):
+        return self._prop.index
+
+    @property
+    def offset(self):
+        return self._prop.offset
+
+    @property
+    def level(self):
+        return self._prop.level
 
     @property
     def qualifiers(self):
@@ -377,14 +409,10 @@ class Property(LoggingObject):
         for i in range(self._prop.qualifiers.count):
             q = self._prop.qualifiers.qualifiers[i]
             # TODO: don't reach
-            qk = self._class_definition._fields.get_qualifier_key(q)
-            qv = self._class_definition._fields.get_qualifier_value(q)
+            qk = self._class_definition.property_data.get_qualifier_key(q)
+            qv = self._class_definition.property_data.get_qualifier_value(q)
             ret[str(qk)] = qv
         return ret
-
-    @property
-    def entry_number(self):
-        return self._prop.entry_number
 
 
 class PropertyReference(vstruct.VStruct):
@@ -425,6 +453,7 @@ class PropertyReferenceList(vstruct.VStruct):
         self.refs.vsAddElements(self.count, PropertyReference)
 
 
+# TODO: remove and prefer DataRegion
 class ClassFieldGetter(LoggingObject):
     """ fetches values from ClassDefinition, ClassInstance """
     def __init__(self, buf):
@@ -536,6 +565,7 @@ class PropertyDefaultValues(vstruct.VArray):
 
         self.default_values_toc = vstruct.VArray()
         for prop in self._properties:
+            print(prop._prop._prop.tree())
             P = prop.type.value_parser
             self.default_values_toc.vsAddElement(P())
 
@@ -543,213 +573,96 @@ class PropertyDefaultValues(vstruct.VArray):
         if prop_index > len(self._properties):
             raise RuntimeError("invalid prop_index")
 
+
+        print("get state", prop_index, "-------------------------------")
+        for u, _ in self.state:
+            b = self.state[int(u)]
+            print(bin(b))
+
+
         state_index = prop_index // 4
+        print("index", state_index)
         byte_of_state = self.state[state_index]
+        print("byte", bin(byte_of_state))
         rotations = prop_index % 4
+        print("rotations", rotations)
         state_flags = (byte_of_state >> (2 * rotations)) & 0x3
-        return PropertyDefaultsState(state_flags & 0b10 == 0, state_flags & 0b01 > 0)
+        print("state", bin(state_flags))
+        s =  PropertyDefaultsState(state_flags & 0b10 == 1, state_flags & 0b01 == 0)
+        print(s)
+        return s
 
 
-DataItem = namedtuple("DataItem", ["name", "offset", "struct"])
-
-
-class CimTypeArray(vstruct.VStruct, LoggingObject):
-    def __init__(self, cim_type):
-        vstruct.VStruct.__init__(self)
-        LoggingObject.__init__(self)
-        self._type = cim_type
-        self.count = v_uint32()
-        self.elements = vstruct.VArray()
-
-    def pcb_count(self):
-        self.elements.vsAddElements(self.count, self._type)
-
-
-class ClassDefinitionData(vstruct.VStruct, LoggingObject):
-    def __init__(self, class_name_offset, prop_list, qualifier_list):
-        """
-        :type class_name_offset: int
-        :type prop_list: PropertyReferenceList
-        :type qualifier_list: QualifiersList
-        """
-        vstruct.VStruct.__init__(self)
-        LoggingObject.__init__(self)
-
-        self._size = v_uint32()
-        self.items = vstruct.VStruct()
-        self._items = []
-        self._items.append(DataItem("class_name", class_name_offset, WMIString()))
-        self.data = ""
-
-        for i in range(prop_list.count):
-            prop_ref = prop_list.refs[i]  # type: PropertyReference
-            if not prop_ref.is_builtin_property:
-                self._items.append(DataItem(
-                    "prop:{:d}.name".format(i), prop_ref.offset_property_name, WMIString()))
-            self._items.append(DataItem(
-                "prop:{:d}.value".format(i), prop_ref.offset_property_struct, _Property()))
-
-                # TODO: how do we parse into the _Property to fetch the qualifiers?
-
-        for i in range(qualifier_list.count):
-            qual_ref = qualifier_list.qualifiers[i]
-            if qual_ref.is_builtin_key:
-                pass
-            else:
-                self._items.append(DataItem(
-                    "qualifier:{:d}.name".format(i), qual_ref.key, WMIString()))
-
-            field_name = "qualifier:{:d}.value".format(i)
-            if qual_ref.value_type.is_array:
-                P = qual_ref.value_type.value_parser()
-                self._items.append(DataItem(field_name, qual_ref.value, CimTypeArray(P)))
-            else:
-                t = qual_ref.value_type.type
-                if t == CIM_TYPES.CIM_TYPE_STRING:
-                    self._items.append(DataItem(field_name, qual_ref.value, WMIString()))
-                elif t == CIM_TYPES.CIM_TYPE_DATETIME:
-                    self._items.append(DataItem(field_name, qual_ref.value, WMIString()))
-
-        self._items = sorted(self._items, key=lambda i: i.offset)
-
-    @property
-    def size(self):
-        return self._size & 0x7FFFFFFF
-
-    def vsParse(self, bytez, offset=0, fast=False):
-        import hexdump
-        hexdump.hexdump(bytez)
-        soffset = offset
-        consumed_bytes = 0
-        items = self._items[:]
-
-        offset = self["_size"].vsParse(bytez, offset=offset)
-
-        padding_count = 0
-        while len(items) > 0:
-            item = items.pop(0)
-            if item.offset > consumed_bytes:
-                field_name = "padding_{:d}".format(padding_count)
-                delta_bytes = item.offset - consumed_bytes
-                v = v_bytes(size=delta_bytes)
-                self.items.vsAddField(field_name, v)
-                offset += delta_bytes
-                consumed_bytes += delta_bytes
-                padding_count += 1
-
-            v = item.struct
-            v.vsParse(bytez, offset=offset)
-            self.items.vsAddField(item.name, v)
-            offset += len(v)
-            consumed_bytes += len(v)
-
-        if consumed_bytes != self.size - 4:
-            field_name = "padding_{:d}".format(padding_count)
-            delta_bytes = self.size - consumed_bytes
-            v = v_bytes(size=delta_bytes)
-            self.items.vsAddField(field_name, v)
-            offset += delta_bytes
-            consumed_bytes += delta_bytes
-
-        self.data = bytez[soffset + 0x4:soffset + self.size]
-        return offset
-
-
-class E(vstruct.VStruct, LoggingObject):
-    def __init__(self, cd, buf):
-        vstruct.VStruct.__init__(self)
-        LoggingObject.__init__(self)
-
-        self._size = v_uint32()
-        self.items = vstruct.VStruct()
-        self._items = []
-        self._items.append(DataItem("class_name", class_name_offset, WMIString()))
-        self.data = ""
-
-        for i in range(prop_list.count):
-            prop_ref = prop_list.refs[i]  # type: PropertyReference
-            if not prop_ref.is_builtin_property:
-                self._items.append(DataItem(
-                    "prop:{:d}.name".format(i), prop_ref.offset_property_name, WMIString()))
-            self._items.append(DataItem(
-                "prop:{:d}.value".format(i), prop_ref.offset_property_struct, _Property()))
-
-                # TODO: how do we parse into the _Property to fetch the qualifiers?
-
-        for i in range(qualifier_list.count):
-            qual_ref = qualifier_list.qualifiers[i]
-            if qual_ref.is_builtin_key:
-                pass
-            else:
-                self._items.append(DataItem(
-                    "qualifier:{:d}.name".format(i), qual_ref.key, WMIString()))
-
-            field_name = "qualifier:{:d}.value".format(i)
-            if qual_ref.value_type.is_array:
-                P = qual_ref.value_type.value_parser()
-                self._items.append(DataItem(field_name, qual_ref.value, CimTypeArray(P)))
-            else:
-                t = qual_ref.value_type.type
-                if t == CIM_TYPES.CIM_TYPE_STRING:
-                    self._items.append(DataItem(field_name, qual_ref.value, WMIString()))
-                elif t == CIM_TYPES.CIM_TYPE_DATETIME:
-                    self._items.append(DataItem(field_name, qual_ref.value, WMIString()))
-
-        self._items = sorted(self._items, key=lambda i: i.offset)
-
-    @property
-    def size(self):
-        return self._size & 0x7FFFFFFF
-
-    def vsParse(self, bytez, offset=0, fast=False):
-        import hexdump
-        hexdump.hexdump(bytez)
-        soffset = offset
-        consumed_bytes = 0
-        items = self._items[:]
-
-        offset = self["_size"].vsParse(bytez, offset=offset)
-
-        padding_count = 0
-        while len(items) > 0:
-            item = items.pop(0)
-            if item.offset > consumed_bytes:
-                field_name = "padding_{:d}".format(padding_count)
-                delta_bytes = item.offset - consumed_bytes
-                v = v_bytes(size=delta_bytes)
-                self.items.vsAddField(field_name, v)
-                offset += delta_bytes
-                consumed_bytes += delta_bytes
-                padding_count += 1
-
-            v = item.struct
-            v.vsParse(bytez, offset=offset)
-            self.items.vsAddField(item.name, v)
-            offset += len(v)
-            consumed_bytes += len(v)
-
-        if consumed_bytes != self.size - 4:
-            field_name = "padding_{:d}".format(padding_count)
-            delta_bytes = self.size - consumed_bytes
-            v = v_bytes(size=delta_bytes)
-            self.items.vsAddField(field_name, v)
-            offset += delta_bytes
-            consumed_bytes += delta_bytes
-
-        self.data = bytez[soffset + 0x4:soffset + self.size]
-        return offset
-
-
-class MethodData(vstruct.VStruct, LoggingObject):
+class DataRegion(vstruct.VStruct, LoggingObject):
+    """
+    size field, then variable length of binary data.
+    provides accessors for common types.
+    """
     def __init__(self):
         vstruct.VStruct.__init__(self)
         LoggingObject.__init__(self)
 
-        self.size = v_uint32()
+        self._size = v_uint32()
         self.data = v_bytes(size=0)
+
+    def pcb__size(self):
+        self["data"].vsSetLength(self.size)
+
+    @property
+    def size(self):
+        return self._size & 0x7FFFFFFF
 
     def pcb_size(self):
         self["data"].vsSetLength(self.size)
+
+    def get_string(self, ref):
+        s = WMIString()
+        s.vsParse(self.data, offset=int(ref))
+        return str(s.s)
+
+    def get_array(self, ref, item_type):
+        Parser = item_type.value_parser
+        data = self.data
+
+        arraySize = v_uint32()
+        arraySize.vsParse(data, offset=int(ref))
+
+        items = []
+        offset = ref + 4  # sizeof(array_size:uint32_t)
+        for i in range(arraySize):
+            p = Parser()
+            p.vsParse(data, offset=offset)
+            items.append(self.get_value(p, item_type))
+            offset += len(p)
+        return items
+
+    def get_value(self, value, value_type):
+        """
+        value: is a parsed value, might need dereferencing
+        value_type: is a CimType
+        """
+        if value_type.is_array:
+            return self.get_array(value, value_type.base_type_clone)
+
+        t = value_type.type
+        if t == CIM_TYPES.CIM_TYPE_STRING:
+            return self.get_string(value)
+        elif t == CIM_TYPES.CIM_TYPE_BOOLEAN:
+            return value != 0
+        elif t == CIM_TYPES.CIM_TYPE_DATETIME:
+            return self.get_string(value)
+        elif CIM_TYPES.vsReverseMapping(t):
+            return value
+        else:
+            raise RuntimeError("unknown qualifier type: %s", str(value_type))
+
+    def get_qualifier_value(self, qualifier):
+        return self.get_value(qualifier.value, qualifier.value_type)
+
+    def get_qualifier_key(self, qualifier):
+        if qualifier.is_builtin_key:
+            return BUILTIN_QUALIFIERS.vsReverseMapping(qualifier.key)
+        return self.get_string(qualifier.key)
 
 
 class ClassDefinition(vstruct.VStruct, LoggingObject):
@@ -763,74 +676,16 @@ class ClassDefinition(vstruct.VStruct, LoggingObject):
         # useful with the PropertyDefaultValues structure, but that requires
         #  a complete list of properties from the ClassLayout
         self.property_default_values_data = v_bytes(size=0)
-        self._data_length = v_uint32()
-        self.data = v_bytes(size=0)
-        self.method_data = MethodData()
-
-        self._fields = ClassFieldGetter(self.data)
+        self.property_data = DataRegion()
+        self.method_data = DataRegion()
 
     def pcb_property_references(self):
         self["property_default_values_data"].vsSetLength(self.header.property_default_values_length)
         # TODO: add fields
 
-    def pcb__data_length(self):
-        self["data"].vsSetLength(self.data_length)
-
-    @property
-    def data_length(self):
-        return self._data_length & 0x7FFFFFFF
-
-    #def pcb_property_default_values_data(self):
-    #    self.data = ClassDefinitionData(
-    #        int(self.header.offset_class_name), self.property_references, self.qualifiers_list)
-
-    def pcb_data(self):
-        print(self.tree())
-        self._fields = ClassFieldGetter(self.data)
-
-    def pcb_method_data(self):
-        # everything is done at this point...
-
-        for i in range(self.property_references.count):
-            pref = self.property_references.refs[i]  # type: PropertyReference
-            if not pref.is_builtin_property:
-                pass
-                #self._items.append(DataItem(
-                #    "prop:{:d}.name".format(i), prop_ref.offset_property_name, WMIString()))
-            #self._items.append(DataItem(
-            #    "prop:{:d}.value".format(i), prop_ref.offset_property_struct, _Property()))
-            # TODO: how do we parse into the _Property to fetch the qualifiers?
-
-        for i in range(self.qualifier_references.count):
-            qref = self.qualifier_references.qualifiers[i]
-            if qref.is_builtin_key:
-                pass
-            else:
-                pass
-                #self._items.append(DataItem(
-                #    "qualifier:{:d}.name".format(i), qual_ref.key, WMIString()))
-
-            field_name = "qualifier:{:d}.value".format(i)
-            if qref.value_type.is_array:
-                P = qref.value_type.value_parser()
-                #self._items.append(DataItem(field_name, qref.value, CimTypeArray(P)))
-            else:
-                t = qref.value_type.type
-                if t == CIM_TYPES.CIM_TYPE_STRING:
-                    pass
-                    #self._items.append(DataItem(field_name, qref.value, WMIString()))
-                elif t == CIM_TYPES.CIM_TYPE_DATETIME:
-                    pass
-                    #self._items.append(DataItem(field_name, qref.value, WMIString()))
-
-    def vsParse(self, sbytes, offset=0, fast=False):
-        vstruct.VStruct.vsParse(self, sbytes, offset=offset, fast=fast)
-
-
-
     def __repr__(self):
         # TODO: fixme
-        return "ClassDefinition(name: {:s})".format("1" or self.class_name)
+        return "ClassDefinition(name: {:s})".format(self.class_name)
 
     @property
     def keys(self):
@@ -850,7 +705,7 @@ class ClassDefinition(vstruct.VStruct, LoggingObject):
     @property
     def class_name(self):
         """ :rtype: str """
-        return self._fields.get_string(self.header.offset_class_name)
+        return self.property_data.get_string(self.header.offset_class_name)
 
     @property
     def super_class_name(self):
@@ -869,12 +724,13 @@ class ClassDefinition(vstruct.VStruct, LoggingObject):
         qualrefs = self.qualifiers_list
         for i in range(qualrefs.count):
             q = qualrefs.qualifiers[i]
-            qk = self._fields.get_qualifier_key(q)
-            qv = self._fields.get_qualifier_value(q)
+            qk = self.property_data.get_qualifier_key(q)
+            qv = self.property_data.get_qualifier_value(q)
             ret[str(qk)] = qv
         return ret
 
-    @cached_property
+    # TODO: cached_property
+    @property
     def properties(self):
         """
         Get the Properties specific to this Class Definition.
@@ -882,13 +738,13 @@ class ClassDefinition(vstruct.VStruct, LoggingObject):
         Note, you can't compute default values using only this field, since
           the complete class layout is required.
 
-        :rtype: Mapping[str, Property]
+        :rtype: Mapping[str, ClassDefinitionProperty]
         """
         ret = {}
         proprefs = self.property_references
         for i in range(proprefs.count):
             propref = proprefs.refs[i]
-            prop = Property(self, propref)
+            prop = ClassDefinitionProperty(self, propref)
             ret[prop.name] = prop
         return ret
 
@@ -1086,68 +942,19 @@ class CoreClassInstance(vstruct.VStruct, LoggingObject):
         raise NotImplementedError()
 
 
-DerivationEntry = namedtuple("DerivationEntry", ["cd", "cl"])
-
-
-class ClassLayout(LoggingObject):
-    def __init__(self, object_resolver, namespace, class_definition):
+class ClassLayoutProperty(LoggingObject):
+    def __init__(self, prop, class_layout):
         """
-        :type object_resolver: ObjectResolver
-        :type namespace: str
-        :type class_definition: ClassDefinition
+        TODO: its unclear which cl should be passed here.
+            - the one one which the prop is defined?
+            - the leaf cl from which we're trying to get default values?  <--
+
+        :type prop:  ClassDefinitionProperty
+        :type class_layout: ClassLayout
         """
-        super(ClassLayout, self).__init__()
-        self.object_resolver = object_resolver
-        self.namespace = namespace
-        self.class_definition = class_definition
-
-    @cached_property
-    def properties(self):
-        cd = self.class_definition
-        super_class_name = self.class_definition.super_class_name
-
-        props = None
-        if super_class_name == "":
-            props = BoundProperties()
-        else:
-            parent_cl = self.object_resolver.get_cl(self.namespace, super_class_name)
-            props = BoundProperties(parent_cl.properties)
-
-            # TODO: this needs to be bound to the current cd, not some parent...
-            for prop in parent_cl.properties:
-                props[prop.name] = prop
-
-        for prop in cd.properties.values():
-            props[prop.name] = prop
-
-        default_values_buf = cd.property_default_values_data
-        default_values = PropertyDefaultValues(props.values())
-        default_values.vsParse(default_values_buf)
-        props.default_values = default_values
-        # TODO: order by slot id
-        return props
-
-    @cached_property
-    def properties_length(self):
-        off = 0
-        for prop in self.properties:
-            if prop.type.is_array:
-                off += 0x4
-            else:
-                off += CIM_TYPE_SIZES[prop.type.type]
-        return off
-
-
-# TODO: perhaps this is a BoundPropertyDefinition?
-class BoundProperty(LoggingObject):
-    def __init__(self, props, prop):
-        """
-        :type props: BoundProperties
-        :type prop:  Property
-        """
-        super(BoundProperty, self).__init__()
-        self._props = props
+        super(ClassLayoutProperty, self).__init__()
         self._prop = prop
+        self.class_layout = class_layout
 
     @property
     def type(self):
@@ -1162,8 +969,16 @@ class BoundProperty(LoggingObject):
         return self._prop.name
 
     @property
-    def entry_number(self):
-        return self._prop.entry_number
+    def index(self):
+        return self._prop.index
+
+    @property
+    def offset(self):
+        return self._prop.offset
+
+    @property
+    def level(self):
+        return self._prop.level
 
     def __repr__(self):
         return "Property(name: {:s}, type: {:s}, qualifiers: {:s})".format(
@@ -1173,73 +988,82 @@ class BoundProperty(LoggingObject):
 
     @property
     def is_inherited(self):
-        pass
+        return self.class_layout.property_default_values.get_state_by_index(self.index).is_inherited
 
     @property
     def has_default_value(self):
-        pass
+        return self.class_layout.property_default_values.get_state_by_index(self.index).has_default_value
 
     @property
     def default_value(self):
-        pass
+        if not self.has_default_value:
+            raise RuntimeError("property has no default value!")
+        # TODO: need to do more parsing here for complex types
+        return self.class_layout.property_default_values.default_values_toc(self.index)
 
 
-class BoundProperties(LoggingObject):
-    """
-    here's a somewhat magic class that increases the WTF factor of the code;
-    however, it keeps some data structures hidden.
-
-    properties may have default values. this is flagged via the property_default_values
-      field within the class definition. a bound property is explicitly tied to a specific class
-      definition, which allows it to retrieve its default value.
-
-    default values may (or may not) be inherited from ancestor class definitions. so,
-      bound properties must be able to resolve the associated property in parent class
-      definitions, and get their default value. we model via a singly linked list of
-      bound property sets, from child to parent. if an inherited default value is request, the
-      child can traverse the list to fetch the value.
-
-    for convenience, the bound properties set (this class) operates like a dict/list
-      hybrid: caller can lookup by bound properties by name, or iterate bound property objects.
-    """
-    def __init__(self, parent=None):
-        super(BoundProperties, self).__init__()
-        self._parent = parent  # type: BoundProperties or None
-        self._properties = {}  # type: Mapping[str, BoundProperty]
-        # intended to be externally set prior to use of this BoundProperies class
-        self.default_values = None  # type: PropertyDefaultValues
-
-    def __setitem__(self, key, value):
+class ClassLayout(LoggingObject):
+    def __init__(self, object_resolver, namespace, class_definition):
         """
-        :type key: str
-        :type value: Property
+        :type object_resolver: ObjectResolver
+        :type namespace: str
+        :type class_definition: ClassDefinition
         """
-        self._properties[key] = BoundProperty(self, value)
+        super(ClassLayout, self).__init__()
+        self.object_resolver = object_resolver
+        self.namespace = namespace
+        self.class_definition = class_definition
 
-    def __getitem__(self, key):
-        """
-        :rtype: Sequence[BoundProperty]
-        """
-        if isinstance(key, int):
-            return self._properties[list(self.keys())[key]]
-            pass
-        else:
-            return self._properties[key]
+    def __repr__(self):
+        # TODO: fixme
+        return "ClassLayout(name: {:s})".format(self.class_definition.class_name)
 
-    def keys(self):
+    @cached_property
+    def derivation(self):
         """
-        :rtype: Sequence[str]
+        list from root to leaf of class layouts
         """
-        return self._properties.keys()
+        derivation = []
 
-    def values(self):
-        """
-        :rtype: Sequence[BoundProperty]
-        """
-        return self._properties.values()
+        cl = self
+        super_class_name = self.class_definition.super_class_name
 
-    def __len__(self):
-        return len(self._properties)
+        while super_class_name != "":
+            derivation.append(cl)
+            cl = self.object_resolver.get_cl(self.namespace, super_class_name)
+            super_class_name = cl.class_definition.super_class_name
+        derivation.append(cl)
+        derivation.reverse()
+        return derivation
+
+    @cached_property
+    def property_default_values(self):
+        """ :rtype: PropertyDefaultValues """
+        props = self.properties.values()
+        props = sorted(props, key=lambda p: p.index)
+        default_values = PropertyDefaultValues(props)
+        d = self.class_definition.property_default_values_data
+        default_values.vsParse(d)
+        return default_values
+
+    @cached_property
+    def properties(self):
+        props = {}  # type: Mapping[int, ClassLayoutProperty]
+        for cl in self.derivation:
+            for prop in cl.class_definition.properties.values():
+                props[prop.index] = ClassLayoutProperty(prop, self)
+        return {prop.name: prop for prop in props.values()}
+
+    @cached_property
+    def properties_length(self):
+        off = 0
+        for prop in self.properties:
+            if prop.type.is_array:
+                off += 0x4
+            else:
+                off += CIM_TYPE_SIZES[prop.type.type]
+        return off
+
 
 
 class ObjectResolver(LoggingObject):

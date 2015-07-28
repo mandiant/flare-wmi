@@ -17,17 +17,66 @@ def dump_definition(cd, cl):
     for k, v in cd.qualifiers.items():
         ret.append("  %s: %s" % (k, str(v)))
     ret.append("properties:")
-    for propname, prop in cd.properties.items():
+    for propname, prop in sorted(cd.properties.items(), key=lambda p:p[1].index):
         ret.append("  name: %s" % prop.name)
         ret.append("    type: %s" % prop.type)
-        ret.append("    order: %s" % prop.entry_number)
+        ret.append("    index: %s" % prop.index)
+        ret.append("    level: %s" % prop.level)
+        ret.append("    offset: %s" % h(prop.offset))
         ret.append("    qualifiers:")
         for k, v in prop.qualifiers.items():
             ret.append("      %s: %s" % (k, str(v)))
     ret.append("layout:")
     off = 0
     if cl is not None:
-        for prop in cl.properties:
+        for prop in cl.properties.values():
+            ret.append("  (%s)   %s %s" % (h(off), prop.type, prop.name))
+            if prop.type.is_array:
+                off += 0x4
+            else:
+                off += CIM_TYPE_SIZES[prop.type.type]
+    ret.append("=" * 80)
+    ret.append("keys:")
+    for key in cd.keys:
+        ret.append("  %s" % (key))
+    ret.append("=" * 80)
+    ret.append(cd.tree())
+    return "\n".join(ret)
+
+
+def dump_layout(cd, cl):
+    """
+    :type cd: ClassDefinition
+    :type cl: ClassLayout
+    """
+    # TODO: migrate to templating?
+    ret = []
+
+    ret.append("classname: %s" % cd.class_name)
+    ret.append("super: %s" % cd.super_class_name)
+    ret.append("ts: %s" % cd.timestamp.isoformat("T"))
+    ret.append("qualifiers:")
+    for k, v in cd.qualifiers.items():
+        ret.append("  %s: %s" % (k, str(v)))
+    ret.append("properties:")
+    for propname, prop in sorted(cl.properties.items(), key=lambda p:p[1].index):
+        ret.append("  name: %s" % prop.name)
+        ret.append("    type: %s" % prop.type)
+        ret.append("    index: %s" % prop.index)
+        ret.append("    level: %s" % prop.level)
+        ret.append("    offset: %s" % h(prop.offset))
+        ret.append("    qualifiers:")
+        for k, v in prop.qualifiers.items():
+            ret.append("      %s: %s" % (k, str(v)))
+        ret.append("    is inherited: %s" % str(prop.is_inherited))
+        ret.append("    has default value: %s" % str(prop.has_default_value))
+        if prop.has_default_value:
+            dv = str(prop.default_value)
+            ret.append("    default value: %s" % (dv))
+    ret.append("layout:")
+    off = 0
+    if cl is not None:
+        for prop in cl.properties.values():
             ret.append("  (%s)   %s %s" % (h(off), prop.type, prop.name))
             if prop.type.is_array:
                 off += 0x4
