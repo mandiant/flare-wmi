@@ -454,18 +454,11 @@ class PropertyStates(vstruct.VArray):
         if prop_index > self._num_properties:
             raise RuntimeError("invalid prop_index")
 
-        #print("-------------------")
-        #print("index", prop_index)
         state_index = prop_index // 4
-        #print("state_index", state_index)
         byte_of_state = self[state_index]
-        #print("byte", bin(byte_of_state))
         rotations = prop_index % 4
-        #print("rotations", rotations)
         state_flags = (byte_of_state >> (2 * rotations)) & 0x3
-        #print("flags", bin(state_flags))
         p = self._bit_struct(state_flags & 0b10 > 0, state_flags & 0b01 == 0)
-        #print(p)
         return p
 
 
@@ -797,17 +790,13 @@ class ClassInstance(vstruct.VStruct, LoggingObject):
     def properties(self):
         """ get dict of str to concrete Property values"""
         ret = {}
-        print("props for ", self.class_layout.class_definition.class_name)
         for prop in self.class_layout.properties.values():
-            print("  ", prop)
             state = self.property_state.get_by_index(prop.index)
-            print("    state", state)
             v = None
             if state.is_initialized:
                 if state.use_default_value:
                     v = prop.default_value
                 else:
-                    print("    entry", self.toc[prop.index], prop.type)
                     v = self.data.get_value(self.toc[prop.index], prop.type)
             ret[prop.name] = ClassInstanceProperty(prop, self, state, v)
         return ret
