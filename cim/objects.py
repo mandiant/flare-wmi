@@ -77,60 +77,6 @@ class WMIString(vstruct.VStruct):
         return self.s.vsGetValue()
 
 
-
-comment = """
-
-enum VARENUM {  VT_EMPTY             = 0,
-  VT_NULL              = 1,
-  VT_I2                = 2,
-  VT_I4                = 3,
-  VT_R4                = 4,
-  VT_R8                = 5,
-  VT_CY                = 6,
-  VT_DATE              = 7,
-  VT_BSTR              = 8,
-  VT_DISPATCH          = 9,
-  VT_ERROR             = 10,
-  VT_BOOL              = 11,
-  VT_VARIANT           = 12,
-  VT_UNKNOWN           = 13,
-  VT_DECIMAL           = 14,
-  VT_I1                = 16,
-  VT_UI1               = 17,
-  VT_UI2               = 18,
-  VT_UI4               = 19,
-  VT_I8                = 20,
-  VT_UI8               = 21,
-  VT_INT               = 22,
-  VT_UINT              = 23,
-  VT_VOID              = 24,
-  VT_HRESULT           = 25,
-  VT_PTR               = 26,
-  VT_SAFEARRAY         = 27,
-  VT_CARRAY            = 28,
-  VT_USERDEFINED       = 29,
-  VT_LPSTR             = 30,
-  VT_LPWSTR            = 31,
-  VT_RECORD            = 36,
-  VT_INT_PTR           = 37,
-  VT_UINT_PTR          = 38,
-  VT_FILETIME          = 64,
-  VT_BLOB              = 65,
-  VT_STREAM            = 66,
-  VT_STORAGE           = 67,
-  VT_STREAMED_OBJECT   = 68,
-  VT_STORED_OBJECT     = 69,
-  VT_BLOB_OBJECT       = 70,
-  VT_CF                = 71,
-  VT_CLSID             = 72,
-  VT_VERSIONED_STREAM  = 73,
-  VT_BSTR_BLOB         = 0xfff,
-  VT_VECTOR            = 0x1000,
-  VT_ARRAY             = 0x2000,
-  VT_BYREF             = 0x4000
-};
-"""
-
 CIM_TYPES = v_enum()
 CIM_TYPES.CIM_TYPE_LANGID = 0x3
 CIM_TYPES.CIM_TYPE_REAL32 = 0x4
@@ -214,11 +160,10 @@ class CimType(vstruct.VStruct):
         # TODO: this is probably a bit-flag
         return self.array_state == ARRAY_STATES.ARRAY
 
+
     @property
-    def value_parser(self):
-        if self.is_array:
-            return v_uint32
-        elif self.type == CIM_TYPES.CIM_TYPE_LANGID:
+    def _base_value_parser(self):
+        if self.type == CIM_TYPES.CIM_TYPE_LANGID:
             return v_uint32
         elif self.type == CIM_TYPES.CIM_TYPE_REAL32:
             return v_float
@@ -239,7 +184,14 @@ class CimType(vstruct.VStruct):
         elif self.type == CIM_TYPES.CIM_TYPE_REFERENCE:
             return v_uint32
         else:
-            raise RuntimeError("unknown qualifier type: %s", h(self.type))
+            raise RuntimeError("unknown type: %s", h(self.type))
+
+    @property
+    def value_parser(self):
+        if self.is_array:
+            return v_uint32
+        else:
+            return self._base_value_parser
 
     def __repr__(self):
         r = ""
@@ -250,7 +202,7 @@ class CimType(vstruct.VStruct):
 
     @property
     def base_type_clone(self):
-        return BaseType(self.type, self.value_parser)
+        return BaseType(self.type, self._base_value_parser)
 
 
 class CimTypeArray(vstruct.VStruct, LoggingObject):
@@ -508,11 +460,19 @@ class PropertyDefaultValues(vstruct.VArray):
         if prop_index > len(self._properties):
             raise RuntimeError("invalid prop_index")
 
+        #print("-------------------")
+        #print("index", prop_index)
         state_index = prop_index // 4
+        #print("state_index", state_index)
         byte_of_state = self.state[state_index]
+        #print("byte", bin(byte_of_state))
         rotations = prop_index % 4
+        #print("rotations", rotations)
         state_flags = (byte_of_state >> (2 * rotations)) & 0x3
-        return PropertyDefaultsState(state_flags & 0b10 == 1, state_flags & 0b01 == 0)
+        #print("flags", bin(state_flags))
+        p = PropertyDefaultsState(state_flags & 0b10 > 0, state_flags & 0b01 == 0)
+        #print(p)
+        return p
 
 
 class DataRegion(vstruct.VStruct, LoggingObject):
@@ -546,12 +506,12 @@ class DataRegion(vstruct.VStruct, LoggingObject):
         Parser = item_type.value_parser
         data = self.data
 
-        arraySize = v_uint32()
-        arraySize.vsParse(data, offset=int(ref))
+        array_size = v_uint32()
+        array_size.vsParse(data, offset=int(ref))
 
         items = []
         offset = ref + 4  # sizeof(array_size:uint32_t)
-        for i in range(arraySize):
+        for i in range(array_size):
             p = Parser()
             p.vsParse(data, offset=offset)
             items.append(self.get_value(p, item_type))
