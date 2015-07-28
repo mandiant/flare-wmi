@@ -692,7 +692,10 @@ class InstanceKey(object):
         return "InstanceKey({:s})".format(str(self._d))
 
     def __str__(self):
-        return ",".join(["{:s}={:s}".format(str(k), str(self[k])) for k in sorted(self._d.keys())])
+        if len(self._d) == 0:
+            return ".default"
+        else:
+            return ",".join(["{:s}={:s}".format(str(k), str(self[k])) for k in sorted(self._d.keys())])
 
 
 class ClassInstance(vstruct.VStruct, LoggingObject):
