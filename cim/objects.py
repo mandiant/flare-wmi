@@ -204,8 +204,8 @@ BOOLEAN_STATES.TRUE = 0xFFFF
 class CimType(vstruct.VStruct):
     def __init__(self):
         vstruct.VStruct.__init__(self)
-        self.type = enum_uint8(CIM_TYPES)
-        self.array_state = enum_uint8(ARRAY_STATES)
+        self.type = v_uint8(enum=CIM_TYPES)
+        self.array_state = v_uint8(enum=ARRAY_STATES)
         self.unk0 = v_uint8()
         self.unk2 = v_uint8()
 
@@ -225,7 +225,7 @@ class CimType(vstruct.VStruct):
         elif self.type == CIM_TYPES.CIM_TYPE_STRING:
             return v_uint32
         elif self.type == CIM_TYPES.CIM_TYPE_BOOLEAN:
-            return functools.partial(enum_uint16, BOOLEAN_STATES)
+            return functools.partial(v_uint16, enum=BOOLEAN_STATES)
         elif self.type == CIM_TYPES.CIM_TYPE_UINT8:
             return v_uint8
         elif self.type == CIM_TYPES.CIM_TYPE_UINT16:

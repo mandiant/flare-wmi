@@ -339,7 +339,7 @@ class Key(LoggingObject):
 class IndexPageHeader(vstruct.VStruct):
     def __init__(self):
         vstruct.VStruct.__init__(self)
-        self.sig = enum_uint32(INDEX_PAGE_TYPES)
+        self.sig = v_uint32(enum=INDEX_PAGE_TYPES)
         self.logical_id = v_uint32()
         self.zero0 = v_uint32()
         self.root_page = v_uint32()
@@ -550,7 +550,9 @@ class LogicalIndexStore(LoggingObject):
         physical_page_number = self._mapping.entries[index].page_number
 
         if physical_page_number > self._mapping.header.physical_page_count:
-            raise InvalidPhysicalPageNumber()
+            raise InvalidPhysicalPageNumber("{:s} is greater than the count {:s}".format(
+                hex(physical_page_number),
+                hex(self._mapping.header.physical_page_count)))
 
         pagebuf = self.get_logical_page_buffer(index)
         p = IndexPage(index, physical_page_number)
