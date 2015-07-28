@@ -777,7 +777,7 @@ class ClassInstance(vstruct.VStruct, LoggingObject):
         self.property_state_data = v_bytes(size=property_state_length)
 
         self.toc = vstruct.VArray()
-        for prop in self.class_layout.properties:
+        for prop in self.class_layout.properties.values():
             P = prop.type.value_parser
             self.toc.vsAddElement(P())
 
@@ -786,19 +786,13 @@ class ClassInstance(vstruct.VStruct, LoggingObject):
         self.data_length = v_uint32()  # high bit always set, length of variable data
         self.data = v_bytes(size=0)
 
-        self._property_index_map = {prop.name: i for i, prop in enumerate(self.class_layout.properties)}
-        self._property_type_map = {prop.name: prop.type for prop in self.class_layout.properties}
+        self._property_index_map = {prop.name: i for i, prop in enumerate(self.class_layout.properties.values())}
+        self._property_type_map = {prop.name: prop.type for prop in self.class_layout.properties.values()}
 
         self._fields = ClassFieldGetter(self.data)
 
     def pcb_data_length(self):
         self["data"].vsSetLength(self.data_length & 0x7FFFFFFF)
-
-    def pcb_unk1(self):
-        if self.unk1 != 0x1:
-            # seems that when this field is 0x0, then there is additional property data
-            # maybe this is DYNPROPS: True???
-            raise NotImplementedError("ClassInstance.unk1 != 0x1: %s" % h(self.unk1))
 
     def __repr__(self):
         # TODO: make this nice
