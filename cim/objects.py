@@ -543,6 +543,8 @@ class DataRegion(vstruct.VStruct, LoggingObject):
         t = value_type.type
         if t == CIM_TYPES.CIM_TYPE_STRING:
             return self.get_string(value)
+        if t == CIM_TYPES.CIM_TYPE_REFERENCE:
+            return self.get_string(value)
         elif t == CIM_TYPES.CIM_TYPE_BOOLEAN:
             return value != 0
         elif t == CIM_TYPES.CIM_TYPE_DATETIME:
