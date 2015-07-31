@@ -1352,6 +1352,15 @@ class TreeNamespace(LoggingObject):
     @property
     def classes(self):
         yielded = set([])
+
+        # all namespaces inherit classes from __SystemClass
+        if self.name != SYSTEM_NAMESPACE_NAME:
+            for cd in self._object_resolver.get_ns_children_cd(SYSTEM_NAMESPACE_NAME):
+                name = cd.class_name
+                if name not in yielded:
+                    yielded.add(name)
+                    yield TreeClassDefinition(self._object_resolver, self.name, cd.class_name)
+
         for cd in self._object_resolver.get_ns_children_cd(self.name):
             name = cd.class_name
             if name not in yielded:
