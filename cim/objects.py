@@ -548,7 +548,7 @@ class DataRegion(vstruct.VStruct, LoggingObject):
         elif t == CIM_TYPES.CIM_TYPE_DATETIME:
             return self.get_string(value)
         elif CIM_TYPES.vsReverseMapping(t):
-            return value
+            return value.vsGetValue()
         else:
             raise RuntimeError("unknown type: %s", str(value_type))
 
@@ -1221,7 +1221,7 @@ class ObjectResolver(LoggingObject):
             instance = self.parse_instance(self.get_cl(namespace_name, class_name), buf)
             this_is_it = True
             for k in cl.class_definition.keys:
-                if not instance.get_property(k).value == instance_key[k]:
+                if instance.get_property(k).value != instance_key[k]:
                     this_is_it = False
                     break
             if this_is_it:
