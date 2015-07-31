@@ -834,7 +834,7 @@ class ClassInstance(vstruct.VStruct, LoggingObject):
 
     def __repr__(self):
         # TODO: make this nice
-        return "ClassInstance(classhash: {:s}, key: {:s})".format(self.name_hash, self.key)
+        return "ClassInstance(classhash: {:s}, key: {:s})".format(self.name_hash, str(self.key))
 
     @property
     def class_name(self):
