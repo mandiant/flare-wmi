@@ -548,7 +548,11 @@ class DataRegion(vstruct.VStruct, LoggingObject):
         elif t == CIM_TYPES.CIM_TYPE_DATETIME:
             return self.get_string(value)
         elif CIM_TYPES.vsReverseMapping(t):
-            return value.vsGetValue()
+            # TODO: why are we getting mixed vstruct/Python types?
+            if hasattr(value, "vsGetValue"):
+                return value.vsGetValue()
+            else:
+                return value
         else:
             raise RuntimeError("unknown type: %s", str(value_type))
 
