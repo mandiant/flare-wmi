@@ -735,7 +735,12 @@ class ClassInstanceItemView(QTabWidget, LoggingObject):
         super(ClassInstanceItemView, self).__init__(parent)
         self._ci_item = ci_item
 
-        self.addTab(FixedWidthTextView(dump_instance(ci_item.ci)), "Instance details")
+        try:
+            txt = dump_instance(ci_item.ci)
+        except:
+            txt = traceback.format_exc()
+        self.addTab(FixedWidthTextView(txt), "Instance details")
+
         self.addTab(FixedWidthTextView(dump_layout(ci_item.cd, ci_item.cl)), "Definition details")
 
         # TODO: hack get_parsers() until we have a unified repo/config
