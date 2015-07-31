@@ -227,6 +227,10 @@ class TOC(vstruct.VArray):
                 return
 
 
+class IndexKeyNotFoundError(Exception):
+    pass
+
+
 class DataPage(LoggingObject):
     def __init__(self, buf, logical_page_number, physical_page_number):
         super(DataPage, self).__init__()
@@ -257,7 +261,7 @@ class DataPage(LoggingObject):
                     self.d("Large data item: key: %s, size: %s",
                             str(key), hex(target_size))
                 return self._buf[toc.offset:toc.offset + toc.size]
-        raise RuntimeError("record ID not found: %s", hex(target_id))
+        raise IndexKeyNotFoundError(key)
 
     def __getitem__(self, key):
         """

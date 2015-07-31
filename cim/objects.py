@@ -22,6 +22,7 @@ from .cim import Key
 from .cim import Index
 from .cim import CIM_TYPE_XP
 from .cim import CIM_TYPE_WIN7
+from .cim import IndexKeyNotFoundError
 
 # TODO: remove this from the top level
 logging.basicConfig(level=logging.DEBUG)
@@ -1142,7 +1143,11 @@ class ObjectResolver(LoggingObject):
     def get_objects(self, query):
         """ return a generator of object buffers matching the query """
         for ref in self.get_keys(query):
-            yield ref, self._cim.logical_data_store.get_object_buffer(ref)
+            try:
+                yield ref, self._cim.logical_data_store.get_object_buffer(ref)
+            except IndexKeyNotFoundError:
+                self.w("Expected object not found in object store: %s", ref)
+                continue
 
     @property
     def root_namespace(self):
