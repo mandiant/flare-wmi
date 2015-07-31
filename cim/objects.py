@@ -82,6 +82,7 @@ CIM_TYPES.CIM_TYPE_LANGID = 0x3
 CIM_TYPES.CIM_TYPE_REAL32 = 0x4
 CIM_TYPES.CIM_TYPE_STRING = 0x8
 CIM_TYPES.CIM_TYPE_BOOLEAN = 0xB
+CIM_TYPES.CIM_TYPE_UNKNOWN= 0xD
 CIM_TYPES.CIM_TYPE_UINT8 = 0x11
 CIM_TYPES.CIM_TYPE_UINT16 = 0x12
 CIM_TYPES.CIM_TYPE_UINT32= 0x13
@@ -94,6 +95,7 @@ CIM_TYPE_SIZES = {
     CIM_TYPES.CIM_TYPE_REAL32: 4,
     CIM_TYPES.CIM_TYPE_STRING: 4,
     CIM_TYPES.CIM_TYPE_BOOLEAN: 2,
+    CIM_TYPES.CIM_TYPE_UNKNOWN: 4,
     CIM_TYPES.CIM_TYPE_UINT8: 1,
     CIM_TYPES.CIM_TYPE_UINT16: 2,
     CIM_TYPES.CIM_TYPE_UINT32: 4,
@@ -173,6 +175,8 @@ class CimType(vstruct.VStruct):
             return functools.partial(v_uint16, enum=BOOLEAN_STATES)
         elif self.type == CIM_TYPES.CIM_TYPE_UINT8:
             return v_uint8
+        elif self.type == CIM_TYPES.CIM_TYPE_UNKNOWN:
+            return v_uint32
         elif self.type == CIM_TYPES.CIM_TYPE_UINT16:
             return v_uint16
         elif self.type == CIM_TYPES.CIM_TYPE_UINT32:
@@ -193,11 +197,19 @@ class CimType(vstruct.VStruct):
         else:
             return self._base_value_parser
 
+    #def pcb_unk2(self):
+    #    print("unk2", hex(self.type), type(self.type))
+    #    if self.type == 0xd:
+    #        print(self.tree())
+
     def __repr__(self):
         r = ""
         if self.is_array:
             r += "arrayref to "
-        r += CIM_TYPES.vsReverseMapping(self.type)
+        typename = CIM_TYPES.vsReverseMapping(self.type)
+        if typename is None:
+            raise RuntimeError("unknown type: %s", h(self.type))
+        r += typename
         return r
 
     @property
@@ -287,6 +299,7 @@ class QualifiersList(vstruct.VStruct):
 
     def vsParseFd(self, fd):
         raise NotImplementedError()
+
 
 
 class _ClassDefinitionProperty(vstruct.VStruct):
@@ -734,6 +747,52 @@ class ClassInstanceProperty(LoggingObject):
 
 InstancePropertyState = namedtuple("InstancePropertyState", ["use_default_value", "is_initialized"])
 
+DYNPROPS_STATE = v_enum()
+DYNPROPS_STATE.NO_DYNPROPS = 0x1
+DYNPROPS_STATE.HAS_DYNPROPS = 0x2
+
+
+class DynpropQualifiers(vstruct.VStruct):
+    def __init__(self):
+        vstruct.VStruct.__init__(self)
+        self.size = v_uint32()
+        # TODO: need to figure out this structure.
+        # looks like a few leading DWORDs, then some Qualifier references
+        self.data = v_bytes(size=0)
+
+    def pcb_size(self):
+        self["data"].vsSetLength(self.size)
+
+
+class Dynprops(vstruct.VStruct):
+    def __init__(self):
+        vstruct.VStruct.__init__(self)
+        self._has_dynprops = v_uint8()
+        # self.count = v_uint32()
+        # self.dynprops = vstruct.VArray(self.count * DynpropQualifiers)
+
+    @property
+    def has_dynprops(self):
+        # we've only seen possible values 0x1 and 0x2
+        return self._has_dynprops == DYNPROPS_STATE.HAS_DYNPROPS
+
+    def vsParse(self, bytez, offset=0, fast=False):
+        soffset = offset
+        offset = self["_has_dynprops"].vsParse(bytez, offset=offset)
+        if not self.has_dynprops:
+            return offset
+
+        self.vsAddField("count", v_uint32())
+        self.vsAddField("dynprops", vstruct.VArray())
+        offset = self["count"].vsParse(bytez, offset=offset)
+
+        self["dynprops"].vsAddElements(self.count, DynpropQualifiers)
+        offset = self["count"].vsParse(bytez, offset=offset)
+        return offset
+
+    def vsParseFd(self, fd):
+        raise NotImplementedError()
+
 
 class ClassInstance(vstruct.VStruct, LoggingObject):
     def __init__(self, cim_type, class_layout):
@@ -763,7 +822,7 @@ class ClassInstance(vstruct.VStruct, LoggingObject):
             self.toc.vsAddElement(P())
 
         self.qualifiers_list = QualifiersList()
-        self.unk1 = v_uint8()
+        self.dynprops = Dynprops()
         self.data = DataRegion()
 
     def __repr__(self):
@@ -790,13 +849,19 @@ class ClassInstance(vstruct.VStruct, LoggingObject):
     def properties(self):
         """ get dict of str to concrete Property values"""
         ret = {}
+        #print(self.class_layout.class_definition.class_name)
         for prop in self.class_layout.properties.values():
             state = self.property_state.get_by_index(prop.index)
+            #print(prop.name, state, prop)
             v = None
             if state.is_initialized:
                 if state.use_default_value:
                     v = prop.default_value
                 else:
+                    #print(hex(self.toc[prop.index]))
+                    #print(self.data.tree())
+                    #import hexdump
+                    #hexdump.hexdump(self.data.data)
                     v = self.data.get_value(self.toc[prop.index], prop.type)
             ret[prop.name] = ClassInstanceProperty(prop, self, state, v)
         return ret
@@ -1230,6 +1295,7 @@ class ObjectResolver(LoggingObject):
                     self.IL()))
 
         for ref, ibuf in self.get_objects(q):
+            g_logger.debug("result for %s:%s:  %s", namespace_name, class_name, ref)
             try:
                 instance = self.parse_instance(self.get_cl(namespace_name, class_name), ibuf)
             except:
