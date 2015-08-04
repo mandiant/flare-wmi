@@ -24,7 +24,7 @@ from cim import INDEX_PAGE_TYPES
 from cim.objects import TreeNamespace
 from cim.objects import TreeClassDefinition
 from cim.objects import ObjectResolver
-from cim.objects import Moniker
+from cim.objects import ObjectPath
 from cim.common import h
 from cim.common import LoggingObject
 from cim.formatters import dump_instance
@@ -843,6 +843,8 @@ class CimUiForm(QWidget, LoggingObject):
                 self._query_model.appendRow(item)
         elif query_text.lower().startswith("root"):
             self.d("logical query (missing host)")
+            # TODO: reference to Moniker is broken
+            # need reference to a namespace to .parse_object_path(), and .get()
             m = Moniker("//./" + query_text)
             self._handle_moniker_query(m)
         elif query_text.lower().startswith("//"):
