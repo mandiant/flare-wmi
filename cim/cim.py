@@ -774,65 +774,6 @@ class CIM(LoggingObject):
         return LogicalIndexStore(self, self._index_file_path, self.index_mapping)
 
 
-class Moniker(LoggingObject):
-    def __init__(self, string):
-        super(Moniker, self).__init__()
-        self._string = string
-        self.hostname = None  # type: str
-        self.namespace_name = None  # type: str
-        self.class_name = None  # type: str
-        self.instance_name = None  # type: dict of str to str
-        self._parse()
-
-    def __str__(self):
-        return self._string
-
-    def _parse(self):
-        """
-        supported schemas:
-            //./root/cimv2 --> namespace
-            //HOSTNAME/root/cimv2 --> namespace
-            winmgmts://./root/cimv2 --> namespace
-            //./root/cimv2:Win32_Service --> class
-            //./root/cimv2:Win32_Service.Name="Beep" --> instance
-            //./root/cimv2:Win32_Service.Name='Beep' --> instance
-
-        we'd like to support this, but can't differentiate this
-          from a namespace:
-            //./root/cimv2/Win32_Service --> class
-        """
-        s = self._string
-        s = s.replace("\\", "/")
-
-        if s.startswith("winmgmts:"):
-            s = s[len("winmgmts:"):]
-
-        if not s.startswith("//"):
-            raise RuntimeError("Moniker doesn't contain '//': %s" % (s))
-        s = s[len("//"):]
-
-        self.hostname, _, s = s.partition("/")
-        if self.hostname == ".":
-            self.hostname = "localhost"
-
-        s, _, keys = s.partition(".")
-        if keys == "":
-            keys = None
-        # s must now not contain any special characters
-        # we'll process the keys later
-
-        self.namespace_name, _, self.class_name = s.partition(":")
-        if self.class_name == "":
-            self.class_name = None
-        self.namespace_name = self.namespace_name.replace("/", "\\")
-
-        if keys is not None:
-            self.instance_name = {}
-            for key in keys.split(","):
-                k, _, v = key.partition("=")
-                self.instance_name[k] = v.strip("\"'")
-
-
 def main(type_, path):
     if type_ not in ("xp", "win7"):
         raise RuntimeError("Invalid mapping type: {:s}".format(type_))

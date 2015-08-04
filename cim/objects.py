@@ -834,7 +834,8 @@ class ClassInstance(vstruct.VStruct, LoggingObject):
 
     def __repr__(self):
         # TODO: make this nice
-        return "ClassInstance(classhash: {:s}, key: {:s})".format(self.name_hash, str(self.key))
+        return "ClassInstance(class: {:s}, key: {:s})".format(
+            self.class_layout.class_definition.class_name, str(self.key))
 
     @property
     def class_name(self):
@@ -1323,6 +1324,10 @@ def get_class_id(namespace, classname):
     return namespace + ":" + classname
 
 
+ObjectPath = namedtuple("ObjectPath", ["hostname", "namespace", "klass", "instance"])
+
+
+
 class TreeNamespace(LoggingObject):
     def __init__(self, object_resolver, name):
         super(TreeNamespace, self).__init__()
@@ -1333,7 +1338,7 @@ class TreeNamespace(LoggingObject):
         return "\\{namespace:s}".format(namespace=self.name)
 
     @property
-    def namespace(self):
+    def parent(self):
         """ get parent namespace """
         if self.name == ROOT_NAMESPACE_NAME:
             return None
@@ -1369,6 +1374,126 @@ class TreeNamespace(LoggingObject):
                 yielded.add(name)
                 yield TreeClassDefinition(self._object_resolver, self.name, cd.class_name)
 
+    def class_(self, name):
+        n = name.lower()
+        for c in self.classes:
+            if c.name.lower() == n:
+                return c
+        raise IndexError()
+
+    def namespace(self, name):
+        n = self.name + "\\" + name.lower()
+        for s in self.namespaces:
+            if s.name.lower() == n:
+                return n
+        raise IndexError()
+
+    def parse_object_path(self, object_path):
+        """
+        supported schemas:
+            cimv2 --> namespace
+            //./root/cimv2 --> namespace
+            //HOSTNAME/root/cimv2 --> namespace
+            winmgmts://./root/cimv2 --> namespace
+            Win32_Service --> class
+            //./root/cimv2:Win32_Service --> class
+            Win32_Service.Name='Beep' --> instance
+            //./root/cimv2:Win32_Service.Name="Beep" --> instance
+
+        we'd like to support this, but can't differentiate this
+          from a class:
+            //./root/cimv2/Win32_Service --> class
+        """
+        o_object_path = object_path
+        object_path = object_path.replace("\\", "/")
+
+        if object_path.startswith("winmgmts:"):
+            # winmgmts://./root/cimv2 --> namespace
+            object_path = object_path[len("winmgmts:"):]
+
+        hostname = "localhost"
+        namespace = self.name
+        classname = ""
+        instance = {}
+
+        is_rooted = False
+        if object_path.startswith("//"):
+            is_rooted = True
+
+            # //./root/cimv2 --> namespace
+            # //HOSTNAME/root/cimv2 --> namespace
+            # //./root/cimv2:Win32_Service --> class
+            # //./root/cimv2:Win32_Service.Name="Beep" --> instance
+            object_path = object_path[len("//"):]
+
+            # ./root/cimv2 --> namespace
+            # HOSTNAME/root/cimv2 --> namespace
+            # ./root/cimv2:Win32_Service --> class
+            # ./root/cimv2:Win32_Service.Name="Beep" --> instance
+            hostname, _, object_path = object_path.partition("/")
+            if hostname == ".":
+                hostname = "localhost"
+
+        # cimv2 --> namespace
+        # Win32_Service --> class
+        # Win32_Service.Name='Beep' --> instance
+        # root/cimv2 --> namespace
+        # root/cimv2 --> namespace
+        # root/cimv2:Win32_Service --> class
+        # root/cimv2:Win32_Service.Name="Beep" --> instance
+        if ":" in object_path:
+            namespace, _, object_path = object_path.partition(":")
+        elif "." not in object_path:
+            if is_rooted:
+                ns = object_path.replace("/", "\\")
+                return ObjectPath(hostname, ns, "", {})
+            else:
+                try:
+                    # relative namespace
+                    self.namespace(object_path)
+                    ns1 = self.name.replace("/", "\\")
+                    ns2 = object_path.replace("/", "\\")
+                    return ObjectPath(hostname, ns1 + "\\" + ns2, "", {})
+                except IndexError:
+                    try:
+                        self.class_(object_path)
+                        namespace = self.name
+                    except IndexError:
+                        raise RuntimeError("Unknown ObjectPath schema: %s" % (o_object_path))
+
+        # Win32_Service --> class
+        # Win32_Service.Name="Beep" --> instance
+        if "." in object_path:
+            object_path, _, keys = object_path.partition(".")
+            if keys:
+                for key in keys.split(","):
+                    k, _, v = key.partition("=")
+                    instance[k] = v.strip("\"'")
+        classname = object_path
+        ns = namespace.replace("/", "\\")
+        return ObjectPath(hostname, ns, classname, instance)
+
+    def get(self, object_path):
+        """
+        :type object_path: ObjectPath
+        """
+        if object_path.hostname != "localhost":
+            raise NotImplementedError("Unsupported hostname: {:s}".format(str(object_path.hostname)))
+        if object_path.instance:
+            return TreeClassInstance(self._object_resolver,
+                                     object_path.namespace,
+                                     object_path.klass,
+                                     object_path.instance)
+        elif object_path.klass:
+            return TreeClassDefinition(self._object_resolver,
+                                      object_path.namespace,
+                                      object_path.klass)
+        elif object_path.namespace:
+             return TreeClassDefinition(self._object_resolver,
+                                       object_path.namespace)
+        else:
+            raise RuntimeError("Invalid ObjectPath: {:s}".format(str(object_path)))
+
 
 class TreeClassDefinition(LoggingObject):
     def __init__(self, object_resolver, namespace, name):
@@ -1381,7 +1506,7 @@ class TreeClassDefinition(LoggingObject):
         return "\\{namespace:s}:{klass:s}".format(namespace=self.ns, klass=self.name)
 
     @property
-    def namespace(self):
+    def parent(self):
         """ get parent namespace """
         return TreeNamespace(self._object_resolver, self.ns)
 
@@ -1403,6 +1528,12 @@ class TreeClassDefinition(LoggingObject):
                 yielded.add(key)
                 yield TreeClassInstance(self._object_resolver, self.ns, ci.class_name, ci.instance_key)
 
+    def __getattr__(self, attr):
+        try:
+            return super(TreeClassDefinition, self).__getattr__(attr)
+        except AttributeError:
+            return getattr(self.cd, attr)
+
 
 class TreeClassInstance(LoggingObject):
     def __init__(self, object_resolver, namespace_name, class_name, instance_key):
@@ -1417,14 +1548,9 @@ class TreeClassInstance(LoggingObject):
             namespace=self.ns, klass=self.class_name, key=repr(self.instance_key))
 
     @property
-    def klass(self):
+    def parent(self):
         """ get class definition """
         return TreeClassDefinition(self._object_resolver, self.ns, self.class_name)
-
-    @property
-    def namespace(self):
-        """ get parent namespace """
-        return TreeNamespace(self._object_resolver, self.ns)
 
     @property
     def cl(self):
@@ -1437,6 +1563,12 @@ class TreeClassInstance(LoggingObject):
     @property
     def ci(self):
         return self._object_resolver.get_ci(self.ns, self.class_name, self.instance_key)
+
+    def __getattr__(self, attr):
+        try:
+            return super(TreeClassInstance, self).__getattr__(attr)
+        except AttributeError:
+            return getattr(self.ci, attr)
 
 
 class Tree(LoggingObject):
@@ -1453,64 +1585,17 @@ class Tree(LoggingObject):
         return TreeNamespace(self._object_resolver, ROOT_NAMESPACE_NAME)
 
 
-# TODO: this probably doesn't go here
-class Moniker(LoggingObject):
-    def __init__(self, string):
-        super(Moniker, self).__init__()
-        self._string = string
-        self.hostname = None  # type: str
-        self.namespace = None  # type: str
-        self.klass = None  # type: str
-        self.instance = None  # type: dict of str to str
-        self._parse()
+class Namespace(LoggingObject):
+    def __init__(self, cim, namespace_name):
+        super(Namespace, self).__init__()
+        self._cim = cim
+        self._name = namespace_name
+        self._i = Index(self._cim.cim_type, self._cim.logical_index_store)
+        self._o = ObjectResolver(self._cim, self._i)
 
-    def __str__(self):
-        return self._string
+    def __enter__(self):
+        return TreeNamespace(self._o, self._name)
 
-    def __repr__(self):
-        return "Moniker({:s})".format(self._string)
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        return
 
-    def _parse(self):
-        """
-        supported schemas:
-            //./root/cimv2 --> namespace
-            //HOSTNAME/root/cimv2 --> namespace
-            winmgmts://./root/cimv2 --> namespace
-            //./root/cimv2:Win32_Service --> class
-            //./root/cimv2:Win32_Service.Name="Beep" --> instance
-            //./root/cimv2:Win32_Service.Name='Beep' --> instance
-
-        we'd like to support this, but can't differentiate this
-          from a class:
-            //./root/cimv2/Win32_Service --> class
-        """
-        s = self._string
-        s = s.replace("\\", "/")
-
-        if s.startswith("winmgmts:"):
-            s = s[len("winmgmts:"):]
-
-        if not s.startswith("//"):
-            raise RuntimeError("Moniker doesn't contain '//': %s" % (s))
-        s = s[len("//"):]
-
-        self.hostname, _, s = s.partition("/")
-        if self.hostname == ".":
-            self.hostname = "localhost"
-
-        s, _, keys = s.partition(".")
-        if keys == "":
-            keys = None
-        # s must now not contain any special characters
-        # we'll process the keys later
-
-        self.namespace, _, self.klass = s.partition(":")
-        if self.klass == "":
-            self.klass = None
-        self.namespace = self.namespace.replace("/", "\\")
-
-        if keys is not None:
-            self.instance = {}
-            for key in keys.split(","):
-                k, _, v = key.partition("=")
-                self.instance[k] = v.strip("\"'")
