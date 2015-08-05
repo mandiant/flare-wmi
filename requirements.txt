@@ -1,0 +1,6 @@
+hexdump
+funcy
+intervaltree
+vivisect-vstruct-wb
+python-pyqt5-hexview
+python-pyqt5-vstructui
