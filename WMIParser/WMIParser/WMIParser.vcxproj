@@ -181,6 +181,7 @@
     <ClInclude Include="Namespace.h" />
     <ClInclude Include="NTEventLogEventConsumer.h" />
     <ClInclude Include="resource.h" />
+    <ClInclude Include="resource1.h" />
     <ClInclude Include="SMTPEventConsumer.h" />
     <ClInclude Include="stdafx.h" />
     <ClInclude Include="targetver.h" />
@@ -214,6 +215,7 @@
     <ResourceCompile Include="WMIParser.rc" />
   </ItemGroup>
   <ItemGroup>
+    <Image Include="..\..\..\..\..\..\..\Program Files (x86)\Microsoft Visual Studio 12.0\Common7\VS2010ImageLibrary\1033\ConnectionManager.ico" />
     <Image Include="..\..\..\..\..\..\Program Files (x86)\Microsoft Visual Studio 12.0\Common7\VS2010ImageLibrary\1033\ConnectionManager.ico" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
