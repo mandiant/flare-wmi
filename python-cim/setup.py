@@ -1,19 +1,18 @@
 #!/usr/bin/env python
 
-from cim import __version__
 from setuptools import setup
 
 
 description = "Pure Python parser for Windows WMI CIM respository databases."
 setup(name="python-cim",
-      version=__version__,
+      version="0.2",
       description=description,
       long_description=description,
       author="Willi Ballenthin",
       author_email="william.ballenthin@fireeye.com",
       url="https://github.com/williballenthin/python-cim",
       license="Apache 2.0 License",
-      install_depends=[
+      install_requires=[
           "hexdump",
           "funcy",
           "intervaltree",
