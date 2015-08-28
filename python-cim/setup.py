@@ -5,7 +5,7 @@ from setuptools import setup
 
 description = "Pure Python parser for Windows WMI CIM respository databases."
 setup(name="python-cim",
-      version="0.2",
+      version="1.1",
       description=description,
       long_description=description,
       author="Willi Ballenthin",
