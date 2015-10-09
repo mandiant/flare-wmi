@@ -24,6 +24,20 @@ All supporting packages will be installed via the command `pip install -r requir
 
 Installation
 ------------
+
+*Ubuntu*
+
+Use the script found [here](https://gist.githubusercontent.com/williballenthin/c14c4f960e25b8ab1cff/raw/4e0e45f1e23cb23f983e76f25f78a60f7b6cc36d/install_python_cim_ubuntu.sh) to install `python-cim` into a Python3 virtualenv:
+
+```
+cd /tmp;
+wget https://gist.githubusercontent.com/williballenthin/c14c4f960e25b8ab1cff/raw/4e0e45f1e23cb23f983e76f25f78a60f7b6cc36d/install_python_cim_ubuntu.sh;
+bash install_python_cim_ubuntu.sh;
+env/bin/python flare-wmi/python-cim/samples/ui.py win7 ~/Desktop/the/repo;
+```
+
+*other platforms*
+
   1. install python 3.4
     - debian: `apt-get install python3`
     - windows: https://www.python.org/downloads/
@@ -36,8 +50,8 @@ Installation
   4. install PyQt5
     - debian: `apt-get install python3-pyqt5`
     - windows: http://www.riverbankcomputing.com/software/pyqt/download5
-  5. install pip packages:
-    - `pip install -r requirements.txt`
+  5. install python-cim from pip:
+    - `pip install python-cim`
 
 
 Usage
