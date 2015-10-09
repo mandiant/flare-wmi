@@ -19,7 +19,7 @@ A few of the packages were developed to support this project. They are:
   - `python-pyqt5-vstructui`: A vstruct parser and view widget for PyQt5.
      source: [github](https://github.com/williballenthin/python-pyqt5-vstructui)
      
-All supporting packages will be installed via the command `pip install -r requirements.txt`, as described below.
+All supporting packages will be installed automatically when fetching `python-cim` via pip, as described below.
 
 
 Installation
