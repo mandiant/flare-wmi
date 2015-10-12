@@ -31,14 +31,25 @@ Use the script found [here](https://gist.githubusercontent.com/williballenthin/c
 
 ```
 cd /tmp;
-wget https://gist.githubusercontent.com/williballenthin/c14c4f960e25b8ab1cff/raw/4e0e45f1e23cb23f983e76f25f78a60f7b6cc36d/install_python_cim_ubuntu.sh;
+wget https://gist.githubusercontent.com/williballenthin/c14c4f960e25b8ab1cff/raw/87751f91c0b055713f4e8d0d0eaad4a6c14efef7/install_python_cim_ubuntu.sh;
 bash install_python_cim_ubuntu.sh;
+env/bin/python flare-wmi/python-cim/samples/ui.py win7 ~/Desktop/the/repo;
+```
+
+*Arch/Manjaro*
+
+Use the script found [here](https://gist.githubusercontent.com/williballenthin/ddb516208f5481c4e02a/raw/4a8fdb9b9eeffb4843f09803b1303b4b074dc46c/install_python_cim_arch.py) to install `python-cim` into a Python3 virtualenv:
+
+```
+cd /tmp;
+wget https://gist.githubusercontent.com/williballenthin/ddb516208f5481c4e02a/raw/4a8fdb9b9eeffb4843f09803b1303b4b074dc46c/install_python_cim_arch.py;
+bash install_python_cim_arch.sh;
 env/bin/python flare-wmi/python-cim/samples/ui.py win7 ~/Desktop/the/repo;
 ```
 
 *other platforms*
 
-  1. install python 3.4
+  1. install python 3.4+
     - debian: `apt-get install python3`
     - windows: https://www.python.org/downloads/
   2. install pip
