@@ -27,7 +27,7 @@ Installation
 
 *Ubuntu*
 
-Use the script found [here](https://gist.githubusercontent.com/williballenthin/c14c4f960e25b8ab1cff/raw/4e0e45f1e23cb23f983e76f25f78a60f7b6cc36d/install_python_cim_ubuntu.sh) to install `python-cim` into a Python3 virtualenv:
+Use the script found [here](https://gist.githubusercontent.com/williballenthin/c14c4f960e25b8ab1cff/raw/87751f91c0b055713f4e8d0d0eaad4a6c14efef7/install_python_cim_ubuntu.sh) to install `python-cim` into a Python3 virtualenv:
 
 ```
 cd /tmp;
