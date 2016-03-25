@@ -242,21 +242,22 @@ bool ClassDefinitionParser::ParseAllInNS(const wchar_t* path, MappingFileClass &
         std::vector<std::string> *records = index.GetResults();
         if (records) {
           if (!records->size()) {
-            wprintf_s(L"No classes defined in %s namespace.\r\n", Namespace.c_str());
+            wprintf_s(L"No classes defined in %S namespace.\r\n", Namespace.c_str());
             return true;
           }
           std::vector<std::string>::iterator it = records->begin();
           for (; it != records->end(); ++it) {
             if (ParseClassRecordLocation(*it, ls)) {
               ClassDefinition *classDef = 0;
-              if (CreateClassDefinition(ls, &classDef)) {
-                if (classDef)
+              bool bNonFatalError = false;
+              if (CreateClassDefinition(bNonFatalError, ls, &classDef)) {
+                if (classDef && !bNonFatalError)
                   classes.push_back(classDef);
                 else
-                  wprintf_s(L"Empty class def : %s\r\n", it->c_str());
+                  wprintf_s(L"Empty class def : %S\r\n", it->c_str());
               }
               else {
-                wprintf_s(L"Failed to parse class def : %s\r\n",it->c_str());
+                wprintf_s(L"Failed to parse class def : %S\r\n",it->c_str());
                 break;
               }
             }
@@ -287,7 +288,8 @@ bool ClassDefinitionParser::ParseClassDefinition(const wchar_t* szClassName, Cla
     }
     if (!ret)
       wprintf_s(L"No %s class defined in %s namespace.\r\n", szClassName, Namespace.c_str());
-    ret = !ret || CreateClassDefinition(ls, classDef);
+    bool bNonFatalError = false;
+    ret = !ret || CreateClassDefinition(bNonFatalError, ls, classDef);
   }
   return ret;
 }
@@ -308,15 +310,18 @@ bool ClassDefinitionParser::FindDefinitionRecord(std::string &path, LocationStru
   return ret;
 }
 
-bool ClassDefinitionParser::CreateClassDefinition(LocationStruct &ls, ClassDefinition **classDef) {
+bool ClassDefinitionParser::CreateClassDefinition(bool& bNotFatalError, LocationStruct &ls, ClassDefinition **classDef) {
   bool ret = false;
+  bNotFatalError = false;
   if (ls.IsValid()) {
     //wprintf_s(L"Class logical location: [%X.%X]\r\n", ls.LogicalID, ls.Size);
     std::vector<DWORD> *allocMap = Map.GetDataAllocMap();
     if (allocMap) {
       std::vector<ExtentClass> recordExtents;
-      if (!GetRecordExtents(m_ObjFile, *allocMap, ls, recordExtents))
-        return 0;
+      if (!GetRecordExtents(m_ObjFile, *allocMap, ls, recordExtents)) {
+        bNotFatalError = true;
+        return true;
+      }
       BYTE *recBuf = new BYTE[ls.Size];
       if (recBuf) {
         std::vector<ExtentClass>::iterator it = recordExtents.begin();

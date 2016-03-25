@@ -307,7 +307,7 @@ int _tmain(int argc, _TCHAR* argv[])
                       bd.Print(inner_argv[1], logpath);
                     }
                   }
-                  else if (!_wcsicmp(inner_argv[0], L"--instance")) { //--instance namespace classname
+                  else if (!_wcsicmp(inner_argv[0], L"--instance")) { //--instance classname
                     InstanceDeclarationParser instParser(path, L"", map);
                     instParser.ParseInAllNS(inner_argv[1], logpath);
                   }

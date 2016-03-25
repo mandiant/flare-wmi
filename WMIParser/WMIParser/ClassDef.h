@@ -200,7 +200,7 @@ private:
   bool                        m_bXP;
 
   bool Init(const wchar_t *path);
-  bool CreateClassDefinition(LocationStruct &ls, ClassDefinition **classDef);
+  bool CreateClassDefinition(bool& bFatal, LocationStruct &ls, ClassDefinition **classDef);
   bool Create(const void* recordBuf, std::vector<ExtentClass>& cRecordExtents, uint32 size, ClassDefinition **ppclassDef);
   static bool ParseClassRecordLocation(std::string &strIn, LocationStruct &ls);
   static void BuildClassSearchString(std::wstring& szNamespace, const wchar_t* szclass, std::string& szSearch, bool bXP);
