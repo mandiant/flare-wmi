@@ -153,6 +153,17 @@ bool ClassDefinitionParser::ParseClassRecordLocation(std::string &strIn, Locatio
   return ret;
 }
 
+bool ClassDefinitionParser::PrintMeta(const wchar_t* path, const wchar_t* szNamespace, const wchar_t* szClassName, MappingFileClass &map, const wchar_t *logpath) {
+  ClassDefinition* pclassDef = 0;
+  ClassDefinitionParser parser(path, map, szNamespace);
+  if (parser.Parse(path, szClassName, map, &pclassDef) && pclassDef) {
+    parser.PrintMeta(*pclassDef, szNamespace, logpath);
+    delete pclassDef;
+    return true;
+  }
+  return false;
+}
+
 bool ClassDefinitionParser::Print(const wchar_t* path, const wchar_t* szNamespace, const wchar_t* szClassName, MappingFileClass &map, const wchar_t *logpath) {
   ClassDefinition* pclassDef = 0;
   ClassDefinitionParser parser(path, map, szNamespace);
@@ -198,6 +209,24 @@ bool ClassDefinitionParser::Print(const wchar_t* path, MappingFileClass &map, co
   }
   else
     wprintf_s(L"Failed to print \'__SystemClass\' namespace classes\r\n");
+  return false;
+}
+
+bool ClassDefinitionParser::PrintAllClasses(const wchar_t* path, const wchar_t* szClassName, MappingFileClass &map, const wchar_t *logpath) {
+  WMINamespaceClass ns(map);
+  if (ns.ParseNamespaceRecords(path)) {
+    ns.Close();
+    std::vector<std::wstring> *nsNames = ns.GetNamespaces();
+    if (nsNames && nsNames->size()) {
+      std::vector<std::wstring>::iterator it = nsNames->begin();
+      for (; it != nsNames->end(); ++it) {
+        const wchar_t *ns = it->c_str();
+        if (!PrintMeta(path, ns, szClassName, map, logpath))
+          wprintf_s(L"Failed to print \'%s\' namespace classes\r\n", ns);
+      }
+      return true;
+    }
+  }
   return false;
 }
 
@@ -352,6 +381,14 @@ bool ClassDefinitionParser::CreateClassDefinition(bool& bNotFatalError, Location
   return ret;
 }
 
+void ClassDefinitionParser::PrintMeta(ClassDefinition &classDef, const wchar_t *szNamespace, const wchar_t *logpath) {
+  FILE* pOutFile = CreateLogFile(logpath, L"at, ccs=UNICODE");
+  MyPrintFunc(pOutFile, L"Namespace : %s\r\n", szNamespace);
+  classDef.PrintMeta(m_ObjFile, pOutFile);
+  if (pOutFile)
+    ::fclose(pOutFile);
+}
+
 void ClassDefinitionParser::Print(ClassDefinition &classDef, const wchar_t *szNamespace, const wchar_t *logpath) {
   FILE* pOutFile = CreateLogFile(logpath, L"at, ccs=UNICODE");
   MyPrintFunc(pOutFile, L"Namespace : %s\r\n", szNamespace);
@@ -470,8 +507,13 @@ void ClassDefinition::PrintJunk(HANDLE hFile, FILE* outFile) {
   MyPrintFunc(outFile, L"=============================================================================\r\n");
 }
 
-void ClassDefinition::Print(HANDLE hFile, FILE* outFile) {
+void ClassDefinition::PrintMeta(HANDLE hFile, FILE* outFile) {
   MyPrintFunc(outFile, L"===============================Class Definition==============================\r\n");
+  PrintMetaHelper(hFile, outFile);
+  MyPrintFunc(outFile, L"================================End of Class Definition=======================\r\n");
+}
+
+void ClassDefinition::PrintMetaHelper(HANDLE hFile, FILE* outFile) {
   MyPrintFunc(outFile, L"Name: ");
   ClassName.Print(hFile, outFile);
   MyPrintFunc(outFile, L"Base Classes:\r\n");
@@ -480,6 +522,11 @@ void ClassDefinition::Print(HANDLE hFile, FILE* outFile) {
     it_base_class->Print(hFile, outFile);
   MyPrintFunc(outFile, L"Created: ");
   Date.Print(outFile);
+}
+
+void ClassDefinition::Print(HANDLE hFile, FILE* outFile) {
+  MyPrintFunc(outFile, L"===============================Class Definition==============================\r\n");
+  PrintMetaHelper(hFile, outFile);
   MyPrintFunc(outFile, L"Class Qualifiers:\r\n");
   std::vector<QualifierClass>::iterator it_qual = Qualifiers.begin();
   for (; it_qual != Qualifiers.end(); ++it_qual)

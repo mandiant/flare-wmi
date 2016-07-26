@@ -148,6 +148,7 @@ public:
   bool ParseClassQualifiers(const BYTE* record, std::vector<ExtentClass>& cRecordExtents, uint32 currentOffset, uint32 dataOffset, uint32 qualifiersize);
   bool ParseClassProperties(const BYTE* record, std::vector<ExtentClass>& cRecordExtents, std::vector<ExtentClass>& defaultValues, uint32 propsOffset, uint32 dataOffset, uint32 propCount, uint32 defValOffset, uint32 defValSize);
   void Print(HANDLE objFile, FILE *pOutFile = 0);
+  void PrintMeta(HANDLE objFile, FILE *pOutFile = 0);
   void SetName(std::vector<ExtentClass>& ex);
   void AddBaseClass(std::vector<ExtentClass>& ex);
   std::vector<ExtentClass>& GetDefaultValues() { return DefaultValues; }
@@ -172,16 +173,19 @@ private:
   std::vector<QualifierClass> Qualifiers;
   std::vector<PropertyClass>  Properties;
   std::vector<ExtentClass>    DefaultValues;
+
+  void ClassDefinition::PrintMetaHelper(HANDLE hFile, FILE* outFile);
 };
 
 class ClassDefinitionParser {
 public:
   ClassDefinitionParser(const wchar_t* path, MappingFileClass &map, const wchar_t* szNamespace = L"__SytemClass");
   ~ClassDefinitionParser();
-
+  static bool PrintMeta(const wchar_t* path, const wchar_t* szNamespace, const wchar_t* szClassName, MappingFileClass &map, const wchar_t *logpath);
   static bool Print(const wchar_t* path, const wchar_t* szNamespace, const wchar_t* szClassName, MappingFileClass &map, const wchar_t *logpath);
   static bool Print(const wchar_t* path, const wchar_t* szNamespace, MappingFileClass &map, const wchar_t *logpath);
   static bool Print(const wchar_t* path, MappingFileClass &map, const wchar_t *logpath);
+  static bool PrintAllClasses(const wchar_t* path, const wchar_t* szClassName, MappingFileClass &map, const wchar_t *logpath);
   bool Parse(const wchar_t* path, const wchar_t* szClassName, MappingFileClass &map, std::vector<ClassDefinition*>& classes);
   bool Parse(const wchar_t* path, const wchar_t* szClassName, MappingFileClass &map, ClassDefinition **ppclassDef);
   bool ParseAllInNS(const wchar_t* path, MappingFileClass &map, std::vector<ClassDefinition*>& classes);
@@ -190,6 +194,7 @@ public:
   bool FindDefinitionRecord(std::string &path, LocationStruct& ls);
   bool FindRecords(std::wstring& ns, const wchar_t* szClassName, std::vector<LocationStruct> &lsrec);
   void Print(ClassDefinition &classDef, const wchar_t *szNamespace, const wchar_t *logpath);
+  void PrintMeta(ClassDefinition &classDef, const wchar_t *szNamespace, const wchar_t *logpath);
   void SetNamespace(const wchar_t* szNamespace);
 
 private:

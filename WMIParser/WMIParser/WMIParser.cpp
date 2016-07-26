@@ -223,6 +223,9 @@ void PrintHelp() {
   wprintf(L"--classdef [namespacename] [classname]\r\n");
   wprintf(L"  Hint: Get the class definition in the specified namespace.\r\n");
 
+  wprintf(L"--specified_classdef classname\r\n");
+  wprintf(L"  Hint: Get the specified class definition in all namespaces.\r\n");
+
   wprintf(L"--index\r\n");
   wprintf(L"  Hint: Print all the strings in index.btr.\r\n");
 }
@@ -288,6 +291,9 @@ int _tmain(int argc, _TCHAR* argv[])
                 else if (inner_argc > 1) {
                   if (!_wcsicmp(inner_argv[0], L"--classdef")) { //--classdef namespace
                     ClassDefinitionParser::Print(path, inner_argv[1], map, logpath);
+                  }
+                  else if (!_wcsicmp(inner_argv[0], L"--specified_classdef")) { //--specified_classdef classname
+                    ClassDefinitionParser::PrintAllClasses(path, inner_argv[1], map, logpath);
                   }
                   else if (!_wcsicmp(inner_argv[0], L"--consumerinstance")) { //--consumerinstance namespace
                     ConsumerParserClass cp(map);
