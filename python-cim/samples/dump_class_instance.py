@@ -64,7 +64,7 @@ def main(type_, path, namespaceName, className, key_specifier=None):
         print("%s" % "=" * 80)
         #print(compute_instance_hash(index, instance))
         try:
-            print(dump_instance(instance))
+            print(dump_instance(instance, encoding='ascii', encoding_errors='ignore'))
         except:
             print("ERROR: failed to dump class instance!")
             print(traceback.format_exc())

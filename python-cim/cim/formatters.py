@@ -91,7 +91,7 @@ def dump_layout(cd, cl):
     return "\n".join(ret)
 
 
-def dump_instance(i):
+def dump_instance(i, encoding=None, encoding_errors='strict'):
     """ :type i: ClassInstance """
     # TODO: migrate to templating?
     ret = []
@@ -118,4 +118,12 @@ def dump_instance(i):
         else:
             ret.append("  {key:s}=nil".format(key=prop.name))
         ret.append("")
-    return "\n".join(ret)
+
+    instance_str = "\n".join(ret)
+
+    # encode to specified encoding (which returns a byte array),
+    # and then decode back to a string
+    if encoding:
+        instance_str = instance_str.encode(encoding=encoding, errors=encoding_errors).decode(encoding)
+
+    return instance_str
