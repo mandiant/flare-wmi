@@ -127,3 +127,41 @@ def dump_instance(i, encoding=None, encoding_errors='strict'):
         instance_str = instance_str.encode(encoding=encoding, errors=encoding_errors).decode(encoding)
 
     return instance_str
+
+def dump_instances_csv(i, encoding=None, encoding_errors='strict', addcol=None):
+    """ :type i: ClassInstance """
+
+    cl = i[00].class_layout
+    cd = cl.class_definition
+
+    ret = 'classname,super,key,timestamp1,timestamp2'
+
+    # check for added column
+    if addcol:
+        ret += ',"' + addcol.split('=')[0] + '"'
+
+    # Get property headers
+    for propname in sorted(i[00].properties):
+        ret += ',' + propname
+    ret += '\n'
+
+    #ret += '{0},{1},{2},{3},{4}'.format(cd.class_name, cd.super_class_name, str(i.key), i.ts1, i.ts2)
+
+    for instance in i:
+        ret += '"{0}","{1}","{2}","{3}","{4}"'.format(cd.class_name, cd.super_class_name, str(instance.key), instance.ts1, instance.ts2)
+
+        # check for added column
+        if addcol:
+            ret += ',"' + addcol.split('=')[1] + '"'
+
+        for propname, prop in sorted(instance.properties.items()):
+            ret += ',"' + str(prop.value) + '"'
+        ret += '\n'
+
+
+    # encode to specified encoding (which returns a byte array),
+    # and then decode back to a string
+    if encoding:
+        ret = ret.encode(encoding=encoding, errors=encoding_errors).decode(encoding)
+
+    return ret
