@@ -128,7 +128,7 @@ def dump_instance(i, encoding=None, encoding_errors='strict'):
 
     return instance_str
 
-def dump_instances_csv(i, encoding=None, encoding_errors='strict'):
+def dump_instances_csv(i, encoding=None, encoding_errors='strict', addcol=None):
     """ :type i: ClassInstance """
 
     cl = i[00].class_layout
@@ -136,8 +136,12 @@ def dump_instances_csv(i, encoding=None, encoding_errors='strict'):
 
     ret = 'classname,super,key,timestamp1,timestamp2'
 
+    # check for added column
+    if addcol:
+        ret += ',"' + addcol.split('=')[0] + '"'
+
     # Get property headers
-    for propname in i[00].properties:
+    for propname in sorted(i[00].properties):
         ret += ',' + propname
     ret += '\n'
 
@@ -145,7 +149,12 @@ def dump_instances_csv(i, encoding=None, encoding_errors='strict'):
 
     for instance in i:
         ret += '"{0}","{1}","{2}","{3}","{4}"'.format(cd.class_name, cd.super_class_name, str(instance.key), instance.ts1, instance.ts2)
-        for propname, prop in instance.properties.items():
+
+        # check for added column
+        if addcol:
+            ret += ',"' + addcol.split('=')[1] + '"'
+
+        for propname, prop in sorted(instance.properties.items()):
             ret += ',"' + str(prop.value) + '"'
         ret += '\n'
 
