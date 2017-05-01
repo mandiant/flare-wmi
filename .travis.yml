@@ -17,4 +17,4 @@ install:
 
 script:
     - find . -name \*.py -exec pep8 --ignore=E501 {} \;
-    - py.test ./python-cim/tests/src/ -v
+    - py.test ./python-cim/tests/ -v
