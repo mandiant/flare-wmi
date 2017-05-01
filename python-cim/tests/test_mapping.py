@@ -3,6 +3,9 @@ from fixtures import *
 import cim
 
 
+############ INDEX MAPPING ###############################################
+
+
 def test_index_mapping(repo):
     '''
     Args:
@@ -75,6 +78,46 @@ def test_unmapped_index_logical_pages(repo):
     # collected empirically.
     assert unmapped_pages == [91, 160, 201, 202, 203, 204, 205, 206, 207, 208,
                               209, 210, 211, 212, 213, 214, 215, 227, 228, 230]
+
+
+def test_unmapped_index_physical_pages(repo):
+    '''
+    find physical pages that have no logical page.
+    this should contain unallocated data.
+    
+    Args:
+        repo (cim.CIM): the deleted-instance repo
+
+    Returns:
+        None
+    '''
+    mapping = repo.index_mapping
+
+    repo.logical_index_store
+
+    unmapped_pages = []
+    for i in range(mapping.header.mapping_entry_count):
+        try:
+            _ = mapping.get_logical_page_number(i)
+        except cim.UnmappedPage:
+            unmapped_pages.append(i)
+            continue
+
+    print(unmapped_pages)
+    # collected empirically.
+    assert unmapped_pages == [4, 8, 40, 48, 62, 70, 74, 84, 116, 117, 118, 119, 122,
+                              126, 131, 132, 134, 142, 153, 156, 159, 161, 165, 167,
+                              169, 179, 181, 182, 184, 185, 186, 188, 190, 192, 195,
+                              199, 203, 205, 207, 209, 210, 212, 213, 214, 216, 217,
+                              218, 225, 230, 232, 234, 238, 239, 241, 244, 245, 253,
+                              254, 258, 260, 262, 264, 265, 266, 268, 269, 273, 274,
+                              275, 277, 279, 283, 284, 286, 292, 293, 294, 295, 296,
+                              301, 309, 311, 313, 314, 315, 316, 317, 318, 319, 320,
+                              321, 322, 325]
+
+
+
+############ DATA MAPPING ###############################################
 
 
 def test_data_mapping(repo):

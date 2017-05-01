@@ -144,7 +144,10 @@ class MappingWin7(vstruct.VStruct):
         if self._reverse_mapping is None:
             self._build_reverse_mapping()
 
-        return self._reverse_mapping[physical_page_number]
+        if physical_page_number in self._reverse_mapping:
+            return self._reverse_mapping[physical_page_number]
+
+        raise UnmappedPage(physical_page_number)
 
 
 class EntryXP(vstruct.primitives.v_uint32):
@@ -550,12 +553,16 @@ class LogicalIndexStore(LoggingObject):
         self._cim = cim
         self._file_path = file_path
         self._mapping = mapping
+        self._file_size = os.path.getsize(file_path)
+        self.page_count = self._file_size // INDEX_PAGE_SIZE
 
     def get_physical_page_buffer(self, index):
         if not os.path.exists(self._file_path):
             raise MissingIndexFileError()
 
-        # TODO: keep an open file handle
+        if index >= self.page_count:
+            raise IndexError(index)
+
         with open(self._file_path, "rb") as f:
             f.seek(INDEX_PAGE_SIZE * index)
             return f.read(INDEX_PAGE_SIZE)
