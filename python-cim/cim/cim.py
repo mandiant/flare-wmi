@@ -624,7 +624,6 @@ class LogicalDataStore(object):
 
         i = 1
         while found_length < target_length:
-            # TODO: should simply foreach an iterable here
             next_page_buffer = self.get_logical_page_buffer(key.data_page + i)
             if found_length + len(next_page_buffer) > target_length:
                 # this is the last page containing data for this item
@@ -786,10 +785,10 @@ class CachedLogicalIndexStore(object):
 
 
 class Index(object):
-    def __init__(self, cim_type, indexStore):
+    def __init__(self, cim_type, index_store):
         super(Index, self).__init__()
         self.cim_type = cim_type
-        self._index_store = CachedLogicalIndexStore(indexStore)
+        self._index_store = CachedLogicalIndexStore(index_store)
 
     LEFT_CHILD_DIRECTION = 0
     RIGHT_CHILD_DIRECTION = 1
