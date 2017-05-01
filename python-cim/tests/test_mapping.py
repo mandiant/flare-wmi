@@ -36,16 +36,32 @@ def test_index_mapping_inconsistencies(repo):
     Returns:
         None
     '''
-
     mapping = repo.index_mapping
 
     # logical pages where the physical page does not map back to it.
     # that is, there must be two logical pages that point here.
     inconsistencies = []
     for i in range(mapping.header.mapping_entry_count):
-        pnum = mapping.get_physical_page_number(logical_page_number=i)
-        if i != mapping.get_logical_page_number(physical_page_number=pnum):
-            inconsistencies.append(i)
+        try:
+            pnum = mapping.get_physical_page_number(logical_page_number=i)
+            if i != mapping.get_logical_page_number(physical_page_number=pnum):
+                inconsistencies.append(i)
+        except cim.UnmappedPage:
+            continue
+    assert inconsistencies == []
 
-    assert inconsistencies == [91, 160, 201, 202, 203, 204, 205, 206, 207, 208,
-                               209, 210, 211, 212, 213, 214, 215, 227, 228]
+
+def test_unmapped_pages(repo):
+    mapping = repo.index_mapping
+
+    unmapped_pages = []
+    for i in range(mapping.header.mapping_entry_count):
+        try:
+            _ = mapping.get_physical_page_number(i)
+        except cim.UnmappedPage:
+            unmapped_pages.append(i)
+            continue
+
+    assert unmapped_pages == [91, 160, 201, 202, 203, 204, 205, 206, 207, 208,
+                              209, 210, 211, 212, 213, 214, 215, 227, 228, 230]
+

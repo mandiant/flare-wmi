@@ -90,6 +90,12 @@ class EntryWin7(vstruct.VStruct):
         return self._page_number & MAPPING_PAGE_ID_MASK
 
 
+UNMAPPED_PAGE_VALUE = 0x3FFFFFFF
+
+class UnmappedPage(KeyError):
+    pass
+
+
 class MappingWin7(vstruct.VStruct):
     """
     lookup via:
@@ -117,10 +123,22 @@ class MappingWin7(vstruct.VStruct):
     def _build_reverse_mapping(self):
         self._reverse_mapping = {}
         for i in range(self.header.mapping_entry_count):
-            self._reverse_mapping[self.entries[i].page_number] = i
+            pnum = self.entries[i].page_number
+            # unknown precisely what this means
+            if pnum == UNMAPPED_PAGE_VALUE:
+                continue
+
+            if pnum in self._reverse_mapping:
+                logger.warning('logical page %d already mapped!', i)
+
+            self._reverse_mapping[pnum] = i
 
     def get_physical_page_number(self, logical_page_number):
-        return self.entries[logical_page_number].page_number
+        pnum = self.entries[logical_page_number].page_number
+        # unknown precisely what this means
+        if pnum == UNMAPPED_PAGE_VALUE:
+            raise UnmappedPage(logical_page_number)
+        return pnum
 
     def get_logical_page_number(self, physical_page_number):
         if self._reverse_mapping is None:
