@@ -80,7 +80,7 @@ def test_unmapped_index_logical_pages(repo):
                               209, 210, 211, 212, 213, 214, 215, 227, 228, 230]
 
 
-def test_unmapped_index_physical_pages(repo):
+def test_unallocated_index_physical_pages(repo):
     '''
     find physical pages that have no logical page.
     to do this, need to actually reference the size of the index.
@@ -207,7 +207,7 @@ def test_unmapped_data_logical_pages(repo):
                               209, 210, 211, 212, 213, 214, 215, 227, 228, 230]
 
 
-def test_unmapped_data_physical_pages(repo):
+def test_unallocated_data_physical_pages(repo):
     '''
     find physical pages that have no logical page.
     to do this, need to actually reference the size of the data store.
