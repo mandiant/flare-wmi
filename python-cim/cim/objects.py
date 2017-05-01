@@ -1134,7 +1134,7 @@ class ObjectResolver(LoggingObject):
 
     def get_object(self, query):
         """ fetch the first object buffer matching the query """
-        self.d("query: %s", str(query))
+        logger.debug("query: %s", str(query))
         ref = one(self._index.lookup_keys(query))
         if not ref:
             raise IndexError("Failed to find: {:s}".format(str(query)))
@@ -1151,7 +1151,7 @@ class ObjectResolver(LoggingObject):
             try:
                 yield ref, self._cim.logical_data_store.get_object_buffer(ref)
             except IndexKeyNotFoundError:
-                self.w("Expected object not found in object store: %s", ref)
+                logger.warning("Expected object not found in object store: %s", ref)
                 continue
 
     @property
@@ -1169,7 +1169,7 @@ class ObjectResolver(LoggingObject):
         #   current NS, but in the __SystemClass NS. So we try that one, too.
 
         if ref is None:
-            self.d("didn't find %s in %s, retrying in %s", class_name, namespace_name, SYSTEM_NAMESPACE_NAME)
+            logger.debug("didn't find %s in %s, retrying in %s", class_name, namespace_name, SYSTEM_NAMESPACE_NAME)
             q = Key("{}/{}".format(
                     self.NS(SYSTEM_NAMESPACE_NAME),
                     self.CD(class_name)))
@@ -1179,7 +1179,7 @@ class ObjectResolver(LoggingObject):
         c_id = get_class_id(namespace_name, class_name)
         c_cd = self._cdcache.get(c_id, None)
         if c_cd is None:
-            self.d("cdcache miss")
+            logger.debug("cdcache miss")
 
             q = Key("{}/{}".format(
                     self.NS(namespace_name),
@@ -1191,7 +1191,7 @@ class ObjectResolver(LoggingObject):
             #   current NS, but in the __SystemClass NS. So we try that one, too.
 
             if ref is None:
-                self.d("didn't find %s in %s, retrying in %s", class_name, namespace_name, SYSTEM_NAMESPACE_NAME)
+                logger.debug("didn't find %s in %s, retrying in %s", class_name, namespace_name, SYSTEM_NAMESPACE_NAME)
                 q = Key("{}/{}".format(
                         self.NS(SYSTEM_NAMESPACE_NAME),
                         self.CD(class_name)))
@@ -1205,7 +1205,7 @@ class ObjectResolver(LoggingObject):
         c_id = get_class_id(namespace_name, class_name)
         c_cl = self._clcache.get(c_id, None)
         if not c_cl:
-            self.d("clcache miss")
+            logger.debug("clcache miss")
             c_cd = self.get_cd(namespace_name, class_name)
             c_cl = ClassLayout(self, namespace_name, c_cd)
             self._clcache[c_id] = c_cl

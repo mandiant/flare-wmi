@@ -322,7 +322,7 @@ class IndexKeyNotFoundError(Exception):
     pass
 
 
-class DataPage(LoggingObject):
+class DataPage(object):
     def __init__(self, buf, logical_page_number, physical_page_number):
         '''
         Args:
@@ -361,8 +361,8 @@ class DataPage(LoggingObject):
                 if toc.size < target_size:
                     raise RuntimeError("Data size doesn't match TOC size")
                 if toc.size > DATA_PAGE_SIZE - toc.offset:
-                    self.d("Large data item: key: %s, size: %s",
-                            str(key), hex(target_size))
+                    logger.debug("Large data item: key: %s, size: %s",
+                                 str(key), hex(target_size))
                 return self._buf[toc.offset:toc.offset + toc.size]
         raise IndexKeyNotFoundError(key)
 
@@ -395,7 +395,7 @@ class DataPage(LoggingObject):
         return ret
 
 
-class Key(LoggingObject):
+class Key(object):
     def __init__(self, string):
         super(Key, self).__init__()
         self._string = string
@@ -472,7 +472,7 @@ class IndexPageHeader(vstruct.VStruct):
         return self.sig == INDEX_PAGE_TYPES.PAGE_TYPE_DELETED
 
 
-class IndexPage(vstruct.VStruct, LoggingObject):
+class IndexPage(vstruct.VStruct):
     def __init__(self, logical_page_number, physical_page_number):
         vstruct.VStruct.__init__(self)
         LoggingObject.__init__(self)
@@ -548,7 +548,7 @@ class MissingDataFileError(Exception):
     pass
 
 
-class LogicalDataStore(LoggingObject):
+class LogicalDataStore(object):
     '''
     provides an interface for accessing data by logical page or object id.
     
@@ -665,7 +665,7 @@ class MissingIndexFileError(Exception):
     pass
 
 
-class LogicalIndexStore(LoggingObject):
+class LogicalIndexStore(object):
     """
     provides an interface for accessing index nodes by logical page id.
     indexing logic should go at a higher level.
@@ -763,7 +763,10 @@ class LogicalIndexStore(LoggingObject):
         return self.get_page(self.root_page_number)
 
 
-class CachedLogicalIndexStore(LoggingObject):
+class CachedLogicalIndexStore(object):
+    '''
+    acts like a LogicalIndexStore, except it caches pages in memory for faster access.
+    '''
     def __init__(self, index_store):
         super(CachedLogicalIndexStore, self).__init__()
         self._index_store = index_store
@@ -791,7 +794,7 @@ class CachedLogicalIndexStore(LoggingObject):
         return self.get_page(self.root_page_number)
 
 
-class Index(LoggingObject):
+class Index(object):
     def __init__(self, cim_type, indexStore):
         super(Index, self).__init__()
         self.cim_type = cim_type
@@ -816,7 +819,7 @@ class Index(LoggingObject):
         skey = str(key)
         key_count = page.key_count
 
-        self.d("index lookup: %s: page: %s", key.human_format, h(page.logical_page_number))
+        logger.debug("index lookup: %s: page: %s", key.human_format, h(page.logical_page_number))
 
         matches = []
         for i in range(key_count):
@@ -873,7 +876,7 @@ class MissingMappingFileError(Exception):
     pass
 
 
-class CIM(LoggingObject):
+class CIM(object):
     def __init__(self, cim_type, directory):
         super(CIM, self).__init__()
         self.cim_type = cim_type
@@ -895,7 +898,6 @@ class CIM(LoggingObject):
 
     @cached_property
     def _current_mapping_file(self):
-        self.d("finding current mapping file")
         mapping_file_path = None
         max_version = 0
         for i in range(MAX_MAPPING_FILES):
@@ -908,7 +910,7 @@ class CIM(LoggingObject):
             with open(fp, "rb") as f:
                 h.vsParseFd(f)
 
-            self.d("%s: version: %s", fn, hex(h.version))
+            logging.debug("%s: version: %s", fn, hex(h.version))
             if h.version > max_version:
                 mapping_file_path = fp
                 max_version = h.version
@@ -916,7 +918,7 @@ class CIM(LoggingObject):
         if mapping_file_path is None:
             raise MissingMappingFileError()
 
-        self.d("current mapping file: %s", mapping_file_path)
+        logging.debug("current mapping file: %s", mapping_file_path)
         return mapping_file_path
 
     @cached_property
