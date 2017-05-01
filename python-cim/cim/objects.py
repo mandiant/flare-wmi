@@ -1050,7 +1050,7 @@ class ClassLayout(object):
 
     @cached_property
     def properties(self):
-        props = {}  # type: Mapping[int, ClassLayoutProperty]
+        props = {}  # :type: Mapping[int, ClassLayoutProperty]
         for cl in self.derivation:
             for prop in cl.class_definition.properties.values():
                 props[prop.index] = ClassLayoutProperty(prop, self)
@@ -1068,15 +1068,19 @@ class ClassLayout(object):
 
 
 class ObjectResolver(object):
-    def __init__(self, cim, index):
+    def __init__(self, repo, index=None):
         '''
         Args:
-            cim (CIM): the CIM repository
+            repo (CIM): the CIM repository
             index (cim.Index): the page index
         '''
         super(ObjectResolver, self).__init__()
-        self._cim = cim
-        self._index = index
+
+        self._repo = repo
+        if not index:
+            self._index = repo.Index(repo.cim_type, repo.logical_index_store)
+        else:
+            self._index = index
 
         self._cdcache = {}  # :type: Mapping[str, ClassDefinition]
         self._clcache = {}  # :type: Mapping[str, ClassLayout]
@@ -1086,12 +1090,12 @@ class ObjectResolver(object):
         self._ihashcache = {}  # :type: dict[str,str]
 
     def hash(self, s):
-        if self._cim.cim_type == cim.CIM_TYPE_XP:
+        if self._repo.cim_type == cim.CIM_TYPE_XP:
             h = hashlib.md5()
-        elif self._cim.cim_type == cim.CIM_TYPE_WIN7:
+        elif self._repo.cim_type == cim.CIM_TYPE_WIN7:
             h = hashlib.sha256()
         else:
-            raise RuntimeError("Unexpected CIM type: {:s}".format(str(self._cim.cim_type)))
+            raise RuntimeError("Unexpected CIM type: {:s}".format(str(self._repo.cim_type)))
         h.update(s)
         return h.hexdigest().upper()
 
@@ -1134,7 +1138,7 @@ class ObjectResolver(object):
         if not ref:
             raise IndexError("Failed to find: {:s}".format(str(query)))
         # TODO: should ensure this query has a unique result
-        return self._cim.logical_data_store.get_object_buffer(ref)
+        return self._repo.logical_data_store.get_object_buffer(ref)
 
     def get_keys(self, query):
         """ return a generator of keys matching the query """
@@ -1144,7 +1148,7 @@ class ObjectResolver(object):
         """ return a generator of object buffers matching the query """
         for ref in self.get_keys(query):
             try:
-                yield ref, self._cim.logical_data_store.get_object_buffer(ref)
+                yield ref, self._repo.logical_data_store.get_object_buffer(ref)
             except cim.IndexKeyNotFoundError:
                 logger.warning("Expected object not found in object store: %s", ref)
                 continue
@@ -1263,7 +1267,7 @@ class ObjectResolver(object):
         if buf[0x0:0x4] == "\x00\x00\x00\x00":
             i = CoreClassInstance(cl)
         else:
-            i = ClassInstance(self._cim.cim_type, cl)
+            i = ClassInstance(self._repo.cim_type, cl)
         i.vsParse(buf)
         return i
 
@@ -1567,9 +1571,9 @@ class TreeClassInstance(object):
 
 
 class Tree(object):
-    def __init__(self, cim):
+    def __init__(self, repo):
         super(Tree, self).__init__()
-        self._object_resolver = ObjectResolver(cim, cim.Index(cim.cim_type, cim.logical_index_store))
+        self._object_resolver = ObjectResolver(repo, repo.Index(repo.cim_type, repo.logical_index_store))
 
     def __repr__(self):
         return "Tree"
@@ -1581,12 +1585,12 @@ class Tree(object):
 
 
 class Namespace(object):
-    def __init__(self, cim, namespace_name):
+    def __init__(self, repo, namespace_name):
         super(Namespace, self).__init__()
-        self._cim = cim
+        self._repo = repo
         self._name = namespace_name
-        self._i = cim.Index(self._cim.cim_type, self._cim.logical_index_store)
-        self._o = ObjectResolver(self._cim, self._i)
+        self._i = repo.Index(self._repo.cim_type, self._repo.logical_index_store)
+        self._o = ObjectResolver(self._repo, self._i)
 
     def __enter__(self):
         return TreeNamespace(self._o, self._name)
