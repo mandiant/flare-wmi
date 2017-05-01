@@ -554,7 +554,7 @@ class LogicalDataStore(LoggingObject):
     
     Args:
         cim (CIM): the repo
-        mapping (MappingWin7 | MappingXP): the data mapping.
+        mapping (Mapping): the data mapping.
     '''
     def __init__(self, cim, file_path, mapping):
         super(LogicalDataStore, self).__init__()
@@ -671,6 +671,13 @@ class LogicalIndexStore(LoggingObject):
     indexing logic should go at a higher level.
     """
     def __init__(self, cim, file_path, mapping):
+        '''
+        
+        Args:
+            cim (CIM): the CIM repository
+            file_path (str): the file containing the index
+            mapping (Mapping): the page mapping
+        '''
         super(LogicalIndexStore, self).__init__()
         self._cim = cim
         self._file_path = file_path
@@ -689,43 +696,37 @@ class LogicalIndexStore(LoggingObject):
             f.seek(INDEX_PAGE_SIZE * index)
             return f.read(INDEX_PAGE_SIZE)
 
-    def get_logical_page_buffer(self, index):
-        physical_page_number = self._mapping.entries[index].page_number
-        return self.get_physical_page_buffer(physical_page_number)
+    def get_logical_page_buffer(self, logical_page_number):
+        pnum = self._mapping.get_physical_page_number(logical_page_number)
+        return self.get_physical_page_buffer(pnum)
 
-    def get_page(self, index):
-        """ :rtype: IndexPage """
-        if index > self._mapping.header.mapping_entry_count:
+    def get_page(self, logical_page_number):
+        '''
+        fetch a parsed index page given a logical page number.
+        
+        Args:
+            logical_page_number: the logical page number
+
+        Returns:
+            IndexPage: the parsed index page.
+        '''
+        if logical_page_number > self._mapping.header.mapping_entry_count:
             raise InvalidMappingEntryIndex()
 
-        physical_page_number = self._mapping.entries[index].page_number
-
-        if physical_page_number > self._mapping.header.physical_page_count:
-            raise InvalidPhysicalPageNumber("{:s} is greater than the count {:s}".format(
-                hex(physical_page_number),
-                hex(self._mapping.header.physical_page_count)))
-
-        pagebuf = self.get_logical_page_buffer(index)
-        p = IndexPage(index, physical_page_number)
+        pnum = self._mapping.get_physical_page_number(logical_page_number)
+        pagebuf = self.get_logical_page_buffer(logical_page_number)
+        p = IndexPage(logical_page_number, pnum)
         p.vsParse(pagebuf)
         return p
 
-    @property
-    def _root_page_number_win7(self):
-        return int(self._mapping.entries[0x0].used_space)
-
-    @property
-    def _root_page_number(self):
+    @cached_property
+    def root_page_number(self):
         if self._cim.cim_type == CIM_TYPE_WIN7:
-            return self._root_page_number_win7
+            return int(self._mapping.map.entries[0x0].used_space)
         elif self._cim.cim_type == CIM_TYPE_XP:
             return self.get_page(0).header.root_page
         else:
             raise RuntimeError("Unexpected CIM type: " + str(self._cim.cim_type))
-
-    @cached_property
-    def root_page_number(self):
-        return self._root_page_number
 
     @property
     def root_page(self):
