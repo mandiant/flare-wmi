@@ -6,9 +6,7 @@ from funcy.objects import cached_property
 import vstruct
 from vstruct.primitives import *
 
-
 logger = logging.getLogger(__name__)
-
 
 MAPPING_SIGNATURES = v_enum()
 MAPPING_SIGNATURES.MAPPING_START_SIGNATURE = 0xABCD
@@ -88,6 +86,7 @@ class MappingWin7(vstruct.VStruct):
     lookup via:
       m.entries[0x101].page_number
     """
+
     def __init__(self):
         vstruct.VStruct.__init__(self)
         self.header = MappingHeaderWin7()
@@ -120,6 +119,7 @@ class MappingXP(vstruct.VStruct):
     lookup via:
       m.entries[0x101].page_number
     """
+
     def __init__(self):
         vstruct.VStruct.__init__(self)
         self.header = MappingHeaderXP()
@@ -151,6 +151,7 @@ class Mapping(object):
     '''
     helper routines around fetching page mappings.
     '''
+
     def __init__(self, map):
         '''
         Args:
@@ -267,20 +268,20 @@ class TOC(vstruct.VArray):
         self.count = 0
 
     def _is_valid_entry(self, t):
-            # we have to guess where the end of the TOC is
-            if int(t.record_id) == 0x0:
-                return False
+        # we have to guess where the end of the TOC is
+        if int(t.record_id) == 0x0:
+            return False
 
-            if int(t.offset) >= DATA_PAGE_SIZE:
-                return False
+        if int(t.offset) >= DATA_PAGE_SIZE:
+            return False
 
-            if int(t.offset) == 0:
-                return False
+        if int(t.offset) == 0:
+            return False
 
-            if int(t.size) == 0:
-                return False
+        if int(t.size) == 0:
+            return False
 
-            return True
+        return True
 
     def vsParse(self, bytez, offset=0, fast=False):
         self.count = 0
@@ -410,6 +411,7 @@ class Key(object):
     KEY_INDEX_DATA_PAGE = 1
     KEY_INDEX_DATA_ID = 2
     KEY_INDEX_DATA_SIZE = 3
+
     def _get_data_part(self, index):
         if not self.is_data_reference:
             raise RuntimeError("key is not a data reference: %s", str(self))
@@ -541,6 +543,7 @@ class LogicalDataStore(object):
         cim (CIM): the repo
         mapping (Mapping): the data mapping.
     '''
+
     def __init__(self, cim, file_path, mapping):
         super(LogicalDataStore, self).__init__()
         self._cim = cim
@@ -654,6 +657,7 @@ class LogicalIndexStore(object):
     provides an interface for accessing index nodes by logical page id.
     indexing logic should go at a higher level.
     """
+
     def __init__(self, cim, file_path, mapping):
         '''
         
@@ -751,6 +755,7 @@ class CachedLogicalIndexStore(object):
     '''
     acts like a LogicalIndexStore, except it caches pages in memory for faster access.
     '''
+
     def __init__(self, index_store):
         super(CachedLogicalIndexStore, self).__init__()
         self._index_store = index_store
@@ -786,6 +791,7 @@ class Index(object):
 
     LEFT_CHILD_DIRECTION = 0
     RIGHT_CHILD_DIRECTION = 1
+
     def _lookup_keys_child(self, key, page, i, direction):
         child_index = page.get_child(i + direction)
         if child_index == INDEX_PAGE_INVALID or child_index == INDEX_PAGE_INVALID2:
@@ -941,7 +947,9 @@ def main(type_, path):
     c = CIM(type_, path)
     print("ok")
 
+
 if __name__ == "__main__":
     logging.basicConfig(level=logging.INFO)
     import sys
+
     main(*sys.argv[1:])
