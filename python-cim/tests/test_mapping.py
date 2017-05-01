@@ -196,9 +196,7 @@ def test_unmapped_data_logical_pages(repo):
 
     unmapped_pages = []
     for i in range(mapping.header.mapping_entry_count):
-        try:
-            _ = mapping.get_physical_page_number(i)
-        except cim.UnmappedPage:
+        if not mapping.is_logical_page_mapped(i):
             unmapped_pages.append(i)
             continue
 
@@ -224,11 +222,8 @@ def test_unallocated_data_physical_pages(repo):
 
     unmapped_pages = []
     for i in range(data.page_count):
-        try:
-            _ = mapping.get_logical_page_number(i)
-        except cim.UnmappedPage:
+        if not mapping.is_physical_page_mapped(i):
             unmapped_pages.append(i)
-            continue
 
     # collected empirically.
     assert unmapped_pages == [302, 1164, 1192, 1204, 1210, 1237, 1274, 1284, 1295, 1357, 1623, 1653, 1654, 1658, 1665,
