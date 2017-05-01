@@ -260,16 +260,11 @@ class TOCEntry(vstruct.VStruct):
     def __init__(self):
         vstruct.VStruct.__init__(self)
         self.record_id = v_uint32()
+        # offset is relative to start of the page
         self.offset = v_uint32()
         self.size = v_uint32()
+        # zero on win7
         self.CRC = v_uint32()
-
-    @property
-    def is_zero(self):
-        return self.record_id == 0 and \
-                self.offset == 0 and \
-                self.size == 0 and \
-                self.CRC == 0
 
 
 class TOC(vstruct.VArray):
@@ -277,12 +272,32 @@ class TOC(vstruct.VArray):
         vstruct.VArray.__init__(self)
         self.count = 0
 
+    def _is_valid_entry(self, t):
+            # we have to guess where the end of the TOC is
+            if int(t.record_id) == 0x0:
+                return False
+
+            if int(t.offset) >= DATA_PAGE_SIZE:
+                return False
+
+            if int(t.offset) == 0:
+                return False
+
+            if int(t.size) == 0:
+                return False
+
+            return True
+
     def vsParse(self, bytez, offset=0, fast=False):
         self.count = 0
         endoffset = bytez.find(b"\x00" * 0x10, offset)
         while offset < endoffset + 0x10:
             t = TOCEntry()
-            offset = t.vsParse(bytez, offset=offset)
+            o = t.vsParse(bytez, offset=offset)
+            if not self._is_valid_entry(t):
+                break
+
+            offset = o
             self.vsAddElement(t)
             self.count += 1
         return offset
@@ -292,10 +307,9 @@ class TOC(vstruct.VArray):
         while True:
             t = TOCEntry()
             t.vsParseFd(fd)
-            self.vsAddElement(t)
-            self.count += 1
-            if t.is_zero:
-                return
+
+            if not self._is_valid_entry(t):
+                break
 
 
 class IndexKeyNotFoundError(Exception):
@@ -304,6 +318,12 @@ class IndexKeyNotFoundError(Exception):
 
 class DataPage(LoggingObject):
     def __init__(self, buf, logical_page_number, physical_page_number):
+        '''
+        Args:
+            buf (bytes): the raw bytes of the page
+            logical_page_number (int):  the logical page number
+            physical_page_number (int):  the physical age nubmer
+        '''
         super(DataPage, self).__init__()
         self._buf = buf
         self.logical_page_number = logical_page_number
@@ -316,11 +336,17 @@ class DataPage(LoggingObject):
         return self._buf[toc_entry.offset:toc_entry.offset + toc_entry.size]
 
     def get_data_by_key(self, key):
-        """
-        Prefer to use __getitem__.
+        '''
+        fetch the raw bytes for the object identified by the given key.
+        
+        note: prefer to use __getitem__
+        
+        Args:
+            key (Key): the key of the object to fetch
 
-        key: Key instance
-        """
+        Returns:
+            bytes: the raw bytes for the requested object.
+        '''
         target_id = key.data_id
         target_size = key.data_length
         for i in range(self.toc.count):
@@ -335,9 +361,16 @@ class DataPage(LoggingObject):
         raise IndexKeyNotFoundError(key)
 
     def __getitem__(self, key):
-        """
-        key: Key instance
-        """
+        '''
+        fetch the raw bytes for the object identified by the given key.
+        
+        Args:
+            key (Key): the key of the object to fetch.
+
+        Returns:
+            bytes: the raw bytes of the requested object.
+
+        '''
         return self.get_data_by_key(key)
 
     @property
@@ -569,7 +602,7 @@ class LogicalDataStore(LoggingObject):
             DataPage: the parsed page.
         '''
         pnum = self._mapping.get_physical_page_number(logical_page_number)
-        pbuf = self.get_physical_page_buffer(logical_page_number)
+        pbuf = self.get_physical_page_buffer(pnum)
         return DataPage(pbuf, logical_page_number, pnum)
 
     def get_object_buffer(self, key):
