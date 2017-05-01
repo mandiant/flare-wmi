@@ -1078,7 +1078,7 @@ class ObjectResolver(object):
 
         self._repo = repo
         if not index:
-            self._index = repo.Index(repo.cim_type, repo.logical_index_store)
+            self._index = cim.Index(repo.cim_type, repo.logical_index_store)
         else:
             self._index = index
 
@@ -1573,7 +1573,7 @@ class TreeClassInstance(object):
 class Tree(object):
     def __init__(self, repo):
         super(Tree, self).__init__()
-        self._object_resolver = ObjectResolver(repo, repo.Index(repo.cim_type, repo.logical_index_store))
+        self._object_resolver = ObjectResolver(repo)
 
     def __repr__(self):
         return "Tree"
@@ -1589,7 +1589,7 @@ class Namespace(object):
         super(Namespace, self).__init__()
         self._repo = repo
         self._name = namespace_name
-        self._i = repo.Index(self._repo.cim_type, self._repo.logical_index_store)
+        self._i = cim.Index(self._repo.cim_type, self._repo.logical_index_store)
         self._o = ObjectResolver(self._repo, self._i)
 
     def __enter__(self):
