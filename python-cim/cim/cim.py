@@ -117,6 +117,7 @@ class MappingWin7(vstruct.VStruct):
         self["free"].vsSetLength(self.free_dword_count * 0x4)
 
     def _build_reverse_mapping(self):
+        self._reverse_mapping = {}
         for i in range(self.header.mapping_entry_count):
             self._reverse_mapping[self.entries[i].page_number] = i
 
@@ -127,7 +128,7 @@ class MappingWin7(vstruct.VStruct):
         if self._reverse_mapping is None:
             self._build_reverse_mapping()
 
-        return self._reverse_mapping[physical_page_number].page_number
+        return self._reverse_mapping[physical_page_number]
 
 
 class EntryXP(vstruct.primitives.v_uint32):
@@ -166,6 +167,7 @@ class MappingXP(vstruct.VStruct):
         self["free"].vsSetLength(self.free_dword_count * 0x4)
 
     def _build_reverse_mapping(self):
+        self._reverse_mapping = {}
         for i in range(self.header.mapping_entry_count):
             self._reverse_mapping[self.entries[i].page_number] = i
 
@@ -176,7 +178,7 @@ class MappingXP(vstruct.VStruct):
         if self._reverse_mapping is None:
             self._build_reverse_mapping()
 
-        return self._reverse_mapping[physical_page_number].page_number
+        return self._reverse_mapping[physical_page_number]
 
 
 MAPPING_TYPES = {
