@@ -1,6 +1,6 @@
 #!/usr/bin/env python2
 '''
-extract unallocated physical pages from a CIM repository.
+extract data page slack from a CIM repository.
 
 author: Willi Ballenthin
 email: william.ballenthin@fireeye.com
@@ -10,6 +10,7 @@ import sys
 import logging
 
 import argparse
+import intervaltree
 
 import cim
 
@@ -17,17 +18,44 @@ import cim
 logger = logging.getLogger(__name__)
 
 
-def extract_unallocated_data_pages(repo):
+def extract_data_page_slack(repo):
     for i in range(repo.logical_data_store.page_count):
         if not repo.data_mapping.is_physical_page_mapped(i):
-            yield repo.logical_data_store.get_physical_page_buffer(i)
+            continue
+
+        try:
+            page = repo.logical_data_store.get_page(i)
+        except IndexError:
+            break
+
+        # start by marking the entire page as allocated
+        slack = intervaltree.IntervalTree([intervaltree.Interval(0, cim.DATA_PAGE_SIZE)])
+
+        # remove the toc region
+        slack.chop(0, len(page.toc))
+
+        # and regions for each of the entries
+        for j in range(page.toc.count):
+            entry = page.toc[j]
+            slack.chop(entry.offset, entry.offset + entry.size)
+
+        pagebuf = repo.logical_data_store.get_logical_page_buffer(i)
+
+        for region in sorted(slack):
+            begin, end, _ = region
+            if (end - begin) > cim.DATA_PAGE_SIZE:
+                continue
+
+            logger.info('extracted %s bytes of slack from logical page %s at offset %s',
+                        hex(end - begin), hex(i), hex(begin))
+            yield pagebuf[begin:end]
 
 
 def main(argv=None):
     if argv is None:
         argv = sys.argv[1:]
 
-    parser = argparse.ArgumentParser(description="Extracted unallocated physical pages from a CIM repo.")
+    parser = argparse.ArgumentParser(description="Extracted data page slack from a CIM repository.")
     parser.add_argument("input", type=str,
                         help="Path to input file")
     parser.add_argument("-v", "--verbose", action="store_true",
@@ -53,8 +81,8 @@ def main(argv=None):
         logger.error('bad cim')
         return -1
 
-    for page in extract_unallocated_data_pages(repo):
-        os.write(sys.stdout.fileno(), page)
+    for buf in extract_data_page_slack(repo):
+        os.write(sys.stdout.fileno(), buf)
 
     return 0
 
