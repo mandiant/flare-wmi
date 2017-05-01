@@ -577,7 +577,7 @@ class LogicalDataStore(LoggingObject):
         if not os.path.exists(self._file_path):
             raise MissingDataFileError()
 
-        if physical_page_number > self.page_count:
+        if physical_page_number >= self.page_count:
             raise IndexError(physical_page_number)
 
         with open(self._file_path, "rb") as f:
@@ -686,6 +686,15 @@ class LogicalIndexStore(LoggingObject):
         self.page_count = self._file_size // INDEX_PAGE_SIZE
 
     def get_physical_page_buffer(self, index):
+        '''
+        fetch the raw bytes of the page at the given physical page number
+        
+        Args:
+            index (int): the physical page number.
+
+        Returns:
+            bytes: the raw data at the given page.
+        '''
         if not os.path.exists(self._file_path):
             raise MissingIndexFileError()
 
@@ -697,6 +706,15 @@ class LogicalIndexStore(LoggingObject):
             return f.read(INDEX_PAGE_SIZE)
 
     def get_logical_page_buffer(self, logical_page_number):
+        '''
+        fetch the raw bytes of the page at the given logical page number.
+        
+        Args:
+            logical_page_number (int): the logical page number.
+
+        Returns:
+            bytes: the raw data at the given page.
+        '''
         pnum = self._mapping.get_physical_page_number(logical_page_number)
         return self.get_physical_page_buffer(pnum)
 
@@ -721,6 +739,12 @@ class LogicalIndexStore(LoggingObject):
 
     @cached_property
     def root_page_number(self):
+        '''
+        fetch the logical page number of the index root.
+        
+        Returns:
+            int: the logical page number.
+        '''
         if self._cim.cim_type == CIM_TYPE_WIN7:
             return int(self._mapping.map.entries[0x0].used_space)
         elif self._cim.cim_type == CIM_TYPE_XP:
@@ -730,6 +754,12 @@ class LogicalIndexStore(LoggingObject):
 
     @property
     def root_page(self):
+        '''
+        fetch the parsed index page of the index root.
+        
+        Returns:
+            IndexPage: the parsed index page.
+        '''
         return self.get_page(self.root_page_number)
 
 
