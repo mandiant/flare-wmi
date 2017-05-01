@@ -478,7 +478,6 @@ class LogicalDataStore(LoggingObject):
         if index >= self.page_count:
             raise IndexError(index)
 
-        # TODO: keep an open handle
         with open(self._file_path, "rb") as f:
             f.seek(DATA_PAGE_SIZE * index)
             return f.read(DATA_PAGE_SIZE)
