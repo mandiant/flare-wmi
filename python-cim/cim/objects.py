@@ -5,6 +5,7 @@
 # BUGs:
 #   class instance: "root\\CIMV2" Microsoft_BDD_Info NS_68577372C66A7B20658487FBD959AA154EF54B5F935DCC5663E9228B44322805/CI_6FCB95E1CB11D0950DA7AE40A94D774F02DCD34701D9645E00AB9444DBCF640B/IL_EEC4121F2A07B61ABA16414812AA9AFC39AB0A136360A5ACE2240DC19B0464EB.1606.116085.3740
 
+import hashlib
 import logging
 import traceback
 import functools
@@ -1084,22 +1085,37 @@ class ClassLayout(object):
 
 class ObjectResolver(object):
     def __init__(self, cim, index):
+        '''
+        Args:
+            cim (CIM): the CIM repository
+            index (Index): the page index
+        '''
         super(ObjectResolver, self).__init__()
         self._cim = cim
         self._index = index
 
-        self._cdcache = {}  # type: Mapping[str, ClassDefinition]
-        self._clcache = {}  # type: Mapping[str, ClassLayout]
+        self._cdcache = {}  # :type: Mapping[str, ClassDefinition]
+        self._clcache = {}  # :type: Mapping[str, ClassLayout]
 
         # until we can correctly compute instance key hashes, maintain a cache mapping
         #   from encountered keys (serialized) to the instance hashes
-        self._ihashcache = {}  # type: Mapping[str,str]
+        self._ihashcache = {}  # :type: dict[str,str]
+
+    def hash(self, s):
+        if self._cim.cim_type == CIM_TYPE_XP:
+            h = hashlib.md5()
+        elif self._cim.cim_type == CIM_TYPE_WIN7:
+            h = hashlib.sha256()
+        else:
+            raise RuntimeError("Unexpected CIM type: {:s}".format(str(self._cim.cim_type)))
+        h.update(s)
+        return h.hexdigest().upper()
 
     def _build(self, prefix, name=None):
         if name is None:
             return prefix
         else:
-            return prefix + self._index.hash(name.upper().encode("UTF-16LE"))
+            return prefix + self.hash(name.upper().encode("UTF-16LE"))
 
     def NS(self, name=None):
         return self._build("NS_", name)

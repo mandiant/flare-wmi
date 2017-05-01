@@ -77,7 +77,7 @@ class PhysicalDataPagesItem(Item):
     @cached_property
     def children(self):
         return [PhysicalDataPageItem(self._ctx, i) for i in
-                    range(self._ctx.cim.data_mapping.header.physical_page_count)]
+                    range(self._ctx.cim.data_mapping.map.header.physical_page_count)]
 
     @property
     def type(self):
@@ -138,7 +138,7 @@ class LogicalDataPagesItem(Item):
     @cached_property
     def children(self):
         return [LogicalDataPageItem(self._ctx, i) for i in
-                    range(self._ctx.cim.data_mapping.header.mapping_entry_count)]
+                    range(self._ctx.cim.data_mapping.map.header.mapping_entry_count)]
 
     @property
     def type(self):
@@ -195,7 +195,7 @@ class PhysicalIndexPagesItem(Item):
 
     @cached_property
     def children(self):
-        mapping = self._ctx.cim.index_mapping
+        mapping = self._ctx.cim.index_mapping.map
         # TODO: does this get all of them?
         return [PhysicalIndexPageItem(self._ctx, i) for i in
                     range(mapping.header.mapping_entry_count + mapping.free_dword_count)]
@@ -255,7 +255,7 @@ class LogicalIndexPagesItem(Item):
     @cached_property
     def children(self):
         return [LogicalIndexPageItem(self._ctx, i) for i in
-                    range(self._ctx.cim.index_mapping.header.mapping_entry_count)]
+                    range(self._ctx.cim.index_mapping.map.header.mapping_entry_count)]
 
     @property
     def type(self):

@@ -719,7 +719,7 @@ class LogicalIndexStore(object):
         Returns:
             IndexPage: the parsed index page.
         '''
-        if logical_page_number > self._mapping.header.mapping_entry_count:
+        if logical_page_number > self._mapping.map.header.mapping_entry_count:
             raise InvalidMappingEntryIndex()
 
         pnum = self._mapping.get_physical_page_number(logical_page_number)
@@ -858,16 +858,6 @@ class Index(object):
             List[Key]: the matching keys.
         '''
         return self._lookup_keys(key, self._index_store.root_page)
-
-    def hash(self, s):
-        if self.cim_type == CIM_TYPE_XP:
-            h = hashlib.md5()
-        elif self.cim_type == CIM_TYPE_WIN7:
-            h = hashlib.sha256()
-        else:
-            raise RuntimeError("Unexpected CIM type: {:s}".format(str(self.cim_type)))
-        h.update(s)
-        return h.hexdigest().upper()
 
 
 class MissingMappingFileError(Exception):
