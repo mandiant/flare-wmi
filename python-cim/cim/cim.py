@@ -143,6 +143,9 @@ class MappingWin7(vstruct.VStruct):
         Returns:
             bool: if the logical page is mapped.
         '''
+        if logical_page_number > int(self.header.mapping_entry_count):
+            raise IndexError(logical_page_number)
+
         return self.entries[logical_page_number].page_number != UNMAPPED_PAGE_VALUE
 
     def get_physical_page_number(self, logical_page_number):
@@ -150,7 +153,7 @@ class MappingWin7(vstruct.VStruct):
         given a logical page number, get the physical page number it maps to.
         
         Args:
-            logical_page_number: the logical page number
+            logical_page_number (int): the logical page number
 
         Returns:
             int: the logical page number
@@ -158,6 +161,9 @@ class MappingWin7(vstruct.VStruct):
         Raises:
             UnmappedPage: if the page is unallocated.
         '''
+        if logical_page_number > int(self.header.mapping_entry_count):
+            raise IndexError(logical_page_number)
+
         pnum = self.entries[logical_page_number].page_number
         if pnum == UNMAPPED_PAGE_VALUE:
             raise UnmappedPage(logical_page_number)
@@ -570,7 +576,7 @@ class LogicalDataStore(LoggingObject):
         if not os.path.exists(self._file_path):
             raise MissingDataFileError()
 
-        if physical_page_number >= self.page_count:
+        if physical_page_number > self.page_count:
             raise IndexError(physical_page_number)
 
         with open(self._file_path, "rb") as f:
