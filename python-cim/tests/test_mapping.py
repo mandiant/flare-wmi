@@ -28,7 +28,6 @@ def test_index_mapping_inconsistencies(repo):
     find logical pages where the physical page does not map back to it.
     this is probably where there are two logical pages that point to the
       same physical page.
-    maybe this is unallocated/deleted regions?
     
     Args:
         repo (cim.CIM): the deleted-instance repo
@@ -51,7 +50,17 @@ def test_index_mapping_inconsistencies(repo):
     assert inconsistencies == []
 
 
-def test_unmapped_pages(repo):
+def test_unmapped_logical_pages(repo):
+    '''
+    find logical pages that have no physical page.
+    presumably you can't fetch these pages.
+    
+    Args:
+        repo (cim.CIM): the deleted-instance repo
+
+    Returns:
+        None
+    '''
     mapping = repo.index_mapping
 
     unmapped_pages = []
