@@ -294,22 +294,21 @@ class TOC(vstruct.VArray):
         while offset < endoffset + 0x10:
             t = TOCEntry()
             o = t.vsParse(bytez, offset=offset)
-            if not self._is_valid_entry(t):
+
+            if t.record_id == 0 and t.offset == 0 and t.size == 0 and t.CRC == 0:
+                # there should be a final empty entry to mark the end of the toc
+                offset = o
+                self.vsAddElement(t)
+                # we don't increment the count, cause its not a valid entry
+                break
+
+            elif not self._is_valid_entry(t):
                 break
 
             offset = o
             self.vsAddElement(t)
             self.count += 1
         return offset
-
-    def vsParseFd(self, fd):
-        self.count = 0
-        while True:
-            t = TOCEntry()
-            t.vsParseFd(fd)
-
-            if not self._is_valid_entry(t):
-                break
 
 
 class IndexKeyNotFoundError(Exception):
