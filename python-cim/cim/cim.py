@@ -460,9 +460,13 @@ class MissingDataFileError(Exception):
 
 
 class LogicalDataStore(LoggingObject):
-    """
+    '''
     provides an interface for accessing data by logical page or object id.
-    """
+    
+    Args:
+        cim (CIM): the repo
+        mapping (MappingWin7 | MappingXP): the data mapping.
+    '''
     def __init__(self, cim, file_path, mapping):
         super(LogicalDataStore, self).__init__()
         self._cim = cim
@@ -471,27 +475,52 @@ class LogicalDataStore(LoggingObject):
         self._file_size = os.path.getsize(file_path)
         self.page_count = self._file_size // INDEX_PAGE_SIZE
 
-    def get_physical_page_buffer(self, index):
+    def get_physical_page_buffer(self, physical_page_number):
+        '''
+        fetch the bytes of the page at the give physical index.
+        
+        Args:
+            physical_page_number: the physical page number to fetch
+
+        Returns:
+            bytes: the raw page contents.
+        '''
         if not os.path.exists(self._file_path):
             raise MissingDataFileError()
 
-        if index >= self.page_count:
-            raise IndexError(index)
+        if physical_page_number >= self.page_count:
+            raise IndexError(physical_page_number)
 
         with open(self._file_path, "rb") as f:
-            f.seek(DATA_PAGE_SIZE * index)
+            f.seek(DATA_PAGE_SIZE * physical_page_number)
             return f.read(DATA_PAGE_SIZE)
 
-    def get_logical_page_buffer(self, index):
-        physical_page_number = self._mapping.entries[index].page_number
-        return self.get_physical_page_buffer(physical_page_number)
+    def get_logical_page_buffer(self, logical_page_number):
+        '''
+        fetch the bytes of the page at the give logical index.
+        
+        Args:
+            logical_page_number: the logical page number to fetch
 
-    def get_page(self, index):
-        """
-        return: DataPage instance
-        """
-        physical_page_number = self._mapping.entries[index].page_number
-        return DataPage(self.get_logical_page_buffer(index), index, physical_page_number)
+        Returns:
+            bytes: the raw page contents.
+        '''
+        pnum = self._mapping.get_physical_page_number(logical_page_number)
+        return self.get_physical_page_buffer(pnum)
+
+    def get_page(self, logical_page_number):
+        '''
+        fetch the parsed page at the give logical index.
+        
+        Args:
+            logical_page_number: the logical page number to fetch
+
+        Returns:
+            DataPage: the parsed page.
+        '''
+        pnum = self._mapping.get_physical_page_number(logical_page_number)
+        pbuf = self.get_physical_page_buffer(logical_page_number)
+        return DataPage(pbuf, logical_page_number, pnum)
 
     def get_object_buffer(self, key):
         if not key.is_data_reference:
