@@ -133,6 +133,9 @@ class MappingWin7(vstruct.VStruct):
 
             self._reverse_mapping[pnum] = i
 
+    def is_logical_page_mapped(self, logical_page_number):
+        return self.entries[logical_page_number].page_number != UNMAPPED_PAGE_VALUE
+
     def get_physical_page_number(self, logical_page_number):
         pnum = self.entries[logical_page_number].page_number
         # unknown precisely what this means
@@ -148,6 +151,12 @@ class MappingWin7(vstruct.VStruct):
             return self._reverse_mapping[physical_page_number]
 
         raise UnmappedPage(physical_page_number)
+
+    def is_physical_page_mapped(self, physical_page_number):
+        if self._reverse_mapping is None:
+            self._build_reverse_mapping()
+
+        return physical_page_number in self._reverse_mapping
 
 
 class EntryXP(vstruct.primitives.v_uint32):
@@ -424,7 +433,7 @@ class IndexPage(vstruct.VStruct, LoggingObject):
 
     def _get_string_part(self, string_index):
         string_offset = self.string_table[string_index]
-        return self.data[string_offset:self.data.find(b"\x00", string_offset)].decode("utf-8")
+        return self.data[string_offset:bytes(self.data).find(b"\x00", string_offset)].decode("utf-8")
 
     def _get_string(self, string_def_index):
         string_part_count = self.string_definition_table[string_def_index]
