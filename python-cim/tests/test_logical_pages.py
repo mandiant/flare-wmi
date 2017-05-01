@@ -25,7 +25,7 @@ def test_basic_data_page(repo):
     assert page.toc.count == 22
     assert len(page.objects) == 22
 
-    for i in range(repo.data_mapping.header.mapping_entry_count):
+    for i in range(repo.data_mapping.map.header.mapping_entry_count):
         if not repo.data_mapping.is_logical_page_mapped(i):
             continue
 
@@ -46,7 +46,7 @@ def test_toc_is_ascending(repo):
 
     datapages = repo.logical_data_store
 
-    for i in range(repo.data_mapping.header.mapping_entry_count):
+    for i in range(repo.data_mapping.map.header.mapping_entry_count):
         if not repo.data_mapping.is_logical_page_mapped(i):
             continue
 
@@ -72,7 +72,7 @@ def test_toc_has_large_entries(repo):
     datapages = repo.logical_data_store
 
     large_entries = []
-    for i in range(repo.data_mapping.header.mapping_entry_count):
+    for i in range(repo.data_mapping.map.header.mapping_entry_count):
         if not repo.data_mapping.is_logical_page_mapped(i):
             continue
 
@@ -105,7 +105,7 @@ def test_toc_entry_id_conflicts(repo):
     datapages = repo.logical_data_store
 
     ids = collections.Counter()
-    for i in range(repo.data_mapping.header.mapping_entry_count):
+    for i in range(repo.data_mapping.map.header.mapping_entry_count):
         if not repo.data_mapping.is_logical_page_mapped(i):
             continue
 
@@ -118,6 +118,16 @@ def test_toc_entry_id_conflicts(repo):
 
 
 def test_page_slack_space(repo):
+    '''
+    demonstrate that a data page with a TOC can have slack space.
+    
+    Args:
+        repo (cim.CIM): the deleted-instance repo
+
+    Returns:
+        None
+
+    '''
     datapages = repo.logical_data_store
     page = datapages.get_page(0x0)
 

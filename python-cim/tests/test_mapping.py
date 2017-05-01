@@ -17,10 +17,10 @@ def test_index_mapping(repo):
     mapping = repo.index_mapping
 
     # collected empirically.
-    assert len(mapping.entries) == 7824
-    assert mapping.free_dword_count == 241
-    assert mapping.header.physical_page_count == 547
-    assert mapping.header.mapping_entry_count == 326
+    assert len(mapping.map.entries) == 7824
+    assert mapping.map.free_dword_count == 241
+    assert mapping.map.header.physical_page_count == 547
+    assert mapping.map.header.mapping_entry_count == 326
 
     assert mapping.get_physical_page_number(logical_page_number=0) == 13
     assert mapping.get_logical_page_number(physical_page_number=13) == 0
@@ -43,7 +43,7 @@ def test_index_mapping_inconsistencies(repo):
     # logical pages where the physical page does not map back to it.
     # that is, there must be two logical pages that point here.
     inconsistencies = []
-    for i in range(mapping.header.mapping_entry_count):
+    for i in range(mapping.map.header.mapping_entry_count):
         try:
             pnum = mapping.get_physical_page_number(logical_page_number=i)
             if i != mapping.get_logical_page_number(physical_page_number=pnum):
@@ -68,10 +68,8 @@ def test_unmapped_index_logical_pages(repo):
     mapping = repo.index_mapping
 
     unmapped_pages = []
-    for i in range(mapping.header.mapping_entry_count):
-        try:
-            _ = mapping.get_physical_page_number(i)
-        except cim.UnmappedPage:
+    for i in range(mapping.map.header.mapping_entry_count):
+        if not mapping.is_logical_page_mapped(i):
             unmapped_pages.append(i)
             continue
 
@@ -97,9 +95,7 @@ def test_unallocated_index_physical_pages(repo):
 
     unmapped_pages = []
     for i in range(index.page_count):
-        try:
-            _ = mapping.get_logical_page_number(i)
-        except cim.UnmappedPage:
+        if not mapping.is_physical_page_mapped(i):
             unmapped_pages.append(i)
             continue
 
@@ -144,10 +140,10 @@ def test_data_mapping(repo):
     mapping = repo.data_mapping
 
     # collected empirically.
-    assert len(mapping.entries) == 41448
-    assert mapping.free_dword_count == 159
-    assert mapping.header.physical_page_count == 1886
-    assert mapping.header.mapping_entry_count == 1727
+    assert len(mapping.map.entries) == 41448
+    assert mapping.map.free_dword_count == 159
+    assert mapping.map.header.physical_page_count == 1886
+    assert mapping.map.header.mapping_entry_count == 1727
 
     assert mapping.get_physical_page_number(logical_page_number=0) == 0
     assert mapping.get_logical_page_number(physical_page_number=0) == 0
@@ -170,7 +166,7 @@ def test_data_mapping_inconsistencies(repo):
     # logical pages where the physical page does not map back to it.
     # that is, there must be two logical pages that point here.
     inconsistencies = []
-    for i in range(mapping.header.mapping_entry_count):
+    for i in range(mapping.map.header.mapping_entry_count):
         try:
             pnum = mapping.get_physical_page_number(logical_page_number=i)
             if i != mapping.get_logical_page_number(physical_page_number=pnum):
@@ -195,7 +191,7 @@ def test_unmapped_data_logical_pages(repo):
     mapping = repo.index_mapping
 
     unmapped_pages = []
-    for i in range(mapping.header.mapping_entry_count):
+    for i in range(mapping.map.header.mapping_entry_count):
         if not mapping.is_logical_page_mapped(i):
             unmapped_pages.append(i)
             continue

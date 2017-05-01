@@ -109,101 +109,12 @@ class MappingWin7(vstruct.VStruct):
         self.free = v_bytes()
         self.footer_signature = v_uint32()
 
-        # from physical page to logical page
-        # cached
-        self._reverse_mapping = None
-
     def pcb_header(self):
         for i in range(self.header.mapping_entry_count):
             self.entries.vsAddElement(EntryWin7())
 
     def pcb_free_dword_count(self):
         self["free"].vsSetLength(self.free_dword_count * 0x4)
-
-    def _build_reverse_mapping(self):
-        self._reverse_mapping = {}
-        for i in range(self.header.mapping_entry_count):
-            pnum = self.entries[i].page_number
-            # unknown precisely what this means
-            if pnum == UNMAPPED_PAGE_VALUE:
-                continue
-
-            if pnum in self._reverse_mapping:
-                logger.warning('logical page %d already mapped!', i)
-
-            self._reverse_mapping[pnum] = i
-
-    def is_logical_page_mapped(self, logical_page_number):
-        '''
-        is the given logical page index mapped?
-        
-        Args:
-            logical_page_number (int): the logical page number
-
-        Returns:
-            bool: if the logical page is mapped.
-        '''
-        if logical_page_number > int(self.header.mapping_entry_count):
-            raise IndexError(logical_page_number)
-
-        return self.entries[logical_page_number].page_number != UNMAPPED_PAGE_VALUE
-
-    def get_physical_page_number(self, logical_page_number):
-        '''
-        given a logical page number, get the physical page number it maps to.
-        
-        Args:
-            logical_page_number (int): the logical page number
-
-        Returns:
-            int: the logical page number
-            
-        Raises:
-            UnmappedPage: if the page is unallocated.
-        '''
-        if logical_page_number > int(self.header.mapping_entry_count):
-            raise IndexError(logical_page_number)
-
-        pnum = self.entries[logical_page_number].page_number
-        if pnum == UNMAPPED_PAGE_VALUE:
-            raise UnmappedPage(logical_page_number)
-        return pnum
-
-    def get_logical_page_number(self, physical_page_number):
-        '''
-        given a physical page number, get the logical page number it maps to.
-        
-        Args:
-            physical_page_number: the physical page number
-
-        Returns:
-            int: the logical page number
-
-        Raises:
-            UnmappedPage: if the page is unmapped.
-        '''
-        if self._reverse_mapping is None:
-            self._build_reverse_mapping()
-
-        if physical_page_number in self._reverse_mapping:
-            return self._reverse_mapping[physical_page_number]
-
-        raise UnmappedPage(physical_page_number)
-
-    def is_physical_page_mapped(self, physical_page_number):
-        '''
-        is the given physical page index mapped?
-        
-        Args:
-            physical_page_number (int): the physical page number
-
-        Returns:
-            bool: if the physical page is mapped.
-        '''
-        if self._reverse_mapping is None:
-            self._build_reverse_mapping()
-
-        return physical_page_number in self._reverse_mapping
 
 
 class EntryXP(vstruct.primitives.v_uint32):
@@ -230,10 +141,6 @@ class MappingXP(vstruct.VStruct):
         self.free = v_bytes()
         self.footer_signature = v_uint32()
 
-        # from physical page to logical page
-        # cached
-        self._reverse_mapping = None
-
     def pcb_header(self):
         for i in range(self.header.mapping_entry_count):
             self.entries.vsAddElement(EntryXP())
@@ -246,20 +153,114 @@ class MappingXP(vstruct.VStruct):
         for i in range(self.header.mapping_entry_count):
             self._reverse_mapping[self.entries[i].page_number] = i
 
-    def get_physical_page_number(self, logical_page_number):
-        return self.entries[logical_page_number].page_number
-
-    def get_logical_page_number(self, physical_page_number):
-        if self._reverse_mapping is None:
-            self._build_reverse_mapping()
-
-        return self._reverse_mapping[physical_page_number]
-
 
 MAPPING_TYPES = {
     CIM_TYPE_XP: MappingXP,
     CIM_TYPE_WIN7: MappingWin7,
 }
+
+
+class Mapping(object):
+    '''
+    helper routines around fetching page mappings.
+    '''
+    def __init__(self, map):
+        '''
+        Args:
+            map (MappingWin7 | MappingXp): the raw map structure.
+        '''
+        self.map = map
+        # cache of map from physical page to logical page
+        self._reverse_mapping = {}
+
+    def _build_reverse_mapping(self):
+        self._reverse_mapping = {}
+        for i in range(self.map.header.mapping_entry_count):
+            pnum = self.map.entries[i].page_number
+            # unknown precisely what this means
+            if pnum == UNMAPPED_PAGE_VALUE:
+                continue
+
+            if pnum in self._reverse_mapping:
+                logger.warning('logical page %d already mapped!', i)
+
+            self._reverse_mapping[pnum] = i
+
+    def is_logical_page_mapped(self, logical_page_number):
+        '''
+        is the given logical page index mapped?
+        
+        Args:
+            logical_page_number (int): the logical page number
+
+        Returns:
+            bool: if the logical page is mapped.
+             
+        Raises:
+            IndexError: if the page number is too big
+        '''
+        if logical_page_number > int(self.map.header.mapping_entry_count):
+            raise IndexError(logical_page_number)
+
+        return self.map.entries[logical_page_number].page_number != UNMAPPED_PAGE_VALUE
+
+    def get_physical_page_number(self, logical_page_number):
+        '''
+        given a logical page number, get the physical page number it maps to.
+        
+        Args:
+            logical_page_number (int): the logical page number
+
+        Returns:
+            int: the logical page number
+            
+        Raises:
+            UnmappedPage: if the page is unallocated.
+            IndexError: if the page number is too big
+        '''
+        if logical_page_number > int(self.map.header.mapping_entry_count):
+            raise IndexError(logical_page_number)
+
+        pnum = self.map.entries[logical_page_number].page_number
+        if pnum == UNMAPPED_PAGE_VALUE:
+            raise UnmappedPage(logical_page_number)
+        return pnum
+
+    def get_logical_page_number(self, physical_page_number):
+        '''
+        given a physical page number, get the logical page number it maps to.
+        
+        Args:
+            physical_page_number: the physical page number
+
+        Returns:
+            int: the logical page number
+
+        Raises:
+            UnmappedPage: if the page is unmapped.
+        '''
+        if not self._reverse_mapping:
+            self._build_reverse_mapping()
+
+        if physical_page_number in self._reverse_mapping:
+            return self._reverse_mapping[physical_page_number]
+
+        raise UnmappedPage(physical_page_number)
+
+    def is_physical_page_mapped(self, physical_page_number):
+        '''
+        is the given physical page index mapped?
+        
+        Args:
+            physical_page_number (int): the physical page number
+
+        Returns:
+            bool: if the physical page is mapped.
+        '''
+        if not self._reverse_mapping:
+            self._build_reverse_mapping()
+
+        return physical_page_number in self._reverse_mapping
 
 
 class TOCEntry(vstruct.VStruct):
@@ -899,7 +900,7 @@ class CIM(LoggingObject):
         with open(fp, "rb") as f:
             dm.vsParseFd(f)
             im.vsParseFd(f)
-        return dm, im
+        return Mapping(dm), Mapping(im)
 
     @property
     def data_mapping(self):
