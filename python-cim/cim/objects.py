@@ -216,10 +216,9 @@ class CimType(vstruct.VStruct):
         return BaseType(self.type, self._base_value_parser)
 
 
-class CimTypeArray(vstruct.VStruct, LoggingObject):
+class CimTypeArray(vstruct.VStruct):
     def __init__(self, cim_type):
         vstruct.VStruct.__init__(self)
-        LoggingObject.__init__(self)
         self._type = cim_type
         self.count = v_uint32()
         self.elements = vstruct.VArray()
@@ -314,7 +313,7 @@ class _ClassDefinitionProperty(vstruct.VStruct):
         self.qualifiers = QualifiersList()
 
 
-class ClassDefinitionProperty(LoggingObject):
+class ClassDefinitionProperty(object):
     """
     this is the logical property object parsed from a standalone class definition.
     it is not aware of default values and inheritance behavior.
@@ -487,14 +486,13 @@ class PropertyDefaultValues(vstruct.VArray):
             self.default_values_toc.vsAddElement(P())
 
 
-class DataRegion(vstruct.VStruct, LoggingObject):
+class DataRegion(vstruct.VStruct):
     """
     size field, then variable length of binary data.
     provides accessors for common types.
     """
     def __init__(self):
         vstruct.VStruct.__init__(self)
-        LoggingObject.__init__(self)
 
         self._size = v_uint32()
         self.data = v_bytes(size=0)
@@ -565,10 +563,9 @@ class DataRegion(vstruct.VStruct, LoggingObject):
         return self.get_string(qualifier.key)
 
 
-class ClassDefinition(vstruct.VStruct, LoggingObject):
+class ClassDefinition(vstruct.VStruct):
     def __init__(self):
         vstruct.VStruct.__init__(self)
-        LoggingObject.__init__(self)
 
         self.header = ClassDefinitionHeader()
         self.qualifiers_list = QualifiersList()
@@ -673,7 +670,7 @@ class InstanceKey(object):
             return ",".join(["{:s}={:s}".format(str(k), str(self[k])) for k in sorted(self._d.keys())])
 
 
-class ClassInstanceProperty(LoggingObject):
+class ClassInstanceProperty(object):
     def __init__(self, prop, class_instance, state, value):
         """
         :type prop:  ClassLayoutProperty
@@ -799,10 +796,9 @@ class Dynprops(vstruct.VStruct):
         raise NotImplementedError()
 
 
-class ClassInstance(vstruct.VStruct, LoggingObject):
+class ClassInstance(vstruct.VStruct):
     def __init__(self, cim_type, class_layout):
         vstruct.VStruct.__init__(self)
-        LoggingObject.__init__(self)
 
         self._cim_type = cim_type
         self.class_layout = class_layout
@@ -883,14 +879,13 @@ class ClassInstance(vstruct.VStruct, LoggingObject):
         return ret
 
 
-class CoreClassInstance(vstruct.VStruct, LoggingObject):
+class CoreClassInstance(vstruct.VStruct):
     """
     begins with DWORD:0x0 and has no hash field
     seen at least for __NAMESPACE on an XP repo
     """
     def __init__(self, class_layout):
         vstruct.VStruct.__init__(self)
-        LoggingObject.__init__(self)
 
         self.class_layout = class_layout
         self._buf = None
@@ -947,7 +942,7 @@ class CoreClassInstance(vstruct.VStruct, LoggingObject):
         return self.data.get_value(self.toc[p.index], p.type)
 
 
-class ClassLayoutProperty(LoggingObject):
+class ClassLayoutProperty(object):
     def __init__(self, prop, class_layout):
         """
         :type prop:  ClassDefinitionProperty
@@ -1025,7 +1020,7 @@ class ClassLayoutProperty(LoggingObject):
             raise RuntimeError("unable to find ancestor class with default value")
 
 
-class ClassLayout(LoggingObject):
+class ClassLayout(object):
     def __init__(self, object_resolver, namespace, class_definition):
         """
         :type object_resolver: ObjectResolver
@@ -1087,7 +1082,7 @@ class ClassLayout(LoggingObject):
         return off
 
 
-class ObjectResolver(LoggingObject):
+class ObjectResolver(object):
     def __init__(self, cim, index):
         super(ObjectResolver, self).__init__()
         self._cim = cim
@@ -1326,7 +1321,7 @@ ObjectPath = namedtuple("ObjectPath", ["hostname", "namespace", "klass", "instan
 
 
 
-class TreeNamespace(LoggingObject):
+class TreeNamespace(object):
     def __init__(self, object_resolver, name):
         super(TreeNamespace, self).__init__()
         self._object_resolver = object_resolver
@@ -1493,7 +1488,7 @@ class TreeNamespace(LoggingObject):
             raise RuntimeError("Invalid ObjectPath: {:s}".format(str(object_path)))
 
 
-class TreeClassDefinition(LoggingObject):
+class TreeClassDefinition(object):
     def __init__(self, object_resolver, namespace, name):
         super(TreeClassDefinition, self).__init__()
         self._object_resolver = object_resolver
@@ -1533,7 +1528,7 @@ class TreeClassDefinition(LoggingObject):
             return getattr(self.cd, attr)
 
 
-class TreeClassInstance(LoggingObject):
+class TreeClassInstance(object):
     def __init__(self, object_resolver, namespace_name, class_name, instance_key):
         super(TreeClassInstance, self).__init__()
         self._object_resolver = object_resolver
@@ -1569,7 +1564,7 @@ class TreeClassInstance(LoggingObject):
             return getattr(self.ci, attr)
 
 
-class Tree(LoggingObject):
+class Tree(object):
     def __init__(self, cim):
         super(Tree, self).__init__()
         self._object_resolver = ObjectResolver(cim, Index(cim.cim_type, cim.logical_index_store))
@@ -1583,7 +1578,7 @@ class Tree(LoggingObject):
         return TreeNamespace(self._object_resolver, ROOT_NAMESPACE_NAME)
 
 
-class Namespace(LoggingObject):
+class Namespace(object):
     def __init__(self, cim, namespace_name):
         super(Namespace, self).__init__()
         self._cim = cim

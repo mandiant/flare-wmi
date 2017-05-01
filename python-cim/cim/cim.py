@@ -43,13 +43,6 @@ INDEX_PAGE_TYPES.PAGE_TYPE_DELETED = 0xBADD
 INDEX_PAGE_TYPES.PAGE_TYPE_ADMIN = 0xADDD
 
 
-
-# TODO: maybe stick this onto the CIM class?
-#  then it can do lookups against the mapping?
-def is_index_page_number_valid(num):
-    return num != INDEX_PAGE_INVALID and num != INDEX_PAGE_INVALID2
-
-
 class MappingHeaderXP(vstruct.VStruct):
     def __init__(self):
         vstruct.VStruct.__init__(self)
@@ -475,8 +468,6 @@ class IndexPageHeader(vstruct.VStruct):
 class IndexPage(vstruct.VStruct):
     def __init__(self, logical_page_number, physical_page_number):
         vstruct.VStruct.__init__(self)
-        LoggingObject.__init__(self)
-
         self.logical_page_number = logical_page_number
         self.physical_page_number = physical_page_number
 
@@ -804,8 +795,9 @@ class Index(object):
     RIGHT_CHILD_DIRECTION = 1
     def _lookup_keys_child(self, key, page, i, direction):
         child_index = page.get_child(i + direction)
-        if not is_index_page_number_valid(child_index):
+        if child_index == INDEX_PAGE_INVALID or child_index == INDEX_PAGE_INVALID2:
             return []
+
         child_page = self._index_store.get_page(child_index)
         return self._lookup_keys(key, child_page)
 
@@ -856,9 +848,15 @@ class Index(object):
         return matches
 
     def lookup_keys(self, key):
-        """
-        get keys that match the given key prefix
-        """
+        '''
+        query the index keys that start with the given prefix.
+        
+        Args:
+            key (Key): the key prefix.
+
+        Returns:
+            List[Key]: the matching keys.
+        '''
         return self._lookup_keys(key, self._index_store.root_page)
 
     def hash(self, s):
