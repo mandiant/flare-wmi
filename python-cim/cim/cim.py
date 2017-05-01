@@ -468,10 +468,15 @@ class LogicalDataStore(LoggingObject):
         self._cim = cim
         self._file_path = file_path
         self._mapping = mapping
+        self._file_size = os.path.getsize(file_path)
+        self.page_count = self._file_size // INDEX_PAGE_SIZE
 
     def get_physical_page_buffer(self, index):
         if not os.path.exists(self._file_path):
             raise MissingDataFileError()
+
+        if index >= self.page_count:
+            raise IndexError(index)
 
         # TODO: keep an open handle
         with open(self._file_path, "rb") as f:
