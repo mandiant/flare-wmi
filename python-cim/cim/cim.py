@@ -124,7 +124,7 @@ class MappingWin7(vstruct.VStruct):
         return self.entries[logical_page_number].page_number
 
     def get_logical_page_number(self, physical_page_number):
-        if self._reverseMapping is None:
+        if self._reverse_mapping is None:
             self._build_reverse_mapping()
 
         return self._reverse_mapping[physical_page_number].page_number
