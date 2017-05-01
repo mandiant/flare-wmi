@@ -1,7 +1,3 @@
-import collections
-
-import intervaltree
-
 import cim
 from fixtures import *
 
