@@ -25,6 +25,7 @@ MAX_MAPPING_FILES = 0x3
 MAPPING_PAGE_ID_MASK = 0x3FFFFFFF
 MAPPING_PAGE_UNAVAIL = 0xFFFFFFFF
 MAPPING_FILE_CLEAN = 0x1
+UNMAPPED_PAGE_VALUE = 0x3FFFFFFF
 
 CIM_TYPE_XP = "xp"
 CIM_TYPE_WIN7 = "win7"
@@ -40,6 +41,7 @@ INDEX_PAGE_TYPES.PAGE_TYPE_UNK = 0x0000
 INDEX_PAGE_TYPES.PAGE_TYPE_ACTIVE = 0xACCC
 INDEX_PAGE_TYPES.PAGE_TYPE_DELETED = 0xBADD
 INDEX_PAGE_TYPES.PAGE_TYPE_ADMIN = 0xADDD
+
 
 
 # TODO: maybe stick this onto the CIM class?
@@ -90,8 +92,6 @@ class EntryWin7(vstruct.VStruct):
         return self._page_number & MAPPING_PAGE_ID_MASK
 
 
-UNMAPPED_PAGE_VALUE = 0x3FFFFFFF
-
 class UnmappedPage(KeyError):
     pass
 
@@ -134,16 +134,48 @@ class MappingWin7(vstruct.VStruct):
             self._reverse_mapping[pnum] = i
 
     def is_logical_page_mapped(self, logical_page_number):
+        '''
+        is the given logical page index mapped?
+        
+        Args:
+            logical_page_number (int): the logical page number
+
+        Returns:
+            bool: if the logical page is mapped.
+        '''
         return self.entries[logical_page_number].page_number != UNMAPPED_PAGE_VALUE
 
     def get_physical_page_number(self, logical_page_number):
+        '''
+        given a logical page number, get the physical page number it maps to.
+        
+        Args:
+            logical_page_number: the logical page number
+
+        Returns:
+            int: the logical page number
+            
+        Raises:
+            UnmappedPage: if the page is unallocated.
+        '''
         pnum = self.entries[logical_page_number].page_number
-        # unknown precisely what this means
         if pnum == UNMAPPED_PAGE_VALUE:
             raise UnmappedPage(logical_page_number)
         return pnum
 
     def get_logical_page_number(self, physical_page_number):
+        '''
+        given a physical page number, get the logical page number it maps to.
+        
+        Args:
+            physical_page_number: the physical page number
+
+        Returns:
+            int: the logical page number
+
+        Raises:
+            UnmappedPage: if the page is unmapped.
+        '''
         if self._reverse_mapping is None:
             self._build_reverse_mapping()
 
@@ -153,6 +185,15 @@ class MappingWin7(vstruct.VStruct):
         raise UnmappedPage(physical_page_number)
 
     def is_physical_page_mapped(self, physical_page_number):
+        '''
+        is the given physical page index mapped?
+        
+        Args:
+            physical_page_number (int): the physical page number
+
+        Returns:
+            bool: if the physical page is mapped.
+        '''
         if self._reverse_mapping is None:
             self._build_reverse_mapping()
 
