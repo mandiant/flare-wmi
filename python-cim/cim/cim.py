@@ -1,5 +1,4 @@
 import os
-import hashlib
 import logging
 from collections import namedtuple
 
@@ -7,13 +6,8 @@ from funcy.objects import cached_property
 import vstruct
 from vstruct.primitives import *
 
-from .common import h
-from .common import LoggingObject
-
 
 logger = logging.getLogger(__name__)
-logging.getLogger("cim.IndexPage").setLevel(logging.WARNING)
-logging.getLogger("cim.Index").setLevel(logging.WARNING)
 
 
 MAPPING_SIGNATURES = v_enum()
@@ -364,7 +358,7 @@ class DataPage(object):
         fetch the raw bytes for the object identified by the given key.
         
         Args:
-            key (Key): the key of the object to fetch.
+            key (cim.Key): the key of the object to fetch.
 
         Returns:
             bytes: the raw bytes of the requested object.
@@ -810,7 +804,7 @@ class Index(object):
         skey = str(key)
         key_count = page.key_count
 
-        logger.debug("index lookup: %s: page: %s", key.human_format, h(page.logical_page_number))
+        logger.debug("index lookup: %s: page: %s", key.human_format, hex(page.logical_page_number))
 
         matches = []
         for i in range(key_count):

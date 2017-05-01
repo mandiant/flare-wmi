@@ -16,14 +16,8 @@ from funcy.objects import cached_property
 import vstruct
 from vstruct.primitives import *
 
-from .common import h
-from .common import one
-from .common import LoggingObject
-from .cim import Key
-from .cim import Index
-from .cim import CIM_TYPE_XP
-from .cim import CIM_TYPE_WIN7
-from .cim import IndexKeyNotFoundError
+import cim
+
 
 logger = logging.getLogger(__name__)
 
@@ -188,7 +182,7 @@ class CimType(vstruct.VStruct):
         elif self.type == CIM_TYPES.CIM_TYPE_REFERENCE:
             return v_uint32
         else:
-            raise RuntimeError("unknown type: %s", h(self.type))
+            raise RuntimeError("unknown type: %s", hex(self.type))
 
     @property
     def value_parser(self):
@@ -197,18 +191,13 @@ class CimType(vstruct.VStruct):
         else:
             return self._base_value_parser
 
-    #def pcb_unk2(self):
-    #    print("unk2", hex(self.type), type(self.type))
-    #    if self.type == 0xd:
-    #        print(self.tree())
-
     def __repr__(self):
         r = ""
         if self.is_array:
             r += "arrayref to "
         typename = CIM_TYPES.vsReverseMapping(self.type)
         if typename is None:
-            raise RuntimeError("unknown type: %s", h(self.type))
+            raise RuntimeError("unknown type: %s", hex(self.type))
         r += typename
         return r
 
@@ -272,7 +261,7 @@ class QualifierReference(vstruct.VStruct):
         return "QualifierReference(type: {:s}, isBuiltinKey: {:b}, keyref: {:s})".format(
                 str(self.value_type),
                 self.is_builtin_key,
-                h(self.key)
+                hex(self.key)
             )
 
 
@@ -393,11 +382,11 @@ class PropertyReference(vstruct.VStruct):
        if self.is_builtin_property:
             return "PropertyReference(isBuiltinKey: true, name: {:s}, structref: {:s})".format(
                 self.builtin_property_name,
-                h(self.offset_property_struct))
+                hex(self.offset_property_struct))
        else:
             return "PropertyReference(isBuiltinKey: false, nameref: {:s}, structref: {:s})".format(
-                h(self.offset_property_name),
-                h(self.offset_property_struct))
+                hex(self.offset_property_name),
+                hex(self.offset_property_struct))
  
 
 class PropertyReferenceList(vstruct.VStruct):
@@ -780,7 +769,6 @@ class Dynprops(vstruct.VStruct):
         return self._has_dynprops == DYNPROPS_STATE.HAS_DYNPROPS
 
     def vsParse(self, bytez, offset=0, fast=False):
-        soffset = offset
         offset = self["_has_dynprops"].vsParse(bytez, offset=offset)
         if not self.has_dynprops:
             return offset
@@ -804,9 +792,9 @@ class ClassInstance(vstruct.VStruct):
         self._cim_type = cim_type
         self.class_layout = class_layout
 
-        if self._cim_type == CIM_TYPE_XP:
+        if self._cim_type == cim.CIM_TYPE_XP:
             self.name_hash = v_wstr(size=0x20)
-        elif self._cim_type == CIM_TYPE_WIN7:
+        elif self._cim_type == cim.CIM_TYPE_WIN7:
             self.name_hash = v_wstr(size=0x40)
         else:
             raise RuntimeError("Unexpected CIM type: " + str(self._cim_type))
@@ -852,19 +840,13 @@ class ClassInstance(vstruct.VStruct):
     def properties(self):
         """ get dict of str to concrete Property values"""
         ret = {}
-        #print(self.class_layout.class_definition.class_name)
         for prop in self.class_layout.properties.values():
             state = self.property_state.get_by_index(prop.index)
-            #print(prop.name, state, prop)
             v = None
             if state.is_initialized:
                 if state.use_default_value:
                     v = prop.default_value
                 else:
-                    #print(hex(self.toc[prop.index]))
-                    #print(self.data.tree())
-                    #import hexdump
-                    #hexdump.hexdump(self.data.data)
                     v = self.data.get_value(self.toc[prop.index], prop.type)
             ret[prop.name] = ClassInstanceProperty(prop, self, state, v)
         return ret
@@ -1088,7 +1070,7 @@ class ObjectResolver(object):
         '''
         Args:
             cim (CIM): the CIM repository
-            index (Index): the page index
+            index (cim.Index): the page index
         '''
         super(ObjectResolver, self).__init__()
         self._cim = cim
@@ -1102,9 +1084,9 @@ class ObjectResolver(object):
         self._ihashcache = {}  # :type: dict[str,str]
 
     def hash(self, s):
-        if self._cim.cim_type == CIM_TYPE_XP:
+        if self._cim.cim_type == cim.CIM_TYPE_XP:
             h = hashlib.md5()
-        elif self._cim.cim_type == CIM_TYPE_WIN7:
+        elif self._cim.cim_type == cim.CIM_TYPE_WIN7:
             h = hashlib.sha256()
         else:
             raise RuntimeError("Unexpected CIM type: {:s}".format(str(self._cim.cim_type)))
@@ -1146,7 +1128,7 @@ class ObjectResolver(object):
     def get_object(self, query):
         """ fetch the first object buffer matching the query """
         logger.debug("query: %s", str(query))
-        ref = one(self._index.lookup_keys(query))
+        ref = cim.common.one(self._index.lookup_keys(query))
         if not ref:
             raise IndexError("Failed to find: {:s}".format(str(query)))
         # TODO: should ensure this query has a unique result
@@ -1161,7 +1143,7 @@ class ObjectResolver(object):
         for ref in self.get_keys(query):
             try:
                 yield ref, self._cim.logical_data_store.get_object_buffer(ref)
-            except IndexKeyNotFoundError:
+            except cim.IndexKeyNotFoundError:
                 logger.warning("Expected object not found in object store: %s", ref)
                 continue
 
@@ -1170,20 +1152,20 @@ class ObjectResolver(object):
         return SYSTEM_NAMESPACE_NAME
 
     def get_cd_buf(self, namespace_name, class_name):
-        q = Key("{}/{}".format(
-                self.NS(namespace_name),
-                self.CD(class_name)))
+        q = cim.Key("{}/{}".format(
+                    self.NS(namespace_name),
+                    self.CD(class_name)))
         # TODO: should ensure this query has a unique result
-        ref = one(self._index.lookup_keys(q))
+        ref = cim.common.one(self._index.lookup_keys(q))
 
         # some standard class definitions (like __NAMESPACE) are not in the
         #   current NS, but in the __SystemClass NS. So we try that one, too.
 
         if ref is None:
             logger.debug("didn't find %s in %s, retrying in %s", class_name, namespace_name, SYSTEM_NAMESPACE_NAME)
-            q = Key("{}/{}".format(
-                    self.NS(SYSTEM_NAMESPACE_NAME),
-                    self.CD(class_name)))
+            q = cim.Key("{}/{}".format(
+                        self.NS(SYSTEM_NAMESPACE_NAME),
+                        self.CD(class_name)))
         return self.get_object(q)
 
     def get_cd(self, namespace_name, class_name):
@@ -1192,20 +1174,20 @@ class ObjectResolver(object):
         if c_cd is None:
             logger.debug("cdcache miss")
 
-            q = Key("{}/{}".format(
-                    self.NS(namespace_name),
-                    self.CD(class_name)))
+            q = cim.Key("{}/{}".format(
+                        self.NS(namespace_name),
+                        self.CD(class_name)))
             # TODO: should ensure this query has a unique result
-            ref = one(self._index.lookup_keys(q))
+            ref = cim.common.one(self._index.lookup_keys(q))
 
             # some standard class definitions (like __NAMESPACE) are not in the
             #   current NS, but in the __SystemClass NS. So we try that one, too.
 
             if ref is None:
                 logger.debug("didn't find %s in %s, retrying in %s", class_name, namespace_name, SYSTEM_NAMESPACE_NAME)
-                q = Key("{}/{}".format(
-                        self.NS(SYSTEM_NAMESPACE_NAME),
-                        self.CD(class_name)))
+                q = cim.Key("{}/{}".format(
+                            self.NS(SYSTEM_NAMESPACE_NAME),
+                            self.CD(class_name)))
             c_cdbuf = self.get_object(q)
             c_cd = ClassDefinition()
             c_cd.vsParse(c_cdbuf)
@@ -1227,7 +1209,7 @@ class ObjectResolver(object):
         #    has not been described correctly..
 
         # CI or KI?
-        q = Key("{}/{}/{}".format(
+        q = cim.Key("{}/{}/{}".format(
                     self.NS(namespace_name),
                     self.CI(class_name),
                     self.IL(known_hash=self._ihashcache.get(str(instance_key), ""))))
@@ -1249,7 +1231,7 @@ class ObjectResolver(object):
         # TODO: this is a major hack!
 
         # CI or KI?
-        q = Key("{}/{}/{}".format(
+        q = cim.Key("{}/{}/{}".format(
                     self.NS(namespace_name),
                     self.CI(class_name),
                     self.IL(known_hash=self._ihashcache.get(str(instance_key), ""))))
@@ -1285,7 +1267,7 @@ class ObjectResolver(object):
 
     NamespaceSpecifier = namedtuple("NamespaceSpecifier", ["namespace_name"])
     def get_ns_children_ns(self, namespace_name):
-        q = Key("{}/{}/{}".format(
+        q = cim.Key("{}/{}/{}".format(
                     self.NS(namespace_name),
                     self.CI(NAMESPACE_CLASS_NAME),
                     self.IL()))
@@ -1298,7 +1280,7 @@ class ObjectResolver(object):
 
     ClassDefinitionSpecifier = namedtuple("ClassDefintionSpecifier", ["namespace_name", "class_name"])
     def get_ns_children_cd(self, namespace_name):
-        q = Key("{}/{}".format(
+        q = cim.Key("{}/{}".format(
                     self.NS(namespace_name),
                     self.CD()))
 
@@ -1310,7 +1292,7 @@ class ObjectResolver(object):
     ClassInstanceSpecifier = namedtuple("ClassInstanceSpecifier", ["namespace_name", "class_name", "instance_key"])
     def get_cd_children_ci(self, namespace_name, class_name):
         # TODO: CI or KI?
-        q = Key("{}/{}/{}".format(
+        q = cim.Key("{}/{}/{}".format(
                     self.NS(namespace_name),
                     self.CI(class_name),
                     self.IL()))
@@ -1583,7 +1565,7 @@ class TreeClassInstance(object):
 class Tree(object):
     def __init__(self, cim):
         super(Tree, self).__init__()
-        self._object_resolver = ObjectResolver(cim, Index(cim.cim_type, cim.logical_index_store))
+        self._object_resolver = ObjectResolver(cim, cim.Index(cim.cim_type, cim.logical_index_store))
 
     def __repr__(self):
         return "Tree"
@@ -1599,7 +1581,7 @@ class Namespace(object):
         super(Namespace, self).__init__()
         self._cim = cim
         self._name = namespace_name
-        self._i = Index(self._cim.cim_type, self._cim.logical_index_store)
+        self._i = cim.Index(self._cim.cim_type, self._cim.logical_index_store)
         self._o = ObjectResolver(self._cim, self._i)
 
     def __enter__(self):
