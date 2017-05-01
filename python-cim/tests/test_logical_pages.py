@@ -3,9 +3,6 @@ from fixtures import *
 import cim
 
 
-############ INDEX MAPPING ###############################################
-
-
 def test_basic_data_page(repo):
     '''
     Args:
@@ -56,3 +53,35 @@ def test_toc_is_ascending(repo):
             entry = page.toc[j]
             assert entry.offset > last_offset
             last_offset = entry.offset
+
+
+def test_toc_has_large_entries(repo):
+    '''
+    demonstrate that there may be entries listed in a TOC that exceed the page size. 
+    
+    Args:
+        repo (cim.CIM): the deleted-instance repo
+
+    Returns:
+        None
+    '''
+
+    datapages = repo.logical_data_store
+
+    large_entries = []
+    for i in range(repo.data_mapping.header.mapping_entry_count):
+        if not repo.data_mapping.is_logical_page_mapped(i):
+            continue
+
+        page = datapages.get_page(i)
+        for j in range(page.toc.count):
+            entry = page.toc[j]
+            if entry.offset + entry.size > cim.DATA_PAGE_SIZE:
+                large_entries.append((i, j))
+
+    # collected empirically.
+    assert large_entries != []
+    # this looks like __SystemSecurity.
+    # it has size 0x319D.
+    assert large_entries[0] == (0x3, 0x0)
+
