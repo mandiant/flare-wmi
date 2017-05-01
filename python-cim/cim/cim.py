@@ -11,9 +11,7 @@ from .common import h
 from .common import LoggingObject
 
 
-# TODO: remove this in top level
-logging.basicConfig(level=logging.DEBUG)
-g_logger = logging.getLogger("cim.mapping")
+logger = logging.getLogger(__name__)
 logging.getLogger("cim.IndexPage").setLevel(logging.WARNING)
 logging.getLogger("cim.Index").setLevel(logging.WARNING)
 

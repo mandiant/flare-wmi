@@ -24,9 +24,7 @@ from .cim import CIM_TYPE_XP
 from .cim import CIM_TYPE_WIN7
 from .cim import IndexKeyNotFoundError
 
-# TODO: remove this from the top level
-logging.basicConfig(level=logging.DEBUG)
-g_logger = logging.getLogger("cim.objects")
+logger = logging.getLogger(__name__)
 
 
 ROOT_NAMESPACE_NAME = "root"
@@ -1307,12 +1305,12 @@ class ObjectResolver(LoggingObject):
                     self.IL()))
 
         for ref, ibuf in self.get_objects(q):
-            g_logger.debug("result for %s:%s:  %s", namespace_name, class_name, ref)
+            logger.debug("result for %s:%s:  %s", namespace_name, class_name, ref)
             try:
                 instance = self.parse_instance(self.get_cl(namespace_name, class_name), ibuf)
             except:
-                g_logger.error("failed to parse instance: %s %s at %s", namespace_name, class_name, ref)
-                g_logger.error(traceback.format_exc())
+                logger.error("failed to parse instance: %s %s at %s", namespace_name, class_name, ref)
+                logger.error(traceback.format_exc())
                 continue
 
             # str(instance.key) is sorted k-v pairs, should be unique
