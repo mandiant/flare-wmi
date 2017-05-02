@@ -1,3 +1,5 @@
+from __future__ import absolute_import
+
 # TODO:
 #   what is "DYNPROPS: True"?
 #   where do descriptions come from?
