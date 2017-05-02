@@ -248,3 +248,51 @@ def test_class_layouts(root):
     # collected empirically
     assert len(derivations) == 8162
     assert len(properties) == 53867
+
+
+def test_class_instances(root):
+    """
+    parse all class instances from all class definitions in the repository.
+    demonstrates there's no critical errors encountered while enumerating classes.
+    
+    Args:
+        root (cim.objects.TreeNamespace): the root namespace
+
+    Returns:
+        None
+    """
+    classes = []
+    def collect(ns):
+        for klass in ns.classes:
+            classes.append(klass)
+
+        for namespace in ns.namespaces:
+            collect(namespace)
+    collect(root)
+
+    qualifiers = []
+    properties = []
+    propqualifiers = []
+    for klass in classes:
+        for instance in klass.instances:
+
+            # these are the qualifiers that apply to the class itself
+            for qualname, qualval in instance.qualifiers.items():
+                qualifiers.append((klass.ns, klass.name, instance.key, qualname, qualval))
+
+            # these are the properties defined on the class
+            for propname, propref in instance.properties.items():
+                if propref.is_initialized:
+                    properties.append((klass.ns, klass.name, instance.key, propname, propref.value))
+                else:
+                    properties.append((klass.ns, klass.name, instance.key, propname, None))
+
+                # these are the qualifiers that apply to the property on the class
+                for qualname, qualval in propref.qualifiers.items():
+                    propqualifiers.append((klass.ns, klass.name, propname, qualname, qualval))
+
+
+    # collected empirically
+    assert len(qualifiers) == 12
+    assert len(properties) == 8237
+    assert len(propqualifiers) == 20117
