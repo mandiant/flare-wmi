@@ -25,7 +25,7 @@ def repo():
     return cim.CIM(cim.CIM_TYPE_WIN7, repopath())
 
 
-@pytest.fixture
+@pytest.yield_fixture
 def root():
     r = repo()
     with cim.objects.Namespace(r, cim.objects.ROOT_NAMESPACE_NAME) as ns:
