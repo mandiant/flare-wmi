@@ -17,6 +17,7 @@ import vstruct
 from vstruct.primitives import *
 
 import cim
+import cim.common
 
 logger = logging.getLogger(__name__)
 

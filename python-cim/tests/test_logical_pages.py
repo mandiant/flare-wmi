@@ -8,6 +8,8 @@ from fixtures import *
 
 def test_basic_data_page(repo):
     '''
+    demonstration extraction of basic information from the page store.
+    
     Args:
         repo (cim.CIM): the deleted-instance repo
 

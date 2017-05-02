@@ -8,6 +8,8 @@ import cim
 
 def test_index_mapping(repo):
     '''
+    demonstrate extraction of basic information from the mapping header.
+    
     Args:
         repo (cim.CIM): the deleted-instance repo
 
@@ -50,6 +52,7 @@ def test_index_mapping_inconsistencies(repo):
                 inconsistencies.append(i)
         except cim.UnmappedPage:
             continue
+
     # collected empirically.
     assert inconsistencies == []
 
@@ -173,6 +176,7 @@ def test_data_mapping_inconsistencies(repo):
                 inconsistencies.append(i)
         except cim.UnmappedPage:
             continue
+
     # collected empirically.
     assert inconsistencies == []
 
