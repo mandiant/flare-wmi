@@ -276,18 +276,18 @@ def test_class_instances(root):
     for klass in classes:
         for instance in klass.instances:
 
-            # these are the qualifiers that apply to the class itself
+            # these are the qualifiers that apply to the instance itself
             for qualname, qualval in instance.qualifiers.items():
                 qualifiers.append((klass.ns, klass.name, instance.key, qualname, qualval))
 
-            # these are the properties defined on the class
+            # these are the properties defined on the instance
             for propname, propref in instance.properties.items():
                 if propref.is_initialized:
                     properties.append((klass.ns, klass.name, instance.key, propname, propref.value))
                 else:
                     properties.append((klass.ns, klass.name, instance.key, propname, None))
 
-                # these are the qualifiers that apply to the property on the class
+                # these are the qualifiers that apply to the property on the instance
                 for qualname, qualval in propref.qualifiers.items():
                     propqualifiers.append((klass.ns, klass.name, propname, qualname, qualval))
 
