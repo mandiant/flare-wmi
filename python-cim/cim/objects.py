@@ -1141,10 +1141,12 @@ class ObjectResolver(object):
     def get_object(self, query):
         """ fetch the first object buffer matching the query """
         logger.debug("query: %s", str(query))
-        ref = cim.common.one(self._index.lookup_keys(query))
-        if not ref:
-            raise IndexError("Failed to find: {:s}".format(str(query)))
-        # TODO: should ensure this query has a unique result
+        refs = self._index.lookup_keys(query)
+        if not refs:
+            raise QueryError('not found: ' + str(query))
+        if refs and len(refs) > 1:
+            raise QueryError('too many results: ' + str(query))
+        ref = refs[0]
         return self._repo.logical_data_store.get_object_buffer(ref)
 
     def get_keys(self, query):
@@ -1164,29 +1166,23 @@ class ObjectResolver(object):
     def root_namespace(self):
         return SYSTEM_NAMESPACE_NAME
 
-    @staticmethod
-    def ensure_unique_result(result):
-        if len(result) == 0:
-            raise QueryError('not found: ' + str(q))
-        elif len(result) > 1:
-            raise  QueryError('not unique result: ' + str(q))
-        else:
-            return result[0]
-
     def get_cd_buf(self, namespace_name, class_name):
         q = cim.Key("{}/{}".format(
             self.NS(namespace_name),
             self.CD(class_name)))
-        ref = self.ensure_unique_result(self._index.lookup_keys(q))
 
-        # some standard class definitions (like __NAMESPACE) are not in the
-        #   current NS, but in the __SystemClass NS. So we try that one, too.
+        refs = self._index.lookup_keys(q)
 
-        if ref is None:
+        if refs is None:
+            # some standard class definitions (like __NAMESPACE) are not in the
+            #   current NS, but in the __SystemClass NS. So we try that one, too.
             logger.debug("didn't find %s in %s, retrying in %s", class_name, namespace_name, SYSTEM_NAMESPACE_NAME)
             q = cim.Key("{}/{}".format(
                 self.NS(SYSTEM_NAMESPACE_NAME),
                 self.CD(class_name)))
+        elif refs and len(refs) > 1:
+            raise QueryError('to many results: ' + str(q))
+
         return self.get_object(q)
 
     def get_cd(self, namespace_name, class_name):
@@ -1198,16 +1194,18 @@ class ObjectResolver(object):
             q = cim.Key("{}/{}".format(
                 self.NS(namespace_name),
                 self.CD(class_name)))
-            ref = self.ensure_unique_result(self._index.lookup_keys(q))
 
-            # some standard class definitions (like __NAMESPACE) are not in the
-            #   current NS, but in the __SystemClass NS. So we try that one, too.
-
-            if ref is None:
+            refs = self._index.lookup_keys(q)
+            if refs and len(refs) > 1:
+                raise QueryError('too many results: ' + str(q))
+            elif not refs:
+                # some standard class definitions (like __NAMESPACE) are not in the
+                #   current NS, but in the __SystemClass NS. So we try that one, too.
                 logger.debug("didn't find %s in %s, retrying in %s", class_name, namespace_name, SYSTEM_NAMESPACE_NAME)
                 q = cim.Key("{}/{}".format(
                     self.NS(SYSTEM_NAMESPACE_NAME),
                     self.CD(class_name)))
+
             c_cdbuf = self.get_object(q)
             c_cd = ClassDefinition()
             c_cd.vsParse(c_cdbuf)
@@ -1407,6 +1405,8 @@ class TreeNamespace(object):
 
     def parse_object_path(self, object_path):
         """
+        given a textual query string, parse it into an object path that we can query.
+       
         supported schemas:
             cimv2 --> namespace
             //./root/cimv2 --> namespace
@@ -1420,6 +1420,12 @@ class TreeNamespace(object):
         we'd like to support this, but can't differentiate this
           from a class:
             //./root/cimv2/Win32_Service --> class
+             
+        Args:
+            object_path (str): the textual query string.
+
+        Returns:
+            ObjectPath: a path we can use to query.
         """
         o_object_path = object_path
         object_path = object_path.replace("\\", "/")
@@ -1544,12 +1550,6 @@ class TreeClassDefinition(object):
                 yielded.add(key)
                 yield TreeClassInstance(self._object_resolver, self.ns, ci.class_name, ci.instance_key)
 
-    def __getattr__(self, attr):
-        try:
-            return super(TreeClassDefinition, self).__getattr__(attr)
-        except AttributeError:
-            return getattr(self.cd, attr)
-
 
 class TreeClassInstance(object):
     def __init__(self, object_resolver, namespace_name, class_name, instance_key):
@@ -1607,4 +1607,14 @@ class Tree(object):
 
 @contextlib.contextmanager
 def Namespace(repo, namespace_name):
+    """
+    operate on the given namespace.
+    
+    Args:
+        repo: the CIM repository.
+        namespace_name:  the namespace name to open.
+
+    Returns:
+        TreeNamespace: the namespace.
+    """
     yield TreeNamespace(ObjectResolver(repo), namespace_name)
