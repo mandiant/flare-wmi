@@ -353,7 +353,6 @@ class ClassDefinitionProperty(object):
     @property
     def qualifiers(self):
         """ get dict of str to str """
-        # TODO: remove duplication
         ret = {}
         for i in range(self._prop.qualifiers.count):
             q = self._prop.qualifiers.qualifiers[i]
@@ -660,7 +659,7 @@ class InstanceKey(object):
 
     def __str__(self):
         if len(self._d) == 0:
-            return ".default"
+            return "default"
         else:
             return ",".join(["{:s}={:s}".format(str(k), str(self[k])) for k in sorted(self._d.keys())])
 
@@ -1218,11 +1217,13 @@ class ObjectResolver(object):
     def get_cl(self, namespace_name, class_name):
         c_id = get_class_id(namespace_name, class_name)
         c_cl = self._clcache.get(c_id, None)
+
         if not c_cl:
             logger.debug("clcache miss")
             c_cd = self.get_cd(namespace_name, class_name)
             c_cl = ClassLayout(self, namespace_name, c_cd)
             self._clcache[c_id] = c_cl
+
         return c_cl
 
     def get_ci(self, namespace_name, class_name, instance_key):
@@ -1243,6 +1244,7 @@ class ObjectResolver(object):
                 if instance.get_property(k).value != instance_key[k]:
                     this_is_it = False
                     break
+
             if this_is_it:
                 return instance
 
@@ -1297,6 +1299,7 @@ class ObjectResolver(object):
         for ref, ns_i in self.get_objects(q):
             i = self.parse_instance(self.ns_cl, ns_i)
             yield self.NamespaceSpecifier(namespace_name + "\\" + i.get_property("Name").value)
+
         if namespace_name == ROOT_NAMESPACE_NAME:
             yield self.NamespaceSpecifier(SYSTEM_NAMESPACE_NAME)
 
@@ -1427,7 +1430,6 @@ class TreeNamespace(object):
 
         hostname = "localhost"
         namespace = self.name
-        classname = ""
         instance = {}
 
         is_rooted = False
@@ -1560,6 +1562,10 @@ class TreeClassInstance(object):
     def __repr__(self):
         return "\\{namespace:s}:{klass:s}.{key:s}".format(
             namespace=self.ns, klass=self.class_name, key=repr(self.instance_key))
+
+    def __str__(self):
+        return "\\{namespace:s}:{klass:s}.{key:s}".format(
+            namespace=self.ns, klass=self.class_name, key=str(self.instance_key))
 
     @property
     def parent(self):
