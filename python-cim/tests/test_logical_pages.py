@@ -152,9 +152,8 @@ def test_page_slack_space(repo):
     # collected empirically
     #
     # in this case, there's some NULL bytes at the end of the page.
-    assert(len(sorted(slack))) == 1
+    assert (len(sorted(slack))) == 1
     slackregion = sorted(slack)[0]
     begin, end, _ = slackregion
     assert begin == 0x1F6F
     assert end == cim.DATA_PAGE_SIZE
-

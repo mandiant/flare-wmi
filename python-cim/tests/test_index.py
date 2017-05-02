@@ -96,4 +96,3 @@ def test_find_unreferenced_objects(repo):
                                     (0x676, 0x1cc77, 0x274),
                                     (0x677, 0x1c273, 0x240),
                                     (0x677, 0x194dc, 0x240)]
-

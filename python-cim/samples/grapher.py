@@ -5,7 +5,6 @@ from common import LoggingObject
 from cim import CIM
 from cim import is_index_page_number_valid
 
-
 logging.basicConfig(level=logging.DEBUG)
 g_logger = logging.getLogger("cim.grapher")
 
@@ -76,6 +75,7 @@ class Grapher(LoggingObject):
         root = self._cim.logical_index_store.root_page
         self.graph_index_from_page(root)
 
+
 def main(type_, path, page_number=None):
     if type_ not in ("xp", "win7"):
         raise RuntimeError("Invalid mapping type: {:s}".format(type_))
@@ -84,13 +84,13 @@ def main(type_, path, page_number=None):
     g = Grapher(c)
 
     root = c.logical_index_store.root_page
-    #print(root)
-    #print(root.tree())
+    # print(root)
+    # print(root.tree())
 
-    #print(root.get_key(0))
-    #print(root.get_key(1))
-    #print(root.get_child(0))
-    #print(root.get_child(1))
+    # print(root.get_key(0))
+    # print(root.get_key(1))
+    # print(root.get_child(0))
+    # print(root.get_child(1))
 
 
     if page_number is None:
@@ -105,4 +105,5 @@ def main(type_, path, page_number=None):
 if __name__ == "__main__":
     logging.basicConfig(level=logging.DEBUG)
     import sys
+
     main(*sys.argv[1:])
