@@ -167,9 +167,6 @@ def test_object_count(root):
     assert len(classes) == 8162
     assert len(instances) == 1887
 
-    for instance in instances:
-        print(str(instance))
-
 
 def test_class_definitions(root):
     """
@@ -208,7 +205,6 @@ def test_class_definitions(root):
             # these are the qualifiers that apply to the property on the class
             for qualname, qualval in propref.qualifiers.items():
                 propqualifiers.append((klass.ns, klass.name, propname, qualname, qualval))
-
 
     # collected empirically
     assert len(qualifiers) == 17650

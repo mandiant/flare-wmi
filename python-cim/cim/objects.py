@@ -73,6 +73,7 @@ class WMIString(vstruct.VStruct):
     def vsGetValue(self):
         return self.s.vsGetValue()
 
+
 # via: https://msdn.microsoft.com/en-us/library/cc250928.aspx
 #  CIM-TYPE-SINT16 = % d2
 #  CIM-TYPE-SINT32 = % d3
@@ -538,7 +539,7 @@ class DataRegion(vstruct.VStruct):
     def get_string(self, ref):
         s = WMIString()
         s.vsParse(self.data, offset=int(ref))
-        return str(s.s)
+        return s.s
 
     def get_array(self, ref, item_type):
         Parser = item_type.value_parser
