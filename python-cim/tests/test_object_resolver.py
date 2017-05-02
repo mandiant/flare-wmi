@@ -210,6 +210,45 @@ def test_class_definitions(root):
                 propqualifiers.append((klass.ns, klass.name, propname, qualname, qualval))
 
 
+    # collected empirically
     assert len(qualifiers) == 17650
     assert len(properties) == 27431
     assert len(propqualifiers) == 66948
+
+
+def test_class_layouts(root):
+    """
+    parse all class layouts from all class definitions in the repository.
+    demonstrates there's no critical errors encountered while enumerating classes.
+    
+    Args:
+        root (cim.objects.TreeNamespace): the root namespace
+
+    Returns:
+        None
+    """
+    classes = []
+    def collect(ns):
+        for klass in ns.classes:
+            classes.append(klass)
+
+        for namespace in ns.namespaces:
+            collect(namespace)
+    collect(root)
+
+    derivations = []
+    properties = []
+    for klass in classes:
+        layout = klass.cl
+
+        derivations.append((klass.ns, klass.name, layout.derivation))
+        for propname, propval in layout.properties.items():
+            if propval.has_default_value:
+                properties.append((klass.ns, klass.name, propname, propval.default_value))
+            else:
+                properties.append((klass.ns, klass.name, propname, None))
+
+
+    # collected empirically
+    assert len(derivations) == 8162
+    assert len(properties) == 53867
