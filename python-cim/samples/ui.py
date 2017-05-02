@@ -178,9 +178,9 @@ class PhysicalIndexPageItem(Item):
         page = IndexPage(None, self.index)  # note: we're faking the logical_page_number here
         page.vsParse(self.data)
         if page.header.sig == INDEX_PAGE_TYPES.PAGE_TYPE_ACTIVE:
-            return (VstructInstance(0x0, page, "page"),)
+            return VstructInstance(0x0, page, "page"),
         else:
-            return (VstructInstance(0x0, page.header, "header"),)
+            return VstructInstance(0x0, page.header, "header"),
 
 
 class PhysicalIndexPagesItem(Item):
@@ -237,9 +237,9 @@ class LogicalIndexPageItem(Item):
     def structs(self):
         page = self._ctx.cim.logical_index_store.get_page(self.index)
         if page.header.sig == INDEX_PAGE_TYPES.PAGE_TYPE_ACTIVE:
-            return (VstructInstance(0x0, page, "page"),)
+            return VstructInstance(0x0, page, "page"),
         else:
-            return (VstructInstance(0x0, page.header, "header"),)
+            return VstructInstance(0x0, page.header, "header"),
 
 
 class LogicalIndexPagesItem(Item):

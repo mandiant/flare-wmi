@@ -7,7 +7,7 @@ import cim
 
 
 def test_index_mapping(repo):
-    '''
+    """
     demonstrate extraction of basic information from the mapping header.
     
     Args:
@@ -15,7 +15,7 @@ def test_index_mapping(repo):
 
     Returns:
         None
-    '''
+    """
     mapping = repo.index_mapping
 
     # collected empirically.
@@ -29,7 +29,7 @@ def test_index_mapping(repo):
 
 
 def test_index_mapping_inconsistencies(repo):
-    '''
+    """
     find logical pages where the physical page does not map back to it.
     this is probably where there are two logical pages that point to the
       same physical page.
@@ -39,7 +39,7 @@ def test_index_mapping_inconsistencies(repo):
 
     Returns:
         None
-    '''
+    """
     mapping = repo.index_mapping
 
     # logical pages where the physical page does not map back to it.
@@ -58,7 +58,7 @@ def test_index_mapping_inconsistencies(repo):
 
 
 def test_unmapped_index_logical_pages(repo):
-    '''
+    """
     find logical pages that have no physical page.
     presumably you can't fetch these pages.
     
@@ -67,7 +67,7 @@ def test_unmapped_index_logical_pages(repo):
 
     Returns:
         None
-    '''
+    """
     mapping = repo.index_mapping
 
     unmapped_pages = []
@@ -82,7 +82,7 @@ def test_unmapped_index_logical_pages(repo):
 
 
 def test_unallocated_index_physical_pages(repo):
-    '''
+    """
     find physical pages that have no logical page.
     to do this, need to actually reference the size of the index.
     this should contain unallocated data.
@@ -92,7 +92,7 @@ def test_unallocated_index_physical_pages(repo):
 
     Returns:
         None
-    '''
+    """
     mapping = repo.index_mapping
     index = repo.logical_index_store
 
@@ -133,13 +133,13 @@ def test_unallocated_index_physical_pages(repo):
 
 
 def test_data_mapping(repo):
-    '''
+    """
     Args:
         repo (cim.CIM): the deleted-instance repo
 
     Returns:
         None
-    '''
+    """
     mapping = repo.data_mapping
 
     # collected empirically.
@@ -153,7 +153,7 @@ def test_data_mapping(repo):
 
 
 def test_data_mapping_inconsistencies(repo):
-    '''
+    """
     find logical pages where the physical page does not map back to it.
     this is probably where there are two logical pages that point to the
       same physical page.
@@ -163,7 +163,7 @@ def test_data_mapping_inconsistencies(repo):
 
     Returns:
         None
-    '''
+    """
     mapping = repo.data_mapping
 
     # logical pages where the physical page does not map back to it.
@@ -182,7 +182,7 @@ def test_data_mapping_inconsistencies(repo):
 
 
 def test_unmapped_data_logical_pages(repo):
-    '''
+    """
     find logical pages that have no physical page.
     presumably you can't fetch these pages.
     
@@ -191,7 +191,7 @@ def test_unmapped_data_logical_pages(repo):
 
     Returns:
         None
-    '''
+    """
     mapping = repo.index_mapping
 
     unmapped_pages = []
@@ -206,7 +206,7 @@ def test_unmapped_data_logical_pages(repo):
 
 
 def test_unallocated_data_physical_pages(repo):
-    '''
+    """
     find physical pages that have no logical page.
     to do this, need to actually reference the size of the data store.
     this should contain unallocated data.
@@ -216,7 +216,7 @@ def test_unallocated_data_physical_pages(repo):
 
     Returns:
         None
-    '''
+    """
     mapping = repo.data_mapping
     data = repo.logical_data_store
 

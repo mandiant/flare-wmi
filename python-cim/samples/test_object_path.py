@@ -14,7 +14,6 @@ def test(ns, path, expected):
         raise RuntimeError("test failed!")
 
 
-
 def main(type_, path):
     if type_ not in ("xp", "win7"):
         raise RuntimeError("Invalid mapping type: {:s}".format(type_))
@@ -31,11 +30,13 @@ def main(type_, path):
         test(ns, "Win32_Service", ObjectPath("localhost", "root\\cimv2", "Win32_Service", {}))
         test(ns, "//./root/cimv2:Win32_Service", ObjectPath("localhost", "root\\cimv2", "Win32_Service", {}))
         test(ns, "Win32_Service.Name='Beep'", ObjectPath("localhost", "root\\cimv2", "Win32_Service", {"Name": "Beep"}))
-        test(ns, "//./root/cimv2:Win32_Service.Name='Beep'", ObjectPath("localhost", "root\\cimv2", "Win32_Service", {"Name": "Beep"}))
+        test(ns, "//./root/cimv2:Win32_Service.Name='Beep'",
+             ObjectPath("localhost", "root\\cimv2", "Win32_Service", {"Name": "Beep"}))
     print("Tests: OK")
 
 
 if __name__ == "__main__":
     logging.basicConfig(level=logging.INFO)
     import sys
+
     main(*sys.argv[1:])

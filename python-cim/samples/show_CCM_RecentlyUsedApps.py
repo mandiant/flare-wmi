@@ -27,6 +27,7 @@ def main(type_, path):
                                                                    Time[10:12], Time[12:14])
                             RUAValues.append(ExcelTime)
                         elif Value == "TimeZoneOffset":
+                            Time = str(RUA.properties[Value].value)
                             TimeOffset = '="{}"'.format(Time[-4:])
                             RUAValues.append(TimeOffset)
                         else:

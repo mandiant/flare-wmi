@@ -1,10 +1,10 @@
 #!/usr/bin/env python2
-'''
+"""
 extract data page slack from a CIM repository.
 
 author: Willi Ballenthin
 email: william.ballenthin@fireeye.com
-'''
+"""
 import os
 import sys
 import logging

@@ -148,15 +148,15 @@ MAPPING_TYPES = {
 
 
 class Mapping(object):
-    '''
+    """
     helper routines around fetching page mappings.
-    '''
+    """
 
     def __init__(self, map):
-        '''
+        """
         Args:
             map (MappingWin7 | MappingXp): the raw map structure.
-        '''
+        """
         self.map = map
         # cache of map from physical page to logical page
         self._reverse_mapping = {}
@@ -175,7 +175,7 @@ class Mapping(object):
             self._reverse_mapping[pnum] = i
 
     def is_logical_page_mapped(self, logical_page_number):
-        '''
+        """
         is the given logical page index mapped?
         
         Args:
@@ -186,14 +186,14 @@ class Mapping(object):
              
         Raises:
             IndexError: if the page number is too big
-        '''
+        """
         if logical_page_number > int(self.map.header.mapping_entry_count):
             raise IndexError(logical_page_number)
 
         return self.map.entries[logical_page_number].page_number != UNMAPPED_PAGE_VALUE
 
     def get_physical_page_number(self, logical_page_number):
-        '''
+        """
         given a logical page number, get the physical page number it maps to.
         
         Args:
@@ -205,7 +205,7 @@ class Mapping(object):
         Raises:
             UnmappedPage: if the page is unallocated.
             IndexError: if the page number is too big
-        '''
+        """
         if logical_page_number > int(self.map.header.mapping_entry_count):
             raise IndexError(logical_page_number)
 
@@ -215,7 +215,7 @@ class Mapping(object):
         return pnum
 
     def get_logical_page_number(self, physical_page_number):
-        '''
+        """
         given a physical page number, get the logical page number it maps to.
         
         Args:
@@ -226,7 +226,7 @@ class Mapping(object):
 
         Raises:
             UnmappedPage: if the page is unmapped.
-        '''
+        """
         if not self._reverse_mapping:
             self._build_reverse_mapping()
 
@@ -236,7 +236,7 @@ class Mapping(object):
         raise UnmappedPage(physical_page_number)
 
     def is_physical_page_mapped(self, physical_page_number):
-        '''
+        """
         is the given physical page index mapped?
         
         Args:
@@ -244,7 +244,7 @@ class Mapping(object):
 
         Returns:
             bool: if the physical page is mapped.
-        '''
+        """
         if not self._reverse_mapping:
             self._build_reverse_mapping()
 
@@ -278,7 +278,8 @@ class TOC(vstruct.VArray):
         # if this is zero, then the TOC has not be parsed correctly.
         self.count = 0
 
-    def _is_valid_entry(self, t):
+    @staticmethod
+    def _is_valid_entry(t):
         # we have to guess where the end of the TOC is
         if int(t.record_id) == 0x0:
             return False
@@ -343,12 +344,12 @@ class IndexKeyNotFoundError(Exception):
 
 class DataPage(object):
     def __init__(self, buf, logical_page_number, physical_page_number):
-        '''
+        """
         Args:
             buf (bytes): the raw bytes of the page
             logical_page_number (int):  the logical page number
             physical_page_number (int):  the physical age nubmer
-        '''
+        """
         super(DataPage, self).__init__()
         self._buf = buf
         self.logical_page_number = logical_page_number
@@ -361,7 +362,7 @@ class DataPage(object):
         return self._buf[toc_entry.offset:toc_entry.offset + toc_entry.size]
 
     def get_data_by_key(self, key):
-        '''
+        """
         fetch the raw bytes for the object identified by the given key.
         
         note: prefer to use __getitem__
@@ -371,7 +372,7 @@ class DataPage(object):
 
         Returns:
             bytes: the raw bytes for the requested object.
-        '''
+        """
         target_id = key.data_id
         target_size = key.data_length
         for i in range(self.toc.count):
@@ -386,7 +387,7 @@ class DataPage(object):
         raise IndexKeyNotFoundError(key)
 
     def __getitem__(self, key):
-        '''
+        """
         fetch the raw bytes for the object identified by the given key.
         
         Args:
@@ -395,7 +396,7 @@ class DataPage(object):
         Returns:
             bytes: the raw bytes of the requested object.
 
-        '''
+        """
         return self.get_data_by_key(key)
 
     @property
@@ -567,13 +568,13 @@ class MissingDataFileError(Exception):
 
 
 class LogicalDataStore(object):
-    '''
+    """
     provides an interface for accessing data by logical page or object id.
     
     Args:
         cim (CIM): the repo
         mapping (Mapping): the data mapping.
-    '''
+    """
 
     def __init__(self, cim, file_path, mapping):
         super(LogicalDataStore, self).__init__()
@@ -584,7 +585,7 @@ class LogicalDataStore(object):
         self.page_count = self._file_size // INDEX_PAGE_SIZE
 
     def get_physical_page_buffer(self, physical_page_number):
-        '''
+        """
         fetch the bytes of the page at the give physical index.
         
         Args:
@@ -592,7 +593,7 @@ class LogicalDataStore(object):
 
         Returns:
             bytes: the raw page contents.
-        '''
+        """
         if not os.path.exists(self._file_path):
             raise MissingDataFileError()
 
@@ -604,7 +605,7 @@ class LogicalDataStore(object):
             return f.read(DATA_PAGE_SIZE)
 
     def get_logical_page_buffer(self, logical_page_number):
-        '''
+        """
         fetch the bytes of the page at the give logical index.
         
         Args:
@@ -612,12 +613,12 @@ class LogicalDataStore(object):
 
         Returns:
             bytes: the raw page contents.
-        '''
+        """
         pnum = self._mapping.get_physical_page_number(logical_page_number)
         return self.get_physical_page_buffer(pnum)
 
     def get_page(self, logical_page_number):
-        '''
+        """
         fetch the parsed page at the give logical index.
         
         Args:
@@ -625,7 +626,7 @@ class LogicalDataStore(object):
 
         Returns:
             DataPage: the parsed page.
-        '''
+        """
         pnum = self._mapping.get_physical_page_number(logical_page_number)
         pbuf = self.get_physical_page_buffer(pnum)
         return DataPage(pbuf, logical_page_number, pnum)
@@ -690,13 +691,13 @@ class LogicalIndexStore(object):
     """
 
     def __init__(self, cim, file_path, mapping):
-        '''
+        """
         
         Args:
             cim (CIM): the CIM repository
             file_path (str): the file containing the index
             mapping (Mapping): the page mapping
-        '''
+        """
         super(LogicalIndexStore, self).__init__()
         self._cim = cim
         self._file_path = file_path
@@ -705,7 +706,7 @@ class LogicalIndexStore(object):
         self.page_count = self._file_size // INDEX_PAGE_SIZE
 
     def get_physical_page_buffer(self, index):
-        '''
+        """
         fetch the raw bytes of the page at the given physical page number
         
         Args:
@@ -713,7 +714,7 @@ class LogicalIndexStore(object):
 
         Returns:
             bytes: the raw data at the given page.
-        '''
+        """
         if not os.path.exists(self._file_path):
             raise MissingIndexFileError()
 
@@ -725,7 +726,7 @@ class LogicalIndexStore(object):
             return f.read(INDEX_PAGE_SIZE)
 
     def get_logical_page_buffer(self, logical_page_number):
-        '''
+        """
         fetch the raw bytes of the page at the given logical page number.
         
         Args:
@@ -733,12 +734,12 @@ class LogicalIndexStore(object):
 
         Returns:
             bytes: the raw data at the given page.
-        '''
+        """
         pnum = self._mapping.get_physical_page_number(logical_page_number)
         return self.get_physical_page_buffer(pnum)
 
     def get_page(self, logical_page_number):
-        '''
+        """
         fetch a parsed index page given a logical page number.
         
         Args:
@@ -746,7 +747,7 @@ class LogicalIndexStore(object):
 
         Returns:
             IndexPage: the parsed index page.
-        '''
+        """
         if logical_page_number > self._mapping.map.header.mapping_entry_count:
             raise InvalidMappingEntryIndex()
 
@@ -758,12 +759,12 @@ class LogicalIndexStore(object):
 
     @cached_property
     def root_page_number(self):
-        '''
+        """
         fetch the logical page number of the index root.
         
         Returns:
             int: the logical page number.
-        '''
+        """
         if self._cim.cim_type == CIM_TYPE_WIN7:
             return int(self._mapping.map.entries[0x0].used_space)
         elif self._cim.cim_type == CIM_TYPE_XP:
@@ -773,19 +774,19 @@ class LogicalIndexStore(object):
 
     @property
     def root_page(self):
-        '''
+        """
         fetch the parsed index page of the index root.
         
         Returns:
             IndexPage: the parsed index page.
-        '''
+        """
         return self.get_page(self.root_page_number)
 
 
 class CachedLogicalIndexStore(object):
-    '''
+    """
     acts like a LogicalIndexStore, except it caches pages in memory for faster access.
-    '''
+    """
 
     def __init__(self, index_store):
         super(CachedLogicalIndexStore, self).__init__()
@@ -878,7 +879,7 @@ class Index(object):
         return matches
 
     def lookup_keys(self, key):
-        '''
+        """
         query the index keys that start with the given prefix.
         
         Args:
@@ -886,7 +887,7 @@ class Index(object):
 
         Returns:
             List[Key]: the matching keys.
-        '''
+        """
         return self._lookup_keys(key, self._index_store.root_page)
 
 
@@ -970,17 +971,3 @@ class CIM(object):
     @cached_property
     def logical_index_store(self):
         return LogicalIndexStore(self, self._index_file_path, self.index_mapping)
-
-
-def main(type_, path):
-    if type_ not in ("xp", "win7"):
-        raise RuntimeError("Invalid mapping type: {:s}".format(type_))
-    c = CIM(type_, path)
-    print("ok")
-
-
-if __name__ == "__main__":
-    logging.basicConfig(level=logging.INFO)
-    import sys
-
-    main(*sys.argv[1:])

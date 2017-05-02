@@ -5,7 +5,7 @@ from fixtures import *
 
 
 def test_index_root(repo):
-    '''
+    """
     make a prefix query against the index assert the number of expected results. 
     
     Args:
@@ -13,7 +13,7 @@ def test_index_root(repo):
 
     Returns:
         None
-    '''
+    """
 
     # collected empirically
     assert repo.logical_index_store.root_page_number == 60
@@ -27,7 +27,7 @@ def test_index_root(repo):
 
 
 def test_index_references_are_valid(repo):
-    '''
+    """
     demonstrate that all keys in the index reference valid TOC entries in data pages.
     this means:
       - all pages exist
@@ -39,7 +39,7 @@ def test_index_references_are_valid(repo):
 
     Returns:
         None
-    '''
+    """
     index = cim.Index(repo.cim_type, repo.logical_index_store)
 
     for key in index.lookup_keys(cim.Key('NS_')):
@@ -56,12 +56,12 @@ def test_index_references_are_valid(repo):
                 entry_size = entry.size
                 break
 
-        assert is_found == True
+        assert is_found is True
         assert key.data_length == entry_size
 
 
 def test_find_unreferenced_objects(repo):
-    '''
+    """
     find allocated TOC entries that are not referenced by the index.
     these are items that are inaccessible.
     
@@ -70,7 +70,7 @@ def test_find_unreferenced_objects(repo):
 
     Returns:
         None
-    '''
+    """
     index = cim.Index(repo.cim_type, repo.logical_index_store)
 
     indexed_objects = set([])

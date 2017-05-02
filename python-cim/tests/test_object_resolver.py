@@ -4,13 +4,13 @@ from fixtures import *
 
 
 def test_object_resolver(repo):
-    '''
+    """
     Args:
         repo (cim.CIM): the deleted-instance repo
 
     Returns:
         None
-    '''
+    """
     resolver = cim.objects.ObjectResolver(repo)
 
     assert len(resolver.get_keys(cim.Key('NS_'))) == 47490

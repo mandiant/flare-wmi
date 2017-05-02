@@ -4,7 +4,6 @@ from cim.common import LoggingObject
 from cim import CIM
 from cim import is_index_page_number_valid
 
-
 logging.basicConfig(level=logging.DEBUG)
 g_logger = logging.getLogger("cim.printer")
 
@@ -31,6 +30,7 @@ class Printer(LoggingObject):
         i = self._cim.logical_index_store
         self._printPageRec(i.root_page)
 
+
 def main(type_, path, pageNum=None):
     if type_ not in ("xp", "win7"):
         raise RuntimeError("Invalid mapping type: {:s}".format(type_))
@@ -43,4 +43,5 @@ def main(type_, path, pageNum=None):
 if __name__ == "__main__":
     logging.basicConfig(level=logging.INFO)
     import sys
+
     main(*sys.argv[1:])

@@ -1,10 +1,10 @@
 #!/usr/bin/env python2
-'''
+"""
 extract unallocated physical pages from a CIM repository.
 
 author: Willi Ballenthin
 email: william.ballenthin@fireeye.com
-'''
+"""
 import os
 import sys
 import logging
@@ -12,7 +12,6 @@ import logging
 import argparse
 
 import cim
-
 
 logger = logging.getLogger(__name__)
 

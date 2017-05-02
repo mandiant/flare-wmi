@@ -7,7 +7,7 @@ from fixtures import *
 
 
 def test_basic_data_page(repo):
-    '''
+    """
     demonstration extraction of basic information from the page store.
     
     Args:
@@ -15,7 +15,7 @@ def test_basic_data_page(repo):
 
     Returns:
         None
-    '''
+    """
 
     datapages = repo.logical_data_store
 
@@ -36,7 +36,7 @@ def test_basic_data_page(repo):
 
 
 def test_toc_is_ascending(repo):
-    '''
+    """
     demonstrate that the entries in a logical data page TOC are ascending by offset.
     
     Args:
@@ -44,7 +44,7 @@ def test_toc_is_ascending(repo):
 
     Returns:
         None
-    '''
+    """
 
     datapages = repo.logical_data_store
 
@@ -61,7 +61,7 @@ def test_toc_is_ascending(repo):
 
 
 def test_toc_has_large_entries(repo):
-    '''
+    """
     demonstrate that there may be entries listed in a TOC that exceed the page size. 
     
     Args:
@@ -69,7 +69,7 @@ def test_toc_has_large_entries(repo):
 
     Returns:
         None
-    '''
+    """
 
     datapages = repo.logical_data_store
 
@@ -92,7 +92,7 @@ def test_toc_has_large_entries(repo):
 
 
 def test_toc_entry_id_conflicts(repo):
-    '''
+    """
     demonstrate that there may be record_ids that are encountered multiple times.
     this is currently pretty dependent upon TOC-detection.
     still, the idea is valid.
@@ -102,7 +102,7 @@ def test_toc_entry_id_conflicts(repo):
 
     Returns:
         None
-    '''
+    """
 
     datapages = repo.logical_data_store
 
@@ -120,7 +120,7 @@ def test_toc_entry_id_conflicts(repo):
 
 
 def test_page_slack_space(repo):
-    '''
+    """
     demonstrate that a data page with a TOC can have slack space.
     
     Args:
@@ -129,7 +129,7 @@ def test_page_slack_space(repo):
     Returns:
         None
 
-    '''
+    """
     datapages = repo.logical_data_store
     page = datapages.get_page(0x0)
 

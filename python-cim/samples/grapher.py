@@ -1,7 +1,7 @@
 import logging
 
-from common import h
-from common import LoggingObject
+from cim.common import h
+from cim.common import LoggingObject
 from cim import CIM
 from cim import is_index_page_number_valid
 
@@ -14,7 +14,8 @@ class Grapher(LoggingObject):
         super(Grapher, self).__init__()
         self._cim = cim
 
-    def _format_index_page(self, page):
+    @staticmethod
+    def _format_index_page(page):
         ret = []
         ret.append("<header> logical page: {:s} | physical page: {:s} | count: {:s}".format(
             h(page.logical_page_number),

@@ -38,7 +38,7 @@ def dump_definition(cd, cl):
     ret.append("=" * 80)
     ret.append("keys:")
     for key in cd.keys:
-        ret.append("  %s" % (key))
+        ret.append("  %s" % key)
     ret.append("=" * 80)
     ret.append(cd.tree())
     return "\n".join(ret)
@@ -72,7 +72,7 @@ def dump_layout(cd, cl):
         if prop.has_default_value:
             ret.append("      is inherited: %s" % str(prop.is_inherited))
             dv = str(prop.default_value)
-            ret.append("      default value: %s" % (dv))
+            ret.append("      default value: %s" % dv)
     ret.append("layout:")
     off = 0
     if cl is not None:
@@ -85,7 +85,7 @@ def dump_layout(cd, cl):
     ret.append("=" * 80)
     ret.append("keys:")
     for key in cd.keys:
-        ret.append("  %s" % (key))
+        ret.append("  %s" % key)
     ret.append("=" * 80)
     ret.append(cd.tree())
     return "\n".join(ret)

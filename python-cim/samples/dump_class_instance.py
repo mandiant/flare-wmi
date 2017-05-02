@@ -9,9 +9,10 @@ from cim.objects import InstanceKey
 from cim.objects import ObjectResolver
 from cim.formatters import dump_instance
 
-
 # this is surprising... what happens to unicode data?
 ENCODING = "ascii"
+
+
 def compute_instance_hash(index, instance):
     keys = instance.class_layout.class_definition.keys
     key = instance.key
@@ -62,7 +63,7 @@ def main(type_, path, namespaceName, className, key_specifier=None):
 
     for instance in instances:
         print("%s" % "=" * 80)
-        #print(compute_instance_hash(index, instance))
+        # print(compute_instance_hash(index, instance))
         try:
             print(dump_instance(instance, encoding='ascii', encoding_errors='ignore'))
         except:
@@ -73,4 +74,5 @@ def main(type_, path, namespaceName, className, key_specifier=None):
 if __name__ == "__main__":
     logging.basicConfig(level=logging.INFO)
     import sys
+
     main(*sys.argv[1:])

@@ -586,7 +586,7 @@ class ClassDefinition(vstruct.VStruct):
         for propname, prop in self.properties.items():
             for k, v in prop.qualifiers.items():
                 # TODO: don't hardcode BUILTIN_QUALIFIERS.PROP_KEY symbol name
-                if k == "PROP_QUALIFIER_KEY" and v == True:
+                if k == "PROP_QUALIFIER_KEY" and v is True:
                     ret.append(propname)
         return ret
 
@@ -1072,11 +1072,11 @@ class ClassLayout(object):
 
 class ObjectResolver(object):
     def __init__(self, repo, index=None):
-        '''
+        """
         Args:
             repo (CIM): the CIM repository
             index (cim.Index): the page index
-        '''
+        """
         super(ObjectResolver, self).__init__()
 
         self._repo = repo
@@ -1461,7 +1461,7 @@ class TreeNamespace(object):
                         self.class_(object_path)
                         namespace = self.name
                     except IndexError:
-                        raise RuntimeError("Unknown ObjectPath schema: %s" % (o_object_path))
+                        raise RuntimeError("Unknown ObjectPath schema: %s" % o_object_path)
 
         # Win32_Service --> class
         # Win32_Service.Name="Beep" --> instance
