@@ -73,29 +73,56 @@ class WMIString(vstruct.VStruct):
     def vsGetValue(self):
         return self.s.vsGetValue()
 
+# via: https://msdn.microsoft.com/en-us/library/cc250928.aspx
+#  CIM-TYPE-SINT16 = % d2
+#  CIM-TYPE-SINT32 = % d3
+#  CIM-TYPE-REAL32 = % d4
+#  CIM-TYPE-REAL64 = % d5
+#  CIM-TYPE-STRING = % d8
+#  CIM-TYPE-BOOLEAN = % d11
+#  CIM-TYPE-SINT8 = % d16
+#  CIM-TYPE-UINT8 = % d17
+#  CIM-TYPE-UINT16 = % d18
+#  CIM-TYPE-UINT32 = % d19
+#  CIM-TYPE-SINT64 = % d20
+#  CIM-TYPE-UINT64 = % d21
+#  CIM-TYPE-DATETIME = % d101
+#  CIM-TYPE-REFERENCE = % d102
+#  CIM-TYPE-CHAR16 = % d103
+#  CIM-TYPE-OBJECT = % d13
+
 
 CIM_TYPES = v_enum()
-CIM_TYPES.CIM_TYPE_LANGID = 0x3
+CIM_TYPES.CIM_TYPE_INT16 = 0x2
+CIM_TYPES.CIM_TYPE_INT32 = 0x3
 CIM_TYPES.CIM_TYPE_REAL32 = 0x4
+CIM_TYPES.CIM_TYPE_REAL64 = 0x5
 CIM_TYPES.CIM_TYPE_STRING = 0x8
 CIM_TYPES.CIM_TYPE_BOOLEAN = 0xB
 CIM_TYPES.CIM_TYPE_UNKNOWN = 0xD
+CIM_TYPES.CIM_TYPE_INT8 = 0x10
 CIM_TYPES.CIM_TYPE_UINT8 = 0x11
 CIM_TYPES.CIM_TYPE_UINT16 = 0x12
 CIM_TYPES.CIM_TYPE_UINT32 = 0x13
+CIM_TYPES.CIM_TYPE_INT64 = 0x14
 CIM_TYPES.CIM_TYPE_UINT64 = 0x15
 CIM_TYPES.CIM_TYPE_REFERENCE = 0x66
 CIM_TYPES.CIM_TYPE_DATETIME = 0x65
 
+
 CIM_TYPE_SIZES = {
-    CIM_TYPES.CIM_TYPE_LANGID: 4,
+    CIM_TYPES.CIM_TYPE_INT16: 2,
+    CIM_TYPES.CIM_TYPE_INT32: 4,
     CIM_TYPES.CIM_TYPE_REAL32: 4,
+    CIM_TYPES.CIM_TYPE_REAL64: 4,
     CIM_TYPES.CIM_TYPE_STRING: 4,
     CIM_TYPES.CIM_TYPE_BOOLEAN: 2,
     CIM_TYPES.CIM_TYPE_UNKNOWN: 4,
+    CIM_TYPES.CIM_TYPE_INT8: 1,
     CIM_TYPES.CIM_TYPE_UINT8: 1,
     CIM_TYPES.CIM_TYPE_UINT16: 2,
     CIM_TYPES.CIM_TYPE_UINT32: 4,
+    CIM_TYPES.CIM_TYPE_INT64: 8,
     CIM_TYPES.CIM_TYPE_UINT64: 8,
     # looks like: stringref to "\x00 00000000000030.000000:000"
     CIM_TYPES.CIM_TYPE_DATETIME: 4,
@@ -161,14 +188,20 @@ class CimType(vstruct.VStruct):
 
     @property
     def _base_value_parser(self):
-        if self.type == CIM_TYPES.CIM_TYPE_LANGID:
-            return v_uint32
+        if self.type == CIM_TYPES.CIM_TYPE_INT16:
+            return v_int16
+        if self.type == CIM_TYPES.CIM_TYPE_INT32:
+            return v_int32
         elif self.type == CIM_TYPES.CIM_TYPE_REAL32:
             return v_float
+        elif self.type == CIM_TYPES.CIM_TYPE_REAL64:
+            return v_double
         elif self.type == CIM_TYPES.CIM_TYPE_STRING:
             return v_uint32
         elif self.type == CIM_TYPES.CIM_TYPE_BOOLEAN:
             return functools.partial(v_uint16, enum=BOOLEAN_STATES)
+        elif self.type == CIM_TYPES.CIM_TYPE_INT8:
+            return v_int8
         elif self.type == CIM_TYPES.CIM_TYPE_UINT8:
             return v_uint8
         elif self.type == CIM_TYPES.CIM_TYPE_UNKNOWN:
@@ -177,6 +210,8 @@ class CimType(vstruct.VStruct):
             return v_uint16
         elif self.type == CIM_TYPES.CIM_TYPE_UINT32:
             return v_uint32
+        elif self.type == CIM_TYPES.CIM_TYPE_INT64:
+            return v_int64
         elif self.type == CIM_TYPES.CIM_TYPE_UINT64:
             return v_uint64
         elif self.type == CIM_TYPES.CIM_TYPE_DATETIME:
