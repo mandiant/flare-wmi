@@ -261,10 +261,21 @@ class TOCEntry(vstruct.VStruct):
         # zero on win7
         self.CRC = v_uint32()
 
+    def is_empty(self):
+        return self.record_id == 0 and \
+               self.offset == 0 and \
+               self.size == 0 and \
+               self.CRC == 0
+
+
+class ParseError(Exception):
+    pass
+
 
 class TOC(vstruct.VArray):
     def __init__(self):
         vstruct.VArray.__init__(self)
+        # if this is zero, then the TOC has not be parsed correctly.
         self.count = 0
 
     def _is_valid_entry(self, t):
@@ -283,27 +294,47 @@ class TOC(vstruct.VArray):
 
         return True
 
-    def vsParse(self, bytez, offset=0, fast=False):
-        self.count = 0
+    def _parse_entries(self, bytez, offset):
+        entries = []
+
         endoffset = bytez.find(b"\x00" * 0x10, offset)
+        if endoffset == -1:
+            raise ParseError('no empty entry')
+
         while offset < endoffset + 0x10:
             t = TOCEntry()
-            o = t.vsParse(bytez, offset=offset)
+            offset = t.vsParse(bytez, offset=offset)
 
-            if t.record_id == 0 and t.offset == 0 and t.size == 0 and t.CRC == 0:
+            if t.is_empty():
                 # there should be a final empty entry to mark the end of the toc
-                offset = o
-                self.vsAddElement(t)
-                # we don't increment the count, cause its not a valid entry
+                entries.append(t)
                 break
 
             elif not self._is_valid_entry(t):
                 break
 
-            offset = o
-            self.vsAddElement(t)
-            self.count += 1
-        return offset
+            else:
+                entries.append(t)
+                continue
+
+        if entries and entries[-1].is_empty():
+            # don't include the empty entry in the TOC
+            return entries[:-1]
+        else:
+            raise ParseError('failed to parse TOC correctly')
+
+    def vsParse(self, bytez, offset=0, fast=False):
+        try:
+            # we either want to parse all the entries, or none of them.
+            # an empty toc indicates that it hasn't been parsed correctly.
+            entries = self._parse_entries(bytez, offset)
+        except ParseError:
+            return offset
+
+        for entry in entries:
+            self.vsAddElement(entry)
+        self.count = len(entries)
+        return 0x10 * (len(entries) + 1)
 
 
 class IndexKeyNotFoundError(Exception):
