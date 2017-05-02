@@ -34,6 +34,11 @@ def extract_data_page_slack(repo):
         # remove the toc region
         slack.chop(0, len(page.toc))
 
+        # if there is a toc, then we remove the empty entry at the end
+        # (this is not included in the list of entries, but its part of the toc).
+        if len(page.toc) > 0:
+            slack.chop(len(page.toc), len(page.toc) + 0x10)
+
         # and regions for each of the entries
         for j in range(page.toc.count):
             entry = page.toc[j]
