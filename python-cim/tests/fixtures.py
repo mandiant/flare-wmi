@@ -3,6 +3,7 @@ import os
 import pytest
 
 import cim
+import cim.objects
 
 
 @pytest.fixture
@@ -22,3 +23,10 @@ def repo():
         cim.CIM: repos/win7/deleted-instance repository
     """
     return cim.CIM(cim.CIM_TYPE_WIN7, repopath())
+
+
+@pytest.fixture
+def root():
+    r = repo()
+    with cim.objects.Namespace(r, cim.objects.ROOT_NAMESPACE_NAME) as ns:
+        yield ns
