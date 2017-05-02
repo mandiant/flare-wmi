@@ -11,6 +11,7 @@ import hashlib
 import logging
 import traceback
 import functools
+import contextlib
 from datetime import datetime
 from collections import namedtuple
 
@@ -1008,6 +1009,10 @@ class ClassLayoutProperty(object):
             raise RuntimeError("unable to find ancestor class with default value")
 
 
+class QueryError(ValueError):
+    pass
+
+
 class ClassLayout(object):
     def __init__(self, object_resolver, namespace, class_definition):
         """
@@ -1160,12 +1165,20 @@ class ObjectResolver(object):
     def root_namespace(self):
         return SYSTEM_NAMESPACE_NAME
 
+    @staticmethod
+    def ensure_unique_result(result):
+        if len(result) == 0:
+            raise QueryError('not found: ' + str(q))
+        elif len(result) > 1:
+            raise  QueryError('not unique result: ' + str(q))
+        else:
+            return result[0]
+
     def get_cd_buf(self, namespace_name, class_name):
         q = cim.Key("{}/{}".format(
             self.NS(namespace_name),
             self.CD(class_name)))
-        # TODO: should ensure this query has a unique result
-        ref = cim.common.one(self._index.lookup_keys(q))
+        ref = self.ensure_unique_result(self._index.lookup_keys(q))
 
         # some standard class definitions (like __NAMESPACE) are not in the
         #   current NS, but in the __SystemClass NS. So we try that one, too.
@@ -1186,8 +1199,7 @@ class ObjectResolver(object):
             q = cim.Key("{}/{}".format(
                 self.NS(namespace_name),
                 self.CD(class_name)))
-            # TODO: should ensure this query has a unique result
-            ref = cim.common.one(self._index.lookup_keys(q))
+            ref = self.ensure_unique_result(self._index.lookup_keys(q))
 
             # some standard class definitions (like __NAMESPACE) are not in the
             #   current NS, but in the __SystemClass NS. So we try that one, too.
@@ -1587,16 +1599,6 @@ class Tree(object):
         return TreeNamespace(self._object_resolver, ROOT_NAMESPACE_NAME)
 
 
-class Namespace(object):
-    def __init__(self, repo, namespace_name):
-        super(Namespace, self).__init__()
-        self._repo = repo
-        self._name = namespace_name
-        self._i = cim.Index(self._repo.cim_type, self._repo.logical_index_store)
-        self._o = ObjectResolver(self._repo, self._i)
-
-    def __enter__(self):
-        return TreeNamespace(self._o, self._name)
-
-    def __exit__(self, exc_type, exc_val, exc_tb):
-        return
+@contextlib.contextmanager
+def Namespace(repo, namespace_name):
+    yield TreeNamespace(ObjectResolver(repo), namespace_name)

@@ -180,7 +180,7 @@ class Mapping(object):
         
         Args:
             logical_page_number (int): the logical page number
-
+            
         Returns:
             bool: if the logical page is mapped.
              
