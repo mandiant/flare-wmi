@@ -907,6 +907,8 @@ class CIM(object):
         self._data_store = None
         self._index_store = None
 
+    # TODO: add static method constructor that accepts file path and auto-detects repo type
+
     @property
     def _data_file_path(self):
         return os.path.join(self._directory, "OBJECTS.DATA")
