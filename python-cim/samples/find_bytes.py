@@ -5,7 +5,6 @@ search for bytes in a WMI repository.
 author: Willi Ballenthin
 email: william.ballenthin@fireeye.com
 """
-import os
 import sys
 import logging
 import binascii
