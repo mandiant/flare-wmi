@@ -168,26 +168,17 @@ def test_object_count(root):
     assert len(instances) == 1887
 
 
-def test_class_definitions(root):
+def test_class_definitions(classes):
     """
     parse all qualifiers and properties from all class definitions in the repository.
     demonstrates there's no critical errors encountered while enumerating classes.
     
     Args:
-        root (cim.objects.TreeNamespace): the root namespace
+        classes (List[cim.objects.TreeClassDefinition]): the list of classes found in the win7/deleted-instance repo.
 
     Returns:
         None
     """
-    classes = []
-    def collect(ns):
-        for klass in ns.classes:
-            classes.append(klass)
-
-        for namespace in ns.namespaces:
-            collect(namespace)
-    collect(root)
-
     qualifiers = []
     properties = []
     propqualifiers = []
@@ -212,26 +203,17 @@ def test_class_definitions(root):
     assert len(propqualifiers) == 66948
 
 
-def test_class_layouts(root):
+def test_class_layouts(classes):
     """
     parse all class layouts from all class definitions in the repository.
     demonstrates there's no critical errors encountered while enumerating classes.
     
     Args:
-        root (cim.objects.TreeNamespace): the root namespace
+        classes (List[cim.objects.TreeClassDefinition]): the list of classes found in the win7/deleted-instance repo.
 
     Returns:
         None
     """
-    classes = []
-    def collect(ns):
-        for klass in ns.classes:
-            classes.append(klass)
-
-        for namespace in ns.namespaces:
-            collect(namespace)
-    collect(root)
-
     derivations = []
     properties = []
     for klass in classes:
@@ -250,26 +232,17 @@ def test_class_layouts(root):
     assert len(properties) == 53867
 
 
-def test_class_instances(root):
+def test_class_instances(classes):
     """
     parse all class instances from all class definitions in the repository.
     demonstrates there's no critical errors encountered while enumerating classes.
     
     Args:
-        root (cim.objects.TreeNamespace): the root namespace
+        classes (List[cim.objects.TreeClassDefinition]): the list of classes found in the win7/deleted-instance repo.
 
     Returns:
         None
     """
-    classes = []
-    def collect(ns):
-        for klass in ns.classes:
-            classes.append(klass)
-
-        for namespace in ns.namespaces:
-            collect(namespace)
-    collect(root)
-
     qualifiers = []
     properties = []
     propqualifiers = []

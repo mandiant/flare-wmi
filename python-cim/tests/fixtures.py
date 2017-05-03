@@ -27,6 +27,34 @@ def repo():
 
 @pytest.yield_fixture
 def root():
+    """
+    
+    Returns:
+        cim.objects.TreeNamespace: the root namespace of the win7/deleted-instance repo.
+
+    """
     r = repo()
     with cim.objects.Namespace(r, cim.objects.ROOT_NAMESPACE_NAME) as ns:
         yield ns
+
+
+@pytest.fixture
+def classes():
+    """
+    Returns:
+        List[cim.objects.TreeClassDefinition]: the list of classes found in the win7/deleted-instance repo.
+    """
+    klasses = []
+    def collect(ns):
+        for klass in ns.classes:
+            klasses.append(klass)
+
+        for namespace in ns.namespaces:
+            collect(namespace)
+
+    r = repo()
+    with cim.objects.Namespace(r, cim.objects.ROOT_NAMESPACE_NAME) as ns:
+        collect(ns)
+
+    return klasses
+
