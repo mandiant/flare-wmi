@@ -3,6 +3,24 @@ from fixtures import *
 import cim
 
 
+
+
+def test_mapping_type_guess_xp():
+    repodir = os.path.join(os.path.dirname(__file__), 'repos')
+    xpdir = os.path.join(repodir, 'xp')
+    repopath = os.path.join(xpdir, 'mapping-only')
+
+    assert cim.CIM.guess_cim_type(repopath) == cim.CIM_TYPE_XP
+
+
+def test_mapping_type_guess_win7():
+    repodir = os.path.join(os.path.dirname(__file__), 'repos')
+    win7dir = os.path.join(repodir, 'win7')
+    repopath = os.path.join(win7dir, 'deleted-instance')
+
+    assert cim.CIM.guess_cim_type(repopath) == cim.CIM_TYPE_WIN7
+
+
 ############ INDEX MAPPING ###############################################
 
 

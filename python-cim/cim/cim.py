@@ -73,7 +73,6 @@ class EntryWin7(vstruct.VStruct):
 
     @property
     def page_number(self):
-        # TODO: add lookup against header.physicalPages to ensure range
         return self._page_number & MAPPING_PAGE_ID_MASK
 
 
@@ -109,7 +108,6 @@ class EntryXP(vstruct.primitives.v_uint32):
 
     @property
     def page_number(self):
-        # TODO: add lookup against header.physicalPages to ensure range
         return self & MAPPING_PAGE_ID_MASK
 
 
@@ -907,7 +905,35 @@ class CIM(object):
         self._data_store = None
         self._index_store = None
 
-    # TODO: add static method constructor that accepts file path and auto-detects repo type
+    @staticmethod
+    def guess_cim_type(path):
+        mappath = os.path.join(path, "MAPPING1.MAP")
+        with open(mappath, 'rb') as f:
+            header = f.read(0x18)
+
+        sig, version, first_id, second_id, phys_count, map_count = struct.unpack("<IIIIII", header)
+        if sig != 0xABCD:
+            raise ParseError('Unexpected mapping file signature')
+
+        # we're going to try to prove this is not a Win7 repo.
+
+        if map_count > phys_count:
+            return CIM_TYPE_XP
+
+        if map_count < phys_count // 10:
+            # map count *should* be in same order of magnitude as physical page count
+            return CIM_TYPE_XP
+
+        if first_id - 1 != second_id:
+            return CIM_TYPE_XP
+
+        return CIM_TYPE_WIN7
+
+    @classmethod
+    def from_path(cls, path):
+        cim_type = cls.guess_cim_type(path)
+        logger.debug('auto-detected repository type: %s', cim_type)
+        return cls(cim_type, path)
 
     @property
     def _data_file_path(self):
