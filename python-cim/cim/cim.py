@@ -349,7 +349,7 @@ class DataPage(object):
             physical_page_number (int):  the physical age nubmer
         """
         super(DataPage, self).__init__()
-        self._buf = buf
+        self.buf = buf
         self.logical_page_number = logical_page_number
         self.physical_page_number = physical_page_number
         self.toc = TOC()
@@ -357,7 +357,7 @@ class DataPage(object):
 
     def _get_object_buffer_by_index(self, toc_index):
         toc_entry = self.toc[toc_index]
-        return self._buf[toc_entry.offset:toc_entry.offset + toc_entry.size]
+        return self.buf[toc_entry.offset:toc_entry.offset + toc_entry.size]
 
     def get_data_by_key(self, key):
         """
@@ -381,7 +381,7 @@ class DataPage(object):
                 if toc.size > DATA_PAGE_SIZE - toc.offset:
                     logger.debug("Large data item: key: %s, size: %s",
                                  str(key), hex(target_size))
-                return self._buf[toc.offset:toc.offset + toc.size]
+                return self.buf[toc.offset:toc.offset + toc.size]
         raise IndexKeyNotFoundError(key)
 
     def __getitem__(self, key):
@@ -408,7 +408,7 @@ class DataPage(object):
         ret = []
         for i in range(self.toc.count):
             toc = self.toc[i]
-            buf = self._buf[toc.offset:toc.offset + toc.size]
+            buf = self.buf[toc.offset:toc.offset + toc.size]
             ret.append(ObjectItem(toc.offset, buf))
         return ret
 
