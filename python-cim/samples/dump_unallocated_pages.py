@@ -12,14 +12,10 @@ import logging
 import argparse
 
 import cim
+import cim.recovery
+
 
 logger = logging.getLogger(__name__)
-
-
-def extract_unallocated_data_pages(repo):
-    for i in range(repo.logical_data_store.page_count):
-        if not repo.data_mapping.is_physical_page_mapped(i):
-            yield repo.logical_data_store.get_physical_page_buffer(i)
 
 
 def main(argv=None):
@@ -46,8 +42,9 @@ def main(argv=None):
         logging.getLogger().setLevel(logging.INFO)
 
     repo = cim.CIM.from_path(args.input)
-    for page in extract_unallocated_data_pages(repo):
-        os.write(sys.stdout.fileno(), page)
+    for pnum in cim.recovery.find_unallocated_pages(repo):
+        logger.info('found unallocated physical page: 0x%x', pnum)
+        os.write(repo.logical_data_store.get_physical_page_buffer(pnum))
 
     return 0
 
