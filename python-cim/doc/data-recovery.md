@@ -250,9 +250,9 @@ found hit on physical page 0x4d5 at offset 0x1b11
   this page not mapped to a logical page (unallocated page)
 ```
 
-the data is in an unallocated page.
-this that the `testClass` string was found in a data page that does not have a valid logical mapping.
-in other word, at one point, it was a valid chunk of data, but now is completely unreferenced.
+the hit is in an unallocated page.
+this means that the `testClass` string was found in a data page that is not mapped to a logical page.
+in other words, this was once a valid chunk of data, but now is completely unreferenced.
 
 let's see what this page looks like:
 
@@ -403,8 +403,8 @@ this TOC describes objects at the following page offsets:
   - start: 0x1985 length: 0x14a
   - start: 0x1acf length: 0x365
 
-scrolling down, the string `testClass` exists at page offset 0x1B11.
-this offset falls within the region of the final TOC entry (page offsets 0x1ACF to 0x1E34).
+scrolling down, the string `testClass` exists at page offset 0x1b11.
+this offset falls within the region of the final TOC entry (page offsets 0x1acf to 0x1e34).
 a class definition (very similar to the one encountered in the first section) is found in this range.
 when we inspect the class definition buffer, it lines up perfectly with the TOC entry boundaries.
 therefore, it seems that the structures in the unallocated page appear to be intact!
@@ -620,22 +620,22 @@ here is the TOC region:
 
 once parsed, we see the TOC contains 13 entries, and the end-of-TOC marker.
 this TOC describes objects at the following page offsets:
-  - start: 0xE0   length: 0x441
+  - start: 0xe0   length: 0x441
   - start: 0x521  length: 0x7F8
-  - start: 0xD19  length: 0x511
-  - start: 0x122A length: 0x116
+  - start: 0xd19  length: 0x511
+  - start: 0x122a length: 0x116
   - start: 0x1304 length: 0x125
   - start: 0x1465 length: 0x11b
   - start: 0x1508 length: 0x120
-  - start: 0x160A length: 0x11b
-  - start: 0x17BB length: 0x11f
-  - start: 0x18DA length: 0x121
-  - start: 0x19FB length: 0x11c
-  - start: 0x1B17 length: 0x125
-  - start: 0x1C3C length: 0x11b
+  - start: 0x160a length: 0x11b
+  - start: 0x17bb length: 0x11f
+  - start: 0x18da length: 0x121
+  - start: 0x19fb length: 0x11c
+  - start: 0x1b17 length: 0x125
+  - start: 0x1c3c length: 0x11b
 
-scrolling down, the string `testClass` exists at page offset 0x1DA9.
-the region falls beyond the range of the final TOC entry (0x1C3C to 0x1D57).
+scrolling down, the string `testClass` exists at page offset 0x1da9.
+the region falls beyond the range of the final TOC entry (0x1c3c to 0x1d57).
 this means that the object is found in the page slack space.
 slack space is data found beyond the end of active structures within an allocated page.
 
@@ -662,7 +662,7 @@ final TOC entry data:
 00001d50: 4f52 574d 495d 00                        ORWMI]
 ```
 
-a class definition (very similar to the one encountered in the first section) is found between page offsets 0x1D67 and 0x1E34.
+a class definition (very similar to the one encountered in the first section) is found between page offsets 0x1d67 and 0x1e34.
 here's the carved object buffer:
 
 ```
