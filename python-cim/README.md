@@ -323,14 +323,3 @@ Dump the raw binary data for the given object ID.
     0000150: f277 0000 0042 5654 436f 6e73 756d 6572  .w...BVTConsumer
     0000160: 0000 433a 5c5c 746f 6f6c 735c 5c6b 6572  ..C:\\tools\\ker
     0000170: 6e72 6174 6500                           nrate.
-    
-    
-### `hash_term.py`
-
-Hash the given terms using the hashing algorithm used in the supplied CIM repository.
-The script encodes the given terms as UTF-16LE prior to performing the hashing operation.
-
-    » bin/python3 samples/hash_term.py xp /path/to/CIM/repo "Hello world" "Goodbye world"
-    XX_E6760D555C32F66F5E159331DB20FD8E     Hello world
-    XX_1A053CC04A1813060EACEABA46ECCFB1     Goodbye world
-    
