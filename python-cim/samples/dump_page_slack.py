@@ -26,7 +26,8 @@ def extract_data_page_slack(repo):
         try:
             page = repo.logical_data_store.get_page(i)
         except IndexError:
-            break
+            logger.warn('failed to fetch page 0x%x', i)
+            continue
 
         for region in cim.recovery.extract_data_page_slack(page):
             logger.info('extracted %s bytes of slack from logical page %s at offset %s',
