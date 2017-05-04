@@ -46,3 +46,18 @@ def extract_data_page_slack(page):
             continue
 
         yield SlackRegion(page.logical_page_number, begin, page.buf[begin:end])
+
+
+def find_unallocated_pages(repo):
+    '''
+    enumerate the physical page numbers of data pages that are not mapped.
+    
+    Args:
+        repo (cim.CIM): the repo to enumerate.
+
+    Yields:
+        int: the physical page number of an unallocated page.
+    '''
+    for i in range(repo.logical_data_store.page_count):
+        if not repo.data_mapping.is_physical_page_mapped(i):
+            yield i
