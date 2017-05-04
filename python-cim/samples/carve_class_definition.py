@@ -53,13 +53,7 @@ def main(argv=None):
         logging.basicConfig(level=logging.INFO)
         logging.getLogger().setLevel(logging.INFO)
 
-    try:
-        repo = cim.CIM(cim.CIM_TYPE_WIN7, args.input)
-    except Exception as e:
-        # TODO: detect winxp version and use that
-        logger.error('bad cim')
-        return -1
-
+    repo = cim.CIM.from_path(args.input)
     cd = carve_class_definition(repo, args.page, args.offset)
     resolver = cim.objects.ObjectResolver(repo)
     cl = cim.objects.ClassLayout(resolver, args.namespace, cd)
