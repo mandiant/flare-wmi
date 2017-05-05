@@ -44,7 +44,7 @@ def main(argv=None):
     repo = cim.CIM.from_path(args.input)
     for pnum in cim.recovery.find_unallocated_pages(repo):
         logger.info('found unallocated physical page: 0x%x', pnum)
-        os.write(repo.logical_data_store.get_physical_page_buffer(pnum))
+        os.write(sys.stdout.fileno(), repo.logical_data_store.get_physical_page_buffer(pnum))
 
     return 0
 
