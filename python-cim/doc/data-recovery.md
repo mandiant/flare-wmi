@@ -2,7 +2,7 @@
 
 
 in the event that objects are deleted from wmi repositories, it is sometimes feasible to recover them.
-the techniques require some knowledge of internal wmi structures; however, python-cim includes a number of scripts to ease the process.
+the techniques require a moderate knowledge of internal wmi structures; however, python-cim includes a number of scripts to ease the process.
 generally, smaller objects are easier to recover than larger ones, and static classes easier to recover than class instances.
 
 one scenario in which you might want to recover data is when dealing with a malicious actor that deploys wmi-resident malware.
@@ -18,7 +18,8 @@ we can use these data recovery techniques to extract forensic artifacts of an in
         however, if the object overruns a single page (0x2000 bytes), this technique won't work.
         continue reading.
      2. carve metadata from unallocated pages and slack spaces and look for anomalies.
-        the tutorial [here](.) describes the process in detail.
+        the section on [dumping unused space](./dump-unused-space.md) discusses how to extract these raw bytes, while
+        the tutorial [here](.) describes using tools that are purpose-built for carving data from unused space.
         review the artifact timeline and correlate events with external activity.
         once you find interesting class or property names, continue with step (2).
      3. extract strings from unallocated pages and slack spaces and manually review.
@@ -103,7 +104,9 @@ found hit on physical page 0x4d5 at offset 0x1b11
   this page not mapped to a logical page (unallocated page)
 ```
 
-let's walk through how to interpret these hits.
+you can learn more about searching wmi structures in the section on [finding bytes](./find-bytes.md).
+
+anyways, let's walk through how to interpret these hits.
 
 
 ### active data
