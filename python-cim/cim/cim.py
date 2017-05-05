@@ -188,7 +188,12 @@ class Mapping(object):
         if logical_page_number > int(self.map.header.mapping_entry_count):
             raise IndexError(logical_page_number)
 
-        return self.map.entries[logical_page_number].page_number != UNMAPPED_PAGE_VALUE
+        try:
+            entry = self.map.entries[logical_page_number]
+        except Exception:
+            raise UnmappedPage(logical_page_number)
+
+        return entry.page_number != UNMAPPED_PAGE_VALUE
 
     def get_physical_page_number(self, logical_page_number):
         """
@@ -207,7 +212,11 @@ class Mapping(object):
         if logical_page_number > int(self.map.header.mapping_entry_count):
             raise IndexError(logical_page_number)
 
-        pnum = self.map.entries[logical_page_number].page_number
+        try:
+            entry = self.map.entries[logical_page_number]
+        except Exception:
+            raise UnmappedPage(logical_page_number)
+        pnum = entry.page_number
         if pnum == UNMAPPED_PAGE_VALUE:
             raise UnmappedPage(logical_page_number)
         return pnum
@@ -612,6 +621,8 @@ class LogicalDataStore(object):
         Returns:
             bytes: the raw page contents.
         """
+        if not self._mapping.is_logical_page_mapped(logical_page_number):
+            raise UnmappedPage(logical_page_number)
         pnum = self._mapping.get_physical_page_number(logical_page_number)
         return self.get_physical_page_buffer(pnum)
 
@@ -625,8 +636,8 @@ class LogicalDataStore(object):
         Returns:
             DataPage: the parsed page.
         """
+        pbuf = self.get_logical_page_buffer(logical_page_number)
         pnum = self._mapping.get_physical_page_number(logical_page_number)
-        pbuf = self.get_physical_page_buffer(pnum)
         return DataPage(pbuf, logical_page_number, pnum)
 
     def get_object_buffer(self, key):
