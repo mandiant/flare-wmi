@@ -31,7 +31,7 @@ we can use these data recovery techniques to extract forensic artifacts of an in
   2. if you know something about the deleted data, continue here.
      this includes knowing: name of a property, class name, or fragment of a value.
      for example, you may be aware that an actor used a powershell-based backdoor, and therefore search for the powershell comment string `<#`.
-     the tutorial [here](.) describes this process in detail.
+     the tutorial [here](./tutorial-overwritten.md) describes this process in detail.
      1. use the `find_bytes.py` script to correlate string hits with structures within the wmi repository.
      2. review the structures containing hits. each one may be:
         1. an active object
