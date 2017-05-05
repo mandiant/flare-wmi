@@ -1,5 +1,4 @@
 import os
-import hashlib
 import logging
 from collections import namedtuple
 
@@ -7,16 +6,7 @@ from funcy.objects import cached_property
 import vstruct
 from vstruct.primitives import *
 
-from .common import h
-from .common import LoggingObject
-
-
-# TODO: remove this in top level
-logging.basicConfig(level=logging.DEBUG)
-g_logger = logging.getLogger("cim.mapping")
-logging.getLogger("cim.IndexPage").setLevel(logging.WARNING)
-logging.getLogger("cim.Index").setLevel(logging.WARNING)
-
+logger = logging.getLogger(__name__)
 
 MAPPING_SIGNATURES = v_enum()
 MAPPING_SIGNATURES.MAPPING_START_SIGNATURE = 0xABCD
@@ -27,6 +17,7 @@ MAX_MAPPING_FILES = 0x3
 MAPPING_PAGE_ID_MASK = 0x3FFFFFFF
 MAPPING_PAGE_UNAVAIL = 0xFFFFFFFF
 MAPPING_FILE_CLEAN = 0x1
+UNMAPPED_PAGE_VALUE = 0x3FFFFFFF
 
 CIM_TYPE_XP = "xp"
 CIM_TYPE_WIN7 = "win7"
@@ -42,12 +33,6 @@ INDEX_PAGE_TYPES.PAGE_TYPE_UNK = 0x0000
 INDEX_PAGE_TYPES.PAGE_TYPE_ACTIVE = 0xACCC
 INDEX_PAGE_TYPES.PAGE_TYPE_DELETED = 0xBADD
 INDEX_PAGE_TYPES.PAGE_TYPE_ADMIN = 0xADDD
-
-
-# TODO: maybe stick this onto the CIM class?
-#  then it can do lookups against the mapping?
-def is_index_page_number_valid(num):
-    return num != INDEX_PAGE_INVALID and num != INDEX_PAGE_INVALID2
 
 
 class MappingHeaderXP(vstruct.VStruct):
@@ -88,8 +73,11 @@ class EntryWin7(vstruct.VStruct):
 
     @property
     def page_number(self):
-        # TODO: add lookup against header.physicalPages to ensure range
         return self._page_number & MAPPING_PAGE_ID_MASK
+
+
+class UnmappedPage(KeyError):
+    pass
 
 
 class MappingWin7(vstruct.VStruct):
@@ -97,6 +85,7 @@ class MappingWin7(vstruct.VStruct):
     lookup via:
       m.entries[0x101].page_number
     """
+
     def __init__(self):
         vstruct.VStruct.__init__(self)
         self.header = MappingHeaderWin7()
@@ -105,29 +94,12 @@ class MappingWin7(vstruct.VStruct):
         self.free = v_bytes()
         self.footer_signature = v_uint32()
 
-        # from physical page to logical page
-        # cached
-        self._reverse_mapping = None
-
     def pcb_header(self):
         for i in range(self.header.mapping_entry_count):
             self.entries.vsAddElement(EntryWin7())
 
     def pcb_free_dword_count(self):
         self["free"].vsSetLength(self.free_dword_count * 0x4)
-
-    def _build_reverse_mapping(self):
-        for i in range(self.header.mapping_entry_count):
-            self._reverse_mapping[self.entries[i].page_number] = i
-
-    def get_physical_page_number(self, logical_page_number):
-        return self.entries[logical_page_number].page_number
-
-    def get_logical_page_number(self, physical_page_number):
-        if self._reverseMapping is None:
-            self._build_reverse_mapping()
-
-        return self._reverse_mapping[physical_page_number].page_number
 
 
 class EntryXP(vstruct.primitives.v_uint32):
@@ -136,7 +108,6 @@ class EntryXP(vstruct.primitives.v_uint32):
 
     @property
     def page_number(self):
-        # TODO: add lookup against header.physicalPages to ensure range
         return self & MAPPING_PAGE_ID_MASK
 
 
@@ -146,6 +117,7 @@ class MappingXP(vstruct.VStruct):
     lookup via:
       m.entries[0x101].page_number
     """
+
     def __init__(self):
         vstruct.VStruct.__init__(self)
         self.header = MappingHeaderXP()
@@ -153,10 +125,6 @@ class MappingXP(vstruct.VStruct):
         self.free_dword_count = v_uint32()
         self.free = v_bytes()
         self.footer_signature = v_uint32()
-
-        # from physical page to logical page
-        # cached
-        self._reverse_mapping = None
 
     def pcb_header(self):
         for i in range(self.header.mapping_entry_count):
@@ -166,17 +134,9 @@ class MappingXP(vstruct.VStruct):
         self["free"].vsSetLength(self.free_dword_count * 0x4)
 
     def _build_reverse_mapping(self):
+        self._reverse_mapping = {}
         for i in range(self.header.mapping_entry_count):
             self._reverse_mapping[self.entries[i].page_number] = i
-
-    def get_physical_page_number(self, logical_page_number):
-        return self.entries[logical_page_number].page_number
-
-    def get_logical_page_number(self, physical_page_number):
-        if self._reverseMapping is None:
-            self._build_reverse_mapping()
-
-        return self._reverse_mapping[physical_page_number].page_number
 
 
 MAPPING_TYPES = {
@@ -185,56 +145,220 @@ MAPPING_TYPES = {
 }
 
 
+class Mapping(object):
+    """
+    helper routines around fetching page mappings.
+    """
+
+    def __init__(self, map):
+        """
+        Args:
+            map (MappingWin7 | MappingXp): the raw map structure.
+        """
+        self.map = map
+        # cache of map from physical page to logical page
+        self._reverse_mapping = {}
+
+    def _build_reverse_mapping(self):
+        self._reverse_mapping = {}
+        for i in range(self.map.header.mapping_entry_count):
+            pnum = self.map.entries[i].page_number
+            # unknown precisely what this means
+            if pnum == UNMAPPED_PAGE_VALUE:
+                continue
+
+            if pnum in self._reverse_mapping:
+                logger.warning('logical page %d already mapped!', i)
+
+            self._reverse_mapping[pnum] = i
+
+    def is_logical_page_mapped(self, logical_page_number):
+        """
+        is the given logical page index mapped?
+        
+        Args:
+            logical_page_number (int): the logical page number
+            
+        Returns:
+            bool: if the logical page is mapped.
+             
+        Raises:
+            IndexError: if the page number is too big
+        """
+        if logical_page_number > int(self.map.header.mapping_entry_count):
+            raise IndexError(logical_page_number)
+
+        try:
+            entry = self.map.entries[logical_page_number]
+        except Exception:
+            raise UnmappedPage(logical_page_number)
+
+        return entry.page_number != UNMAPPED_PAGE_VALUE
+
+    def get_physical_page_number(self, logical_page_number):
+        """
+        given a logical page number, get the physical page number it maps to.
+        
+        Args:
+            logical_page_number (int): the logical page number
+
+        Returns:
+            int: the logical page number
+            
+        Raises:
+            UnmappedPage: if the page is unallocated.
+            IndexError: if the page number is too big
+        """
+        if logical_page_number > int(self.map.header.mapping_entry_count):
+            raise IndexError(logical_page_number)
+
+        try:
+            entry = self.map.entries[logical_page_number]
+        except Exception:
+            raise UnmappedPage(logical_page_number)
+        pnum = entry.page_number
+        if pnum == UNMAPPED_PAGE_VALUE:
+            raise UnmappedPage(logical_page_number)
+        return pnum
+
+    def get_logical_page_number(self, physical_page_number):
+        """
+        given a physical page number, get the logical page number it maps to.
+        
+        Args:
+            physical_page_number: the physical page number
+
+        Returns:
+            int: the logical page number
+
+        Raises:
+            UnmappedPage: if the page is unmapped.
+        """
+        if not self._reverse_mapping:
+            self._build_reverse_mapping()
+
+        if physical_page_number in self._reverse_mapping:
+            return self._reverse_mapping[physical_page_number]
+
+        raise UnmappedPage(physical_page_number)
+
+    def is_physical_page_mapped(self, physical_page_number):
+        """
+        is the given physical page index mapped?
+        
+        Args:
+            physical_page_number (int): the physical page number
+
+        Returns:
+            bool: if the physical page is mapped.
+        """
+        if not self._reverse_mapping:
+            self._build_reverse_mapping()
+
+        return physical_page_number in self._reverse_mapping
+
+
 class TOCEntry(vstruct.VStruct):
     def __init__(self):
         vstruct.VStruct.__init__(self)
         self.record_id = v_uint32()
+        # offset is relative to start of the page
         self.offset = v_uint32()
         self.size = v_uint32()
+        # zero on win7
         self.CRC = v_uint32()
 
-    @property
-    def is_zero(self):
+    def is_empty(self):
         return self.record_id == 0 and \
-                self.offset == 0 and \
-                self.size == 0 and \
-                self.CRC == 0
+               self.offset == 0 and \
+               self.size == 0 and \
+               self.CRC == 0
+
+
+class ParseError(Exception):
+    pass
 
 
 class TOC(vstruct.VArray):
     def __init__(self):
         vstruct.VArray.__init__(self)
+        # if this is zero, then the TOC has not be parsed correctly.
         self.count = 0
 
-    def vsParse(self, bytez, offset=0, fast=False):
-        self.count = 0
+    @staticmethod
+    def _is_valid_entry(t):
+        # we have to guess where the end of the TOC is
+        if int(t.record_id) == 0x0:
+            return False
+
+        if int(t.offset) >= DATA_PAGE_SIZE:
+            return False
+
+        if int(t.offset) == 0:
+            return False
+
+        if int(t.size) == 0:
+            return False
+
+        return True
+
+    def _parse_entries(self, bytez, offset):
+        entries = []
+
         endoffset = bytez.find(b"\x00" * 0x10, offset)
+        if endoffset == -1:
+            raise ParseError('no empty entry')
+
         while offset < endoffset + 0x10:
             t = TOCEntry()
             offset = t.vsParse(bytez, offset=offset)
-            self.vsAddElement(t)
-            self.count += 1
-        return offset
 
-    def vsParseFd(self, fd):
-        self.count = 0
-        while True:
-            t = TOCEntry()
-            t.vsParseFd(fd)
-            self.vsAddElement(t)
-            self.count += 1
-            if t.is_zero:
-                return
+            if t.is_empty():
+                # there should be a final empty entry to mark the end of the toc
+                entries.append(t)
+                break
+
+            elif not self._is_valid_entry(t):
+                break
+
+            else:
+                entries.append(t)
+                continue
+
+        if entries and entries[-1].is_empty():
+            # don't include the empty entry in the TOC
+            return entries[:-1]
+        else:
+            raise ParseError('failed to parse TOC correctly')
+
+    def vsParse(self, bytez, offset=0, fast=False):
+        try:
+            # we either want to parse all the entries, or none of them.
+            # an empty toc indicates that it hasn't been parsed correctly.
+            entries = self._parse_entries(bytez, offset)
+        except ParseError:
+            return offset
+
+        for entry in entries:
+            self.vsAddElement(entry)
+        self.count = len(entries)
+        return 0x10 * (len(entries) + 1)
 
 
 class IndexKeyNotFoundError(Exception):
     pass
 
 
-class DataPage(LoggingObject):
+class DataPage(object):
     def __init__(self, buf, logical_page_number, physical_page_number):
+        """
+        Args:
+            buf (bytes): the raw bytes of the page
+            logical_page_number (int):  the logical page number
+            physical_page_number (int):  the physical age nubmer
+        """
         super(DataPage, self).__init__()
-        self._buf = buf
+        self.buf = buf
         self.logical_page_number = logical_page_number
         self.physical_page_number = physical_page_number
         self.toc = TOC()
@@ -242,13 +366,19 @@ class DataPage(LoggingObject):
 
     def _get_object_buffer_by_index(self, toc_index):
         toc_entry = self.toc[toc_index]
-        return self._buf[toc_entry.offset:toc_entry.offset + toc_entry.size]
+        return self.buf[toc_entry.offset:toc_entry.offset + toc_entry.size]
 
     def get_data_by_key(self, key):
         """
-        Prefer to use __getitem__.
+        fetch the raw bytes for the object identified by the given key.
+        
+        note: prefer to use __getitem__
+        
+        Args:
+            key (Key): the key of the object to fetch
 
-        key: Key instance
+        Returns:
+            bytes: the raw bytes for the requested object.
         """
         target_id = key.data_id
         target_size = key.data_length
@@ -258,14 +388,21 @@ class DataPage(LoggingObject):
                 if toc.size < target_size:
                     raise RuntimeError("Data size doesn't match TOC size")
                 if toc.size > DATA_PAGE_SIZE - toc.offset:
-                    self.d("Large data item: key: %s, size: %s",
-                            str(key), hex(target_size))
-                return self._buf[toc.offset:toc.offset + toc.size]
+                    logger.debug("Large data item: key: %s, size: %s",
+                                 str(key), hex(target_size))
+                return self.buf[toc.offset:toc.offset + toc.size]
         raise IndexKeyNotFoundError(key)
 
     def __getitem__(self, key):
         """
-        key: Key instance
+        fetch the raw bytes for the object identified by the given key.
+        
+        Args:
+            key (cim.Key): the key of the object to fetch.
+
+        Returns:
+            bytes: the raw bytes of the requested object.
+
         """
         return self.get_data_by_key(key)
 
@@ -280,12 +417,12 @@ class DataPage(LoggingObject):
         ret = []
         for i in range(self.toc.count):
             toc = self.toc[i]
-            buf = self._buf[toc.offset:toc.offset + toc.size]
+            buf = self.buf[toc.offset:toc.offset + toc.size]
             ret.append(ObjectItem(toc.offset, buf))
         return ret
 
 
-class Key(LoggingObject):
+class Key(object):
     def __init__(self, string):
         super(Key, self).__init__()
         self._string = string
@@ -313,6 +450,7 @@ class Key(LoggingObject):
     KEY_INDEX_DATA_PAGE = 1
     KEY_INDEX_DATA_ID = 2
     KEY_INDEX_DATA_SIZE = 3
+
     def _get_data_part(self, index):
         if not self.is_data_reference:
             raise RuntimeError("key is not a data reference: %s", str(self))
@@ -362,11 +500,9 @@ class IndexPageHeader(vstruct.VStruct):
         return self.sig == INDEX_PAGE_TYPES.PAGE_TYPE_DELETED
 
 
-class IndexPage(vstruct.VStruct, LoggingObject):
+class IndexPage(vstruct.VStruct):
     def __init__(self, logical_page_number, physical_page_number):
         vstruct.VStruct.__init__(self)
-        LoggingObject.__init__(self)
-
         self.logical_page_number = logical_page_number
         self.physical_page_number = physical_page_number
 
@@ -403,7 +539,7 @@ class IndexPage(vstruct.VStruct, LoggingObject):
 
     def _get_string_part(self, string_index):
         string_offset = self.string_table[string_index]
-        return self.data[string_offset:self.data.find(b"\x00", string_offset)].decode("utf-8")
+        return self.data[string_offset:bytes(self.data).find(b"\x00", string_offset)].decode("utf-8")
 
     def _get_string(self, string_def_index):
         string_part_count = self.string_definition_table[string_def_index]
@@ -438,35 +574,71 @@ class MissingDataFileError(Exception):
     pass
 
 
-class LogicalDataStore(LoggingObject):
+class LogicalDataStore(object):
     """
     provides an interface for accessing data by logical page or object id.
+    
+    Args:
+        cim (CIM): the repo
+        mapping (Mapping): the data mapping.
     """
+
     def __init__(self, cim, file_path, mapping):
         super(LogicalDataStore, self).__init__()
         self._cim = cim
         self._file_path = file_path
         self._mapping = mapping
+        self._file_size = os.path.getsize(file_path)
+        self.page_count = self._file_size // INDEX_PAGE_SIZE
 
-    def get_physical_page_buffer(self, index):
+    def get_physical_page_buffer(self, physical_page_number):
+        """
+        fetch the bytes of the page at the give physical index.
+        
+        Args:
+            physical_page_number: the physical page number to fetch
+
+        Returns:
+            bytes: the raw page contents.
+        """
         if not os.path.exists(self._file_path):
             raise MissingDataFileError()
 
-        # TODO: keep an open handle
+        if physical_page_number >= self.page_count:
+            raise IndexError(physical_page_number)
+
         with open(self._file_path, "rb") as f:
-            f.seek(DATA_PAGE_SIZE * index)
+            f.seek(DATA_PAGE_SIZE * physical_page_number)
             return f.read(DATA_PAGE_SIZE)
 
-    def get_logical_page_buffer(self, index):
-        physical_page_number = self._mapping.entries[index].page_number
-        return self.get_physical_page_buffer(physical_page_number)
+    def get_logical_page_buffer(self, logical_page_number):
+        """
+        fetch the bytes of the page at the give logical index.
+        
+        Args:
+            logical_page_number: the logical page number to fetch
 
-    def get_page(self, index):
+        Returns:
+            bytes: the raw page contents.
         """
-        return: DataPage instance
+        if not self._mapping.is_logical_page_mapped(logical_page_number):
+            raise UnmappedPage(logical_page_number)
+        pnum = self._mapping.get_physical_page_number(logical_page_number)
+        return self.get_physical_page_buffer(pnum)
+
+    def get_page(self, logical_page_number):
         """
-        physical_page_number = self._mapping.entries[index].page_number
-        return DataPage(self.get_logical_page_buffer(index), index, physical_page_number)
+        fetch the parsed page at the give logical index.
+        
+        Args:
+            logical_page_number: the logical page number to fetch
+
+        Returns:
+            DataPage: the parsed page.
+        """
+        pbuf = self.get_logical_page_buffer(logical_page_number)
+        pnum = self._mapping.get_physical_page_number(logical_page_number)
+        return DataPage(pbuf, logical_page_number, pnum)
 
     def get_object_buffer(self, key):
         if not key.is_data_reference:
@@ -490,7 +662,6 @@ class LogicalDataStore(LoggingObject):
 
         i = 1
         while found_length < target_length:
-            # TODO: should simply foreach an iterable here
             next_page_buffer = self.get_logical_page_buffer(key.data_page + i)
             if found_length + len(next_page_buffer) > target_length:
                 # this is the last page containing data for this item
@@ -522,70 +693,110 @@ class MissingIndexFileError(Exception):
     pass
 
 
-class LogicalIndexStore(LoggingObject):
+class LogicalIndexStore(object):
     """
     provides an interface for accessing index nodes by logical page id.
     indexing logic should go at a higher level.
     """
+
     def __init__(self, cim, file_path, mapping):
+        """
+        
+        Args:
+            cim (CIM): the CIM repository
+            file_path (str): the file containing the index
+            mapping (Mapping): the page mapping
+        """
         super(LogicalIndexStore, self).__init__()
         self._cim = cim
         self._file_path = file_path
         self._mapping = mapping
+        self._file_size = os.path.getsize(file_path)
+        self.page_count = self._file_size // INDEX_PAGE_SIZE
 
     def get_physical_page_buffer(self, index):
+        """
+        fetch the raw bytes of the page at the given physical page number
+        
+        Args:
+            index (int): the physical page number.
+
+        Returns:
+            bytes: the raw data at the given page.
+        """
         if not os.path.exists(self._file_path):
             raise MissingIndexFileError()
 
-        # TODO: keep an open file handle
+        if index >= self.page_count:
+            raise IndexError(index)
+
         with open(self._file_path, "rb") as f:
             f.seek(INDEX_PAGE_SIZE * index)
             return f.read(INDEX_PAGE_SIZE)
 
-    def get_logical_page_buffer(self, index):
-        physical_page_number = self._mapping.entries[index].page_number
-        return self.get_physical_page_buffer(physical_page_number)
+    def get_logical_page_buffer(self, logical_page_number):
+        """
+        fetch the raw bytes of the page at the given logical page number.
+        
+        Args:
+            logical_page_number (int): the logical page number.
 
-    def get_page(self, index):
-        """ :rtype: IndexPage """
-        if index > self._mapping.header.mapping_entry_count:
+        Returns:
+            bytes: the raw data at the given page.
+        """
+        pnum = self._mapping.get_physical_page_number(logical_page_number)
+        return self.get_physical_page_buffer(pnum)
+
+    def get_page(self, logical_page_number):
+        """
+        fetch a parsed index page given a logical page number.
+        
+        Args:
+            logical_page_number: the logical page number
+
+        Returns:
+            IndexPage: the parsed index page.
+        """
+        if logical_page_number > self._mapping.map.header.mapping_entry_count:
             raise InvalidMappingEntryIndex()
 
-        physical_page_number = self._mapping.entries[index].page_number
-
-        if physical_page_number > self._mapping.header.physical_page_count:
-            raise InvalidPhysicalPageNumber("{:s} is greater than the count {:s}".format(
-                hex(physical_page_number),
-                hex(self._mapping.header.physical_page_count)))
-
-        pagebuf = self.get_logical_page_buffer(index)
-        p = IndexPage(index, physical_page_number)
+        pnum = self._mapping.get_physical_page_number(logical_page_number)
+        pagebuf = self.get_logical_page_buffer(logical_page_number)
+        p = IndexPage(logical_page_number, pnum)
         p.vsParse(pagebuf)
         return p
 
-    @property
-    def _root_page_number_win7(self):
-        return int(self._mapping.entries[0x0].used_space)
-
-    @property
-    def _root_page_number(self):
+    @cached_property
+    def root_page_number(self):
+        """
+        fetch the logical page number of the index root.
+        
+        Returns:
+            int: the logical page number.
+        """
         if self._cim.cim_type == CIM_TYPE_WIN7:
-            return self._root_page_number_win7
+            return int(self._mapping.map.entries[0x0].used_space)
         elif self._cim.cim_type == CIM_TYPE_XP:
             return self.get_page(0).header.root_page
         else:
             raise RuntimeError("Unexpected CIM type: " + str(self._cim.cim_type))
 
-    @cached_property
-    def root_page_number(self):
-        return self._root_page_number
-
     @property
     def root_page(self):
+        """
+        fetch the parsed index page of the index root.
+        
+        Returns:
+            IndexPage: the parsed index page.
+        """
         return self.get_page(self.root_page_number)
 
 
-class CachedLogicalIndexStore(LoggingObject):
+class CachedLogicalIndexStore(object):
+    """
+    acts like a LogicalIndexStore, except it caches pages in memory for faster access.
+    """
+
     def __init__(self, index_store):
         super(CachedLogicalIndexStore, self).__init__()
         self._index_store = index_store
@@ -613,18 +824,20 @@ class CachedLogicalIndexStore(LoggingObject):
         return self.get_page(self.root_page_number)
 
 
-class Index(LoggingObject):
-    def __init__(self, cim_type, indexStore):
+class Index(object):
+    def __init__(self, cim_type, index_store):
         super(Index, self).__init__()
         self.cim_type = cim_type
-        self._index_store = CachedLogicalIndexStore(indexStore)
+        self._index_store = CachedLogicalIndexStore(index_store)
 
     LEFT_CHILD_DIRECTION = 0
     RIGHT_CHILD_DIRECTION = 1
+
     def _lookup_keys_child(self, key, page, i, direction):
         child_index = page.get_child(i + direction)
-        if not is_index_page_number_valid(child_index):
+        if child_index == INDEX_PAGE_INVALID or child_index == INDEX_PAGE_INVALID2:
             return []
+
         child_page = self._index_store.get_page(child_index)
         return self._lookup_keys(key, child_page)
 
@@ -638,7 +851,7 @@ class Index(LoggingObject):
         skey = str(key)
         key_count = page.key_count
 
-        self.d("index lookup: %s: page: %s", key.human_format, h(page.logical_page_number))
+        logger.debug("index lookup: %s: page: %s", key.human_format, hex(page.logical_page_number))
 
         matches = []
         for i in range(key_count):
@@ -676,26 +889,22 @@ class Index(LoggingObject):
 
     def lookup_keys(self, key):
         """
-        get keys that match the given key prefix
+        query the index keys that start with the given prefix.
+        
+        Args:
+            key (Key): the key prefix.
+
+        Returns:
+            List[Key]: the matching keys.
         """
         return self._lookup_keys(key, self._index_store.root_page)
-
-    def hash(self, s):
-        if self.cim_type == CIM_TYPE_XP:
-            h = hashlib.md5()
-        elif self.cim_type == CIM_TYPE_WIN7:
-            h = hashlib.sha256()
-        else:
-            raise RuntimeError("Unexpected CIM type: {:s}".format(str(self.cim_type)))
-        h.update(s)
-        return h.hexdigest().upper()
 
 
 class MissingMappingFileError(Exception):
     pass
 
 
-class CIM(LoggingObject):
+class CIM(object):
     def __init__(self, cim_type, directory):
         super(CIM, self).__init__()
         self.cim_type = cim_type
@@ -707,6 +916,36 @@ class CIM(LoggingObject):
         self._data_store = None
         self._index_store = None
 
+    @staticmethod
+    def guess_cim_type(path):
+        mappath = os.path.join(path, "MAPPING1.MAP")
+        with open(mappath, 'rb') as f:
+            header = f.read(0x18)
+
+        sig, version, first_id, second_id, phys_count, map_count = struct.unpack("<IIIIII", header)
+        if sig != 0xABCD:
+            raise ParseError('Unexpected mapping file signature')
+
+        # we're going to try to prove this is not a Win7 repo.
+
+        if map_count > phys_count:
+            return CIM_TYPE_XP
+
+        if map_count < phys_count // 10:
+            # map count *should* be in same order of magnitude as physical page count
+            return CIM_TYPE_XP
+
+        if first_id - 1 != second_id:
+            return CIM_TYPE_XP
+
+        return CIM_TYPE_WIN7
+
+    @classmethod
+    def from_path(cls, path):
+        cim_type = cls.guess_cim_type(path)
+        logger.debug('auto-detected repository type: %s', cim_type)
+        return cls(cim_type, path)
+
     @property
     def _data_file_path(self):
         return os.path.join(self._directory, "OBJECTS.DATA")
@@ -717,7 +956,6 @@ class CIM(LoggingObject):
 
     @cached_property
     def _current_mapping_file(self):
-        self.d("finding current mapping file")
         mapping_file_path = None
         max_version = 0
         for i in range(MAX_MAPPING_FILES):
@@ -730,7 +968,7 @@ class CIM(LoggingObject):
             with open(fp, "rb") as f:
                 h.vsParseFd(f)
 
-            self.d("%s: version: %s", fn, hex(h.version))
+            logging.debug("%s: version: %s", fn, hex(h.version))
             if h.version > max_version:
                 mapping_file_path = fp
                 max_version = h.version
@@ -738,7 +976,7 @@ class CIM(LoggingObject):
         if mapping_file_path is None:
             raise MissingMappingFileError()
 
-        self.d("current mapping file: %s", mapping_file_path)
+        logging.debug("current mapping file: %s", mapping_file_path)
         return mapping_file_path
 
     @cached_property
@@ -753,7 +991,7 @@ class CIM(LoggingObject):
         with open(fp, "rb") as f:
             dm.vsParseFd(f)
             im.vsParseFd(f)
-        return dm, im
+        return Mapping(dm), Mapping(im)
 
     @property
     def data_mapping(self):
@@ -772,15 +1010,3 @@ class CIM(LoggingObject):
     @cached_property
     def logical_index_store(self):
         return LogicalIndexStore(self, self._index_file_path, self.index_mapping)
-
-
-def main(type_, path):
-    if type_ not in ("xp", "win7"):
-        raise RuntimeError("Invalid mapping type: {:s}".format(type_))
-    c = CIM(type_, path)
-    print("ok")
-
-if __name__ == "__main__":
-    logging.basicConfig(level=logging.INFO)
-    import sys
-    main(*sys.argv[1:])

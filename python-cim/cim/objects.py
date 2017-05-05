@@ -1,3 +1,5 @@
+from __future__ import absolute_import
+
 # TODO:
 #   what is "DYNPROPS: True"?
 #   where do descriptions come from?
@@ -5,9 +7,11 @@
 # BUGs:
 #   class instance: "root\\CIMV2" Microsoft_BDD_Info NS_68577372C66A7B20658487FBD959AA154EF54B5F935DCC5663E9228B44322805/CI_6FCB95E1CB11D0950DA7AE40A94D774F02DCD34701D9645E00AB9444DBCF640B/IL_EEC4121F2A07B61ABA16414812AA9AFC39AB0A136360A5ACE2240DC19B0464EB.1606.116085.3740
 
+import hashlib
 import logging
 import traceback
 import functools
+import contextlib
 from datetime import datetime
 from collections import namedtuple
 
@@ -15,19 +19,10 @@ from funcy.objects import cached_property
 import vstruct
 from vstruct.primitives import *
 
-from .common import h
-from .common import one
-from .common import LoggingObject
-from .cim import Key
-from .cim import Index
-from .cim import CIM_TYPE_XP
-from .cim import CIM_TYPE_WIN7
-from .cim import IndexKeyNotFoundError
+import cim
+import cim.common
 
-# TODO: remove this from the top level
-logging.basicConfig(level=logging.DEBUG)
-g_logger = logging.getLogger("cim.objects")
-
+logger = logging.getLogger(__name__)
 
 ROOT_NAMESPACE_NAME = "root"
 SYSTEM_NAMESPACE_NAME = "__SystemClass"
@@ -36,6 +31,7 @@ NAMESPACE_CLASS_NAME = "__namespace"
 
 class FILETIME(vstruct.primitives.v_prim):
     _vs_builder = True
+
     def __init__(self):
         vstruct.primitives.v_prim.__init__(self)
         self._vs_length = 8
@@ -47,7 +43,7 @@ class FILETIME(vstruct.primitives.v_prim):
         offend = offset + self._vs_length
         q = struct.unpack("<Q", fbytes[offset:offend])[0]
         try:
-            self._ts = datetime.utcfromtimestamp(float(q) * 1e-7 - 11644473600 )
+            self._ts = datetime.utcfromtimestamp(float(q) * 1e-7 - 11644473600)
         except ValueError:
             self._ts = datetime.min
         return offend
@@ -78,28 +74,56 @@ class WMIString(vstruct.VStruct):
         return self.s.vsGetValue()
 
 
+# via: https://msdn.microsoft.com/en-us/library/cc250928.aspx
+#  CIM-TYPE-SINT16 = % d2
+#  CIM-TYPE-SINT32 = % d3
+#  CIM-TYPE-REAL32 = % d4
+#  CIM-TYPE-REAL64 = % d5
+#  CIM-TYPE-STRING = % d8
+#  CIM-TYPE-BOOLEAN = % d11
+#  CIM-TYPE-SINT8 = % d16
+#  CIM-TYPE-UINT8 = % d17
+#  CIM-TYPE-UINT16 = % d18
+#  CIM-TYPE-UINT32 = % d19
+#  CIM-TYPE-SINT64 = % d20
+#  CIM-TYPE-UINT64 = % d21
+#  CIM-TYPE-DATETIME = % d101
+#  CIM-TYPE-REFERENCE = % d102
+#  CIM-TYPE-CHAR16 = % d103
+#  CIM-TYPE-OBJECT = % d13
+
+
 CIM_TYPES = v_enum()
-CIM_TYPES.CIM_TYPE_LANGID = 0x3
+CIM_TYPES.CIM_TYPE_INT16 = 0x2
+CIM_TYPES.CIM_TYPE_INT32 = 0x3
 CIM_TYPES.CIM_TYPE_REAL32 = 0x4
+CIM_TYPES.CIM_TYPE_REAL64 = 0x5
 CIM_TYPES.CIM_TYPE_STRING = 0x8
 CIM_TYPES.CIM_TYPE_BOOLEAN = 0xB
-CIM_TYPES.CIM_TYPE_UNKNOWN= 0xD
+CIM_TYPES.CIM_TYPE_UNKNOWN = 0xD
+CIM_TYPES.CIM_TYPE_INT8 = 0x10
 CIM_TYPES.CIM_TYPE_UINT8 = 0x11
 CIM_TYPES.CIM_TYPE_UINT16 = 0x12
-CIM_TYPES.CIM_TYPE_UINT32= 0x13
+CIM_TYPES.CIM_TYPE_UINT32 = 0x13
+CIM_TYPES.CIM_TYPE_INT64 = 0x14
 CIM_TYPES.CIM_TYPE_UINT64 = 0x15
 CIM_TYPES.CIM_TYPE_REFERENCE = 0x66
 CIM_TYPES.CIM_TYPE_DATETIME = 0x65
 
+
 CIM_TYPE_SIZES = {
-    CIM_TYPES.CIM_TYPE_LANGID: 4,
+    CIM_TYPES.CIM_TYPE_INT16: 2,
+    CIM_TYPES.CIM_TYPE_INT32: 4,
     CIM_TYPES.CIM_TYPE_REAL32: 4,
+    CIM_TYPES.CIM_TYPE_REAL64: 4,
     CIM_TYPES.CIM_TYPE_STRING: 4,
     CIM_TYPES.CIM_TYPE_BOOLEAN: 2,
     CIM_TYPES.CIM_TYPE_UNKNOWN: 4,
+    CIM_TYPES.CIM_TYPE_INT8: 1,
     CIM_TYPES.CIM_TYPE_UINT8: 1,
     CIM_TYPES.CIM_TYPE_UINT16: 2,
     CIM_TYPES.CIM_TYPE_UINT32: 4,
+    CIM_TYPES.CIM_TYPE_INT64: 8,
     CIM_TYPES.CIM_TYPE_UINT64: 8,
     # looks like: stringref to "\x00 00000000000030.000000:000"
     CIM_TYPES.CIM_TYPE_DATETIME: 4,
@@ -116,6 +140,7 @@ class BaseType(object):
       each item is not an array, but has the type of the array.
     needs to adhere to CimType interface.
     """
+
     def __init__(self, type_, value_parser):
         self._type = type_
         self._value_parser = value_parser
@@ -144,7 +169,6 @@ ARRAY_STATES = v_enum()
 ARRAY_STATES.NOT_ARRAY = 0x0
 ARRAY_STATES.ARRAY = 0x20
 
-
 BOOLEAN_STATES = v_enum()
 BOOLEAN_STATES.FALSE = 0x0
 BOOLEAN_STATES.TRUE = 0xFFFF
@@ -163,17 +187,22 @@ class CimType(vstruct.VStruct):
         # TODO: this is probably a bit-flag
         return self.array_state == ARRAY_STATES.ARRAY
 
-
     @property
     def _base_value_parser(self):
-        if self.type == CIM_TYPES.CIM_TYPE_LANGID:
-            return v_uint32
+        if self.type == CIM_TYPES.CIM_TYPE_INT16:
+            return v_int16
+        if self.type == CIM_TYPES.CIM_TYPE_INT32:
+            return v_int32
         elif self.type == CIM_TYPES.CIM_TYPE_REAL32:
             return v_float
+        elif self.type == CIM_TYPES.CIM_TYPE_REAL64:
+            return v_double
         elif self.type == CIM_TYPES.CIM_TYPE_STRING:
             return v_uint32
         elif self.type == CIM_TYPES.CIM_TYPE_BOOLEAN:
             return functools.partial(v_uint16, enum=BOOLEAN_STATES)
+        elif self.type == CIM_TYPES.CIM_TYPE_INT8:
+            return v_int8
         elif self.type == CIM_TYPES.CIM_TYPE_UINT8:
             return v_uint8
         elif self.type == CIM_TYPES.CIM_TYPE_UNKNOWN:
@@ -182,6 +211,8 @@ class CimType(vstruct.VStruct):
             return v_uint16
         elif self.type == CIM_TYPES.CIM_TYPE_UINT32:
             return v_uint32
+        elif self.type == CIM_TYPES.CIM_TYPE_INT64:
+            return v_int64
         elif self.type == CIM_TYPES.CIM_TYPE_UINT64:
             return v_uint64
         elif self.type == CIM_TYPES.CIM_TYPE_DATETIME:
@@ -189,7 +220,7 @@ class CimType(vstruct.VStruct):
         elif self.type == CIM_TYPES.CIM_TYPE_REFERENCE:
             return v_uint32
         else:
-            raise RuntimeError("unknown type: %s", h(self.type))
+            raise RuntimeError("unknown type: %s" % (hex(self.type)))
 
     @property
     def value_parser(self):
@@ -198,18 +229,13 @@ class CimType(vstruct.VStruct):
         else:
             return self._base_value_parser
 
-    #def pcb_unk2(self):
-    #    print("unk2", hex(self.type), type(self.type))
-    #    if self.type == 0xd:
-    #        print(self.tree())
-
     def __repr__(self):
         r = ""
         if self.is_array:
             r += "arrayref to "
         typename = CIM_TYPES.vsReverseMapping(self.type)
         if typename is None:
-            raise RuntimeError("unknown type: %s", h(self.type))
+            raise RuntimeError("unknown type: %s" % (hex(self.type)))
         r += typename
         return r
 
@@ -218,10 +244,9 @@ class CimType(vstruct.VStruct):
         return BaseType(self.type, self._base_value_parser)
 
 
-class CimTypeArray(vstruct.VStruct, LoggingObject):
+class CimTypeArray(vstruct.VStruct):
     def __init__(self, cim_type):
         vstruct.VStruct.__init__(self)
-        LoggingObject.__init__(self)
         self._type = cim_type
         self.count = v_uint32()
         self.elements = vstruct.VArray()
@@ -272,10 +297,10 @@ class QualifierReference(vstruct.VStruct):
 
     def __repr__(self):
         return "QualifierReference(type: {:s}, isBuiltinKey: {:b}, keyref: {:s})".format(
-                str(self.value_type),
-                self.is_builtin_key,
-                h(self.key)
-            )
+            str(self.value_type),
+            self.is_builtin_key,
+            hex(self.key)
+        )
 
 
 class QualifiersList(vstruct.VStruct):
@@ -302,11 +327,11 @@ class QualifiersList(vstruct.VStruct):
         raise NotImplementedError()
 
 
-
 class _ClassDefinitionProperty(vstruct.VStruct):
     """
     this is the on-disk property definition structure
     """
+
     def __init__(self):
         vstruct.VStruct.__init__(self)
         self.type = CimType()  # the on-disk type for this property's value
@@ -316,11 +341,12 @@ class _ClassDefinitionProperty(vstruct.VStruct):
         self.qualifiers = QualifiersList()
 
 
-class ClassDefinitionProperty(LoggingObject):
+class ClassDefinitionProperty(object):
     """
     this is the logical property object parsed from a standalone class definition.
     it is not aware of default values and inheritance behavior.
     """
+
     def __init__(self, class_def, propref):
         super(ClassDefinitionProperty, self).__init__()
         self._class_definition = class_def
@@ -363,7 +389,6 @@ class ClassDefinitionProperty(LoggingObject):
     @property
     def qualifiers(self):
         """ get dict of str to str """
-        # TODO: remove duplication
         ret = {}
         for i in range(self._prop.qualifiers.count):
             q = self._prop.qualifiers.qualifiers[i]
@@ -392,15 +417,15 @@ class PropertyReference(vstruct.VStruct):
         return BUILTIN_PROPERTIES.vsReverseMapping(key)
 
     def __repr__(self):
-       if self.is_builtin_property:
+        if self.is_builtin_property:
             return "PropertyReference(isBuiltinKey: true, name: {:s}, structref: {:s})".format(
                 self.builtin_property_name,
-                h(self.offset_property_struct))
-       else:
+                hex(self.offset_property_struct))
+        else:
             return "PropertyReference(isBuiltinKey: false, nameref: {:s}, structref: {:s})".format(
-                h(self.offset_property_name),
-                h(self.offset_property_struct))
- 
+                hex(self.offset_property_name),
+                hex(self.offset_property_struct))
+
 
 class PropertyReferenceList(vstruct.VStruct):
     def __init__(self):
@@ -489,14 +514,14 @@ class PropertyDefaultValues(vstruct.VArray):
             self.default_values_toc.vsAddElement(P())
 
 
-class DataRegion(vstruct.VStruct, LoggingObject):
+class DataRegion(vstruct.VStruct):
     """
     size field, then variable length of binary data.
     provides accessors for common types.
     """
+
     def __init__(self):
         vstruct.VStruct.__init__(self)
-        LoggingObject.__init__(self)
 
         self._size = v_uint32()
         self.data = v_bytes(size=0)
@@ -514,7 +539,7 @@ class DataRegion(vstruct.VStruct, LoggingObject):
     def get_string(self, ref):
         s = WMIString()
         s.vsParse(self.data, offset=int(ref))
-        return str(s.s)
+        return s.s
 
     def get_array(self, ref, item_type):
         Parser = item_type.value_parser
@@ -556,7 +581,7 @@ class DataRegion(vstruct.VStruct, LoggingObject):
             else:
                 return value
         else:
-            raise RuntimeError("unknown type: %s", str(value_type))
+            raise RuntimeError("unknown type: %s" % (str(value_type)))
 
     def get_qualifier_value(self, qualifier):
         return self.get_value(qualifier.value, qualifier.value_type)
@@ -567,10 +592,9 @@ class DataRegion(vstruct.VStruct, LoggingObject):
         return self.get_string(qualifier.key)
 
 
-class ClassDefinition(vstruct.VStruct, LoggingObject):
+class ClassDefinition(vstruct.VStruct):
     def __init__(self):
         vstruct.VStruct.__init__(self)
-        LoggingObject.__init__(self)
 
         self.header = ClassDefinitionHeader()
         self.qualifiers_list = QualifiersList()
@@ -598,7 +622,7 @@ class ClassDefinition(vstruct.VStruct, LoggingObject):
         for propname, prop in self.properties.items():
             for k, v in prop.qualifiers.items():
                 # TODO: don't hardcode BUILTIN_QUALIFIERS.PROP_KEY symbol name
-                if k == "PROP_QUALIFIER_KEY" and v == True:
+                if k == "PROP_QUALIFIER_KEY" and v is True:
                     ret.append(propname)
         return ret
 
@@ -650,6 +674,7 @@ class ClassDefinition(vstruct.VStruct, LoggingObject):
 
 class InstanceKey(object):
     """ the key that uniquely identifies an instance """
+
     def __init__(self):
         object.__setattr__(self, '_d', {})
 
@@ -670,12 +695,12 @@ class InstanceKey(object):
 
     def __str__(self):
         if len(self._d) == 0:
-            return ".default"
+            return "default"
         else:
             return ",".join(["{:s}={:s}".format(str(k), str(self[k])) for k in sorted(self._d.keys())])
 
 
-class ClassInstanceProperty(LoggingObject):
+class ClassInstanceProperty(object):
     def __init__(self, prop, class_instance, state, value):
         """
         :type prop:  ClassLayoutProperty
@@ -784,7 +809,6 @@ class Dynprops(vstruct.VStruct):
         return self._has_dynprops == DYNPROPS_STATE.HAS_DYNPROPS
 
     def vsParse(self, bytez, offset=0, fast=False):
-        soffset = offset
         offset = self["_has_dynprops"].vsParse(bytez, offset=offset)
         if not self.has_dynprops:
             return offset
@@ -801,17 +825,16 @@ class Dynprops(vstruct.VStruct):
         raise NotImplementedError()
 
 
-class ClassInstance(vstruct.VStruct, LoggingObject):
+class ClassInstance(vstruct.VStruct):
     def __init__(self, cim_type, class_layout):
         vstruct.VStruct.__init__(self)
-        LoggingObject.__init__(self)
 
         self._cim_type = cim_type
         self.class_layout = class_layout
 
-        if self._cim_type == CIM_TYPE_XP:
+        if self._cim_type == cim.CIM_TYPE_XP:
             self.name_hash = v_wstr(size=0x20)
-        elif self._cim_type == CIM_TYPE_WIN7:
+        elif self._cim_type == cim.CIM_TYPE_WIN7:
             self.name_hash = v_wstr(size=0x40)
         else:
             raise RuntimeError("Unexpected CIM type: " + str(self._cim_type))
@@ -857,19 +880,13 @@ class ClassInstance(vstruct.VStruct, LoggingObject):
     def properties(self):
         """ get dict of str to concrete Property values"""
         ret = {}
-        #print(self.class_layout.class_definition.class_name)
         for prop in self.class_layout.properties.values():
             state = self.property_state.get_by_index(prop.index)
-            #print(prop.name, state, prop)
             v = None
             if state.is_initialized:
                 if state.use_default_value:
                     v = prop.default_value
                 else:
-                    #print(hex(self.toc[prop.index]))
-                    #print(self.data.tree())
-                    #import hexdump
-                    #hexdump.hexdump(self.data.data)
                     v = self.data.get_value(self.toc[prop.index], prop.type)
             ret[prop.name] = ClassInstanceProperty(prop, self, state, v)
         return ret
@@ -885,14 +902,14 @@ class ClassInstance(vstruct.VStruct, LoggingObject):
         return ret
 
 
-class CoreClassInstance(vstruct.VStruct, LoggingObject):
+class CoreClassInstance(vstruct.VStruct):
     """
     begins with DWORD:0x0 and has no hash field
     seen at least for __NAMESPACE on an XP repo
     """
+
     def __init__(self, class_layout):
         vstruct.VStruct.__init__(self)
-        LoggingObject.__init__(self)
 
         self.class_layout = class_layout
         self._buf = None
@@ -949,7 +966,7 @@ class CoreClassInstance(vstruct.VStruct, LoggingObject):
         return self.data.get_value(self.toc[p.index], p.type)
 
 
-class ClassLayoutProperty(LoggingObject):
+class ClassLayoutProperty(object):
     def __init__(self, prop, class_layout):
         """
         :type prop:  ClassDefinitionProperty
@@ -1027,7 +1044,11 @@ class ClassLayoutProperty(LoggingObject):
             raise RuntimeError("unable to find ancestor class with default value")
 
 
-class ClassLayout(LoggingObject):
+class QueryError(ValueError):
+    pass
+
+
+class ClassLayout(object):
     def __init__(self, object_resolver, namespace, class_definition):
         """
         :type object_resolver: ObjectResolver
@@ -1072,7 +1093,7 @@ class ClassLayout(LoggingObject):
 
     @cached_property
     def properties(self):
-        props = {}  # type: Mapping[int, ClassLayoutProperty]
+        props = {}  # :type: Mapping[int, ClassLayoutProperty]
         for cl in self.derivation:
             for prop in cl.class_definition.properties.values():
                 props[prop.index] = ClassLayoutProperty(prop, self)
@@ -1089,24 +1110,43 @@ class ClassLayout(LoggingObject):
         return off
 
 
-class ObjectResolver(LoggingObject):
-    def __init__(self, cim, index):
+class ObjectResolver(object):
+    def __init__(self, repo, index=None):
+        """
+        Args:
+            repo (CIM): the CIM repository
+            index (cim.Index): the page index
+        """
         super(ObjectResolver, self).__init__()
-        self._cim = cim
-        self._index = index
 
-        self._cdcache = {}  # type: Mapping[str, ClassDefinition]
-        self._clcache = {}  # type: Mapping[str, ClassLayout]
+        self._repo = repo
+        if not index:
+            self._index = cim.Index(repo.cim_type, repo.logical_index_store)
+        else:
+            self._index = index
+
+        self._cdcache = {}  # :type: Mapping[str, ClassDefinition]
+        self._clcache = {}  # :type: Mapping[str, ClassLayout]
 
         # until we can correctly compute instance key hashes, maintain a cache mapping
         #   from encountered keys (serialized) to the instance hashes
-        self._ihashcache = {}  # type: Mapping[str,str]
+        self._ihashcache = {}  # :type: dict[str,str]
+
+    def hash(self, s):
+        if self._repo.cim_type == cim.CIM_TYPE_XP:
+            h = hashlib.md5()
+        elif self._repo.cim_type == cim.CIM_TYPE_WIN7:
+            h = hashlib.sha256()
+        else:
+            raise RuntimeError("Unexpected CIM type: {:s}".format(str(self._repo.cim_type)))
+        h.update(s)
+        return h.hexdigest().upper()
 
     def _build(self, prefix, name=None):
         if name is None:
             return prefix
         else:
-            return prefix + self._index.hash(name.upper().encode("UTF-16LE"))
+            return prefix + self.hash(name.upper().encode("UTF-16LE"))
 
     def NS(self, name=None):
         return self._build("NS_", name)
@@ -1136,12 +1176,14 @@ class ObjectResolver(LoggingObject):
 
     def get_object(self, query):
         """ fetch the first object buffer matching the query """
-        self.d("query: %s", str(query))
-        ref = one(self._index.lookup_keys(query))
-        if not ref:
-            raise IndexError("Failed to find: {:s}".format(str(query)))
-        # TODO: should ensure this query has a unique result
-        return self._cim.logical_data_store.get_object_buffer(ref)
+        logger.debug("query: %s", str(query))
+        refs = self._index.lookup_keys(query)
+        if not refs:
+            raise QueryError('not found: ' + str(query))
+        if refs and len(refs) > 1:
+            raise QueryError('too many results: ' + str(query))
+        ref = refs[0]
+        return self._repo.logical_data_store.get_object_buffer(ref)
 
     def get_keys(self, query):
         """ return a generator of keys matching the query """
@@ -1151,9 +1193,9 @@ class ObjectResolver(LoggingObject):
         """ return a generator of object buffers matching the query """
         for ref in self.get_keys(query):
             try:
-                yield ref, self._cim.logical_data_store.get_object_buffer(ref)
-            except IndexKeyNotFoundError:
-                self.w("Expected object not found in object store: %s", ref)
+                yield ref, self._repo.logical_data_store.get_object_buffer(ref)
+            except cim.IndexKeyNotFoundError:
+                logger.warning("Expected object not found in object store: %s", ref)
                 continue
 
     @property
@@ -1161,42 +1203,45 @@ class ObjectResolver(LoggingObject):
         return SYSTEM_NAMESPACE_NAME
 
     def get_cd_buf(self, namespace_name, class_name):
-        q = Key("{}/{}".format(
-                self.NS(namespace_name),
+        q = cim.Key("{}/{}".format(
+            self.NS(namespace_name),
+            self.CD(class_name)))
+
+        refs = self._index.lookup_keys(q)
+
+        if refs is None:
+            # some standard class definitions (like __NAMESPACE) are not in the
+            #   current NS, but in the __SystemClass NS. So we try that one, too.
+            logger.debug("didn't find %s in %s, retrying in %s", class_name, namespace_name, SYSTEM_NAMESPACE_NAME)
+            q = cim.Key("{}/{}".format(
+                self.NS(SYSTEM_NAMESPACE_NAME),
                 self.CD(class_name)))
-        # TODO: should ensure this query has a unique result
-        ref = one(self._index.lookup_keys(q))
+        elif refs and len(refs) > 1:
+            raise QueryError('to many results: ' + str(q))
 
-        # some standard class definitions (like __NAMESPACE) are not in the
-        #   current NS, but in the __SystemClass NS. So we try that one, too.
-
-        if ref is None:
-            self.d("didn't find %s in %s, retrying in %s", class_name, namespace_name, SYSTEM_NAMESPACE_NAME)
-            q = Key("{}/{}".format(
-                    self.NS(SYSTEM_NAMESPACE_NAME),
-                    self.CD(class_name)))
         return self.get_object(q)
 
     def get_cd(self, namespace_name, class_name):
         c_id = get_class_id(namespace_name, class_name)
         c_cd = self._cdcache.get(c_id, None)
         if c_cd is None:
-            self.d("cdcache miss")
+            logger.debug("cdcache miss")
 
-            q = Key("{}/{}".format(
-                    self.NS(namespace_name),
+            q = cim.Key("{}/{}".format(
+                self.NS(namespace_name),
+                self.CD(class_name)))
+
+            refs = self._index.lookup_keys(q)
+            if refs and len(refs) > 1:
+                raise QueryError('too many results: ' + str(q))
+            elif not refs:
+                # some standard class definitions (like __NAMESPACE) are not in the
+                #   current NS, but in the __SystemClass NS. So we try that one, too.
+                logger.debug("didn't find %s in %s, retrying in %s", class_name, namespace_name, SYSTEM_NAMESPACE_NAME)
+                q = cim.Key("{}/{}".format(
+                    self.NS(SYSTEM_NAMESPACE_NAME),
                     self.CD(class_name)))
-            # TODO: should ensure this query has a unique result
-            ref = one(self._index.lookup_keys(q))
 
-            # some standard class definitions (like __NAMESPACE) are not in the
-            #   current NS, but in the __SystemClass NS. So we try that one, too.
-
-            if ref is None:
-                self.d("didn't find %s in %s, retrying in %s", class_name, namespace_name, SYSTEM_NAMESPACE_NAME)
-                q = Key("{}/{}".format(
-                        self.NS(SYSTEM_NAMESPACE_NAME),
-                        self.CD(class_name)))
             c_cdbuf = self.get_object(q)
             c_cd = ClassDefinition()
             c_cd.vsParse(c_cdbuf)
@@ -1206,11 +1251,13 @@ class ObjectResolver(LoggingObject):
     def get_cl(self, namespace_name, class_name):
         c_id = get_class_id(namespace_name, class_name)
         c_cl = self._clcache.get(c_id, None)
+
         if not c_cl:
-            self.d("clcache miss")
+            logger.debug("clcache miss")
             c_cd = self.get_cd(namespace_name, class_name)
             c_cl = ClassLayout(self, namespace_name, c_cd)
             self._clcache[c_id] = c_cl
+
         return c_cl
 
     def get_ci(self, namespace_name, class_name, instance_key):
@@ -1218,10 +1265,10 @@ class ObjectResolver(LoggingObject):
         #    has not been described correctly..
 
         # CI or KI?
-        q = Key("{}/{}/{}".format(
-                    self.NS(namespace_name),
-                    self.CI(class_name),
-                    self.IL(known_hash=self._ihashcache.get(str(instance_key), ""))))
+        q = cim.Key("{}/{}/{}".format(
+            self.NS(namespace_name),
+            self.CI(class_name),
+            self.IL(known_hash=self._ihashcache.get(str(instance_key), ""))))
 
         cl = self.get_cl(namespace_name, class_name)
         for _, buf in self.get_objects(q):
@@ -1231,6 +1278,7 @@ class ObjectResolver(LoggingObject):
                 if instance.get_property(k).value != instance_key[k]:
                     this_is_it = False
                     break
+
             if this_is_it:
                 return instance
 
@@ -1240,10 +1288,10 @@ class ObjectResolver(LoggingObject):
         # TODO: this is a major hack!
 
         # CI or KI?
-        q = Key("{}/{}/{}".format(
-                    self.NS(namespace_name),
-                    self.CI(class_name),
-                    self.IL(known_hash=self._ihashcache.get(str(instance_key), ""))))
+        q = cim.Key("{}/{}/{}".format(
+            self.NS(namespace_name),
+            self.CI(class_name),
+            self.IL(known_hash=self._ihashcache.get(str(instance_key), ""))))
 
         cl = self.get_cl(namespace_name, class_name)
         for _, buf in self.get_objects(q):
@@ -1270,28 +1318,31 @@ class ObjectResolver(LoggingObject):
         if buf[0x0:0x4] == "\x00\x00\x00\x00":
             i = CoreClassInstance(cl)
         else:
-            i = ClassInstance(self._cim.cim_type, cl)
+            i = ClassInstance(self._repo.cim_type, cl)
         i.vsParse(buf)
         return i
 
     NamespaceSpecifier = namedtuple("NamespaceSpecifier", ["namespace_name"])
+
     def get_ns_children_ns(self, namespace_name):
-        q = Key("{}/{}/{}".format(
-                    self.NS(namespace_name),
-                    self.CI(NAMESPACE_CLASS_NAME),
-                    self.IL()))
+        q = cim.Key("{}/{}/{}".format(
+            self.NS(namespace_name),
+            self.CI(NAMESPACE_CLASS_NAME),
+            self.IL()))
 
         for ref, ns_i in self.get_objects(q):
             i = self.parse_instance(self.ns_cl, ns_i)
             yield self.NamespaceSpecifier(namespace_name + "\\" + i.get_property("Name").value)
+
         if namespace_name == ROOT_NAMESPACE_NAME:
             yield self.NamespaceSpecifier(SYSTEM_NAMESPACE_NAME)
 
     ClassDefinitionSpecifier = namedtuple("ClassDefintionSpecifier", ["namespace_name", "class_name"])
+
     def get_ns_children_cd(self, namespace_name):
-        q = Key("{}/{}".format(
-                    self.NS(namespace_name),
-                    self.CD()))
+        q = cim.Key("{}/{}".format(
+            self.NS(namespace_name),
+            self.CD()))
 
         for _, cdbuf in self.get_objects(q):
             cd = ClassDefinition()
@@ -1299,20 +1350,21 @@ class ObjectResolver(LoggingObject):
             yield self.ClassDefinitionSpecifier(namespace_name, cd.class_name)
 
     ClassInstanceSpecifier = namedtuple("ClassInstanceSpecifier", ["namespace_name", "class_name", "instance_key"])
+
     def get_cd_children_ci(self, namespace_name, class_name):
         # TODO: CI or KI?
-        q = Key("{}/{}/{}".format(
-                    self.NS(namespace_name),
-                    self.CI(class_name),
-                    self.IL()))
+        q = cim.Key("{}/{}/{}".format(
+            self.NS(namespace_name),
+            self.CI(class_name),
+            self.IL()))
 
         for ref, ibuf in self.get_objects(q):
-            g_logger.debug("result for %s:%s:  %s", namespace_name, class_name, ref)
+            logger.debug("result for %s:%s:  %s", namespace_name, class_name, ref)
             try:
                 instance = self.parse_instance(self.get_cl(namespace_name, class_name), ibuf)
             except:
-                g_logger.error("failed to parse instance: %s %s at %s", namespace_name, class_name, ref)
-                g_logger.error(traceback.format_exc())
+                logger.error("failed to parse instance: %s %s at %s", namespace_name, class_name, ref)
+                logger.error(traceback.format_exc())
                 continue
 
             # str(instance.key) is sorted k-v pairs, should be unique
@@ -1327,8 +1379,7 @@ def get_class_id(namespace, classname):
 ObjectPath = namedtuple("ObjectPath", ["hostname", "namespace", "klass", "instance"])
 
 
-
-class TreeNamespace(LoggingObject):
+class TreeNamespace(object):
     def __init__(self, object_resolver, name):
         super(TreeNamespace, self).__init__()
         self._object_resolver = object_resolver
@@ -1390,6 +1441,8 @@ class TreeNamespace(LoggingObject):
 
     def parse_object_path(self, object_path):
         """
+        given a textual query string, parse it into an object path that we can query.
+       
         supported schemas:
             cimv2 --> namespace
             //./root/cimv2 --> namespace
@@ -1403,6 +1456,12 @@ class TreeNamespace(LoggingObject):
         we'd like to support this, but can't differentiate this
           from a class:
             //./root/cimv2/Win32_Service --> class
+             
+        Args:
+            object_path (str): the textual query string.
+
+        Returns:
+            ObjectPath: a path we can use to query.
         """
         o_object_path = object_path
         object_path = object_path.replace("\\", "/")
@@ -1413,7 +1472,6 @@ class TreeNamespace(LoggingObject):
 
         hostname = "localhost"
         namespace = self.name
-        classname = ""
         instance = {}
 
         is_rooted = False
@@ -1459,7 +1517,7 @@ class TreeNamespace(LoggingObject):
                         self.class_(object_path)
                         namespace = self.name
                     except IndexError:
-                        raise RuntimeError("Unknown ObjectPath schema: %s" % (o_object_path))
+                        raise RuntimeError("Unknown ObjectPath schema: %s" % o_object_path)
 
         # Win32_Service --> class
         # Win32_Service.Name="Beep" --> instance
@@ -1486,16 +1544,16 @@ class TreeNamespace(LoggingObject):
                                      object_path.instance)
         elif object_path.klass:
             return TreeClassDefinition(self._object_resolver,
-                                      object_path.namespace,
-                                      object_path.klass)
+                                       object_path.namespace,
+                                       object_path.klass)
         elif object_path.namespace:
-             return TreeClassDefinition(self._object_resolver,
+            return TreeClassDefinition(self._object_resolver,
                                        object_path.namespace)
         else:
             raise RuntimeError("Invalid ObjectPath: {:s}".format(str(object_path)))
 
 
-class TreeClassDefinition(LoggingObject):
+class TreeClassDefinition(object):
     def __init__(self, object_resolver, namespace, name):
         super(TreeClassDefinition, self).__init__()
         self._object_resolver = object_resolver
@@ -1528,14 +1586,8 @@ class TreeClassDefinition(LoggingObject):
                 yielded.add(key)
                 yield TreeClassInstance(self._object_resolver, self.ns, ci.class_name, ci.instance_key)
 
-    def __getattr__(self, attr):
-        try:
-            return super(TreeClassDefinition, self).__getattr__(attr)
-        except AttributeError:
-            return getattr(self.cd, attr)
 
-
-class TreeClassInstance(LoggingObject):
+class TreeClassInstance(object):
     def __init__(self, object_resolver, namespace_name, class_name, instance_key):
         super(TreeClassInstance, self).__init__()
         self._object_resolver = object_resolver
@@ -1546,6 +1598,10 @@ class TreeClassInstance(LoggingObject):
     def __repr__(self):
         return "\\{namespace:s}:{klass:s}.{key:s}".format(
             namespace=self.ns, klass=self.class_name, key=repr(self.instance_key))
+
+    def __str__(self):
+        return "\\{namespace:s}:{klass:s}.{key:s}".format(
+            namespace=self.ns, klass=self.class_name, key=str(self.instance_key))
 
     @property
     def parent(self):
@@ -1571,10 +1627,10 @@ class TreeClassInstance(LoggingObject):
             return getattr(self.ci, attr)
 
 
-class Tree(LoggingObject):
-    def __init__(self, cim):
+class Tree(object):
+    def __init__(self, repo):
         super(Tree, self).__init__()
-        self._object_resolver = ObjectResolver(cim, Index(cim.cim_type, cim.logical_index_store))
+        self._object_resolver = ObjectResolver(repo)
 
     def __repr__(self):
         return "Tree"
@@ -1585,17 +1641,16 @@ class Tree(LoggingObject):
         return TreeNamespace(self._object_resolver, ROOT_NAMESPACE_NAME)
 
 
-class Namespace(LoggingObject):
-    def __init__(self, cim, namespace_name):
-        super(Namespace, self).__init__()
-        self._cim = cim
-        self._name = namespace_name
-        self._i = Index(self._cim.cim_type, self._cim.logical_index_store)
-        self._o = ObjectResolver(self._cim, self._i)
+@contextlib.contextmanager
+def Namespace(repo, namespace_name):
+    """
+    operate on the given namespace.
+    
+    Args:
+        repo: the CIM repository.
+        namespace_name:  the namespace name to open.
 
-    def __enter__(self):
-        return TreeNamespace(self._o, self._name)
-
-    def __exit__(self, exc_type, exc_val, exc_tb):
-        return
-
+    Returns:
+        TreeNamespace: the namespace.
+    """
+    yield TreeNamespace(ObjectResolver(repo), namespace_name)

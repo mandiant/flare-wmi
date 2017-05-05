@@ -1,0 +1,6 @@
+*.MAP filter=lfs diff=lfs merge=lfs -text
+*.map filter=lfs diff=lfs merge=lfs -text
+*.BTR filter=lfs diff=lfs merge=lfs -text
+*.btr filter=lfs diff=lfs merge=lfs -text
+*.DATA filter=lfs diff=lfs merge=lfs -text
+*.data filter=lfs diff=lfs merge=lfs -text

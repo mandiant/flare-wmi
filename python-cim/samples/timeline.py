@@ -1,10 +1,12 @@
 import logging
 import traceback
 
-g_logger = logging.getLogger("cim.timeline")
 
 from cim import CIM
 from cim.objects import Tree
+
+
+logger = logging.getLogger("cim.timeline")
 
 
 def format_ts(ts):
@@ -22,7 +24,7 @@ def rec_namespace(namespace):
                 print("{ts:s},ClassInstance.timestamp2,{id:s}".format(
                     ts=format_ts(instance.ci.ts2), id=repr(instance)))
             except:
-                g_logger.error(traceback.format_exc())
+                logger.error(traceback.format_exc())
     for ns in namespace.namespaces:
         rec_namespace(ns)
 
@@ -39,4 +41,5 @@ def main(type_, path):
 if __name__ == "__main__":
     logging.basicConfig(level=logging.INFO)
     import sys
+
     main(*sys.argv[1:])

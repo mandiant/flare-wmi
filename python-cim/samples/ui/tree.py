@@ -29,6 +29,7 @@ class Item(object):
 
 class ListItem(Item):
     """ a node in a list of nodes whose children will be dynamically loaded """
+
     def __init__(self, name, getter):
         super(ListItem, self).__init__()
         self._name = name
@@ -81,6 +82,7 @@ class TestItem(Item):
 
 class TreeNode(object):
     """ adapter from Item to QAbstractItemModel interface """
+
     def __init__(self, parent, data):
         super(TreeNode, self).__init__()
         self._parent = parent
@@ -109,12 +111,15 @@ class TreeNode(object):
 
 
 _ColumnDef = namedtuple("ColumnDef", ["displayName", "attributeName", "formatter"])
+
+
 def ColumnDef(displayName, attributeName, formatter=str):
     return _ColumnDef(displayName, attributeName, formatter)
 
 
 class TreeModel(QAbstractItemModel):
     """ adapter from Item to QAbstractItemModel interface """
+
     def __init__(self, root, columns, parent=None):
         super(TreeModel, self).__init__(parent)
         self._root = TreeNode(None, root)
@@ -205,5 +210,3 @@ class TreeModel(QAbstractItemModel):
           a reference to the model :-(.
         """
         return self._getIndexItem(itemIndex.internalId()).data
-
-

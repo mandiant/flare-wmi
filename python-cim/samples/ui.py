@@ -35,7 +35,6 @@ from ui.tree import TreeModel
 from ui.tree import ColumnDef
 from ui.uicommon import emptyLayout
 
-
 Context = namedtuple("Context", ["cim", "index", "object_resolver"])
 
 
@@ -77,7 +76,7 @@ class PhysicalDataPagesItem(Item):
     @cached_property
     def children(self):
         return [PhysicalDataPageItem(self._ctx, i) for i in
-                    range(self._ctx.cim.data_mapping.header.physical_page_count)]
+                range(self._ctx.cim.data_mapping.map.header.physical_page_count)]
 
     @property
     def type(self):
@@ -138,7 +137,7 @@ class LogicalDataPagesItem(Item):
     @cached_property
     def children(self):
         return [LogicalDataPageItem(self._ctx, i) for i in
-                    range(self._ctx.cim.data_mapping.header.mapping_entry_count)]
+                range(self._ctx.cim.data_mapping.map.header.mapping_entry_count)]
 
     @property
     def type(self):
@@ -179,9 +178,9 @@ class PhysicalIndexPageItem(Item):
         page = IndexPage(None, self.index)  # note: we're faking the logical_page_number here
         page.vsParse(self.data)
         if page.header.sig == INDEX_PAGE_TYPES.PAGE_TYPE_ACTIVE:
-            return (VstructInstance(0x0, page, "page"),)
+            return VstructInstance(0x0, page, "page"),
         else:
-            return (VstructInstance(0x0, page.header, "header"), )
+            return VstructInstance(0x0, page.header, "header"),
 
 
 class PhysicalIndexPagesItem(Item):
@@ -195,10 +194,10 @@ class PhysicalIndexPagesItem(Item):
 
     @cached_property
     def children(self):
-        mapping = self._ctx.cim.index_mapping
+        mapping = self._ctx.cim.index_mapping.map
         # TODO: does this get all of them?
         return [PhysicalIndexPageItem(self._ctx, i) for i in
-                    range(mapping.header.mapping_entry_count + mapping.free_dword_count)]
+                range(mapping.header.mapping_entry_count + mapping.free_dword_count)]
 
     @property
     def type(self):
@@ -238,9 +237,9 @@ class LogicalIndexPageItem(Item):
     def structs(self):
         page = self._ctx.cim.logical_index_store.get_page(self.index)
         if page.header.sig == INDEX_PAGE_TYPES.PAGE_TYPE_ACTIVE:
-            return (VstructInstance(0x0, page, "page"),)
+            return VstructInstance(0x0, page, "page"),
         else:
-            return (VstructInstance(0x0, page.header, "header"), )
+            return VstructInstance(0x0, page.header, "header"),
 
 
 class LogicalIndexPagesItem(Item):
@@ -255,7 +254,7 @@ class LogicalIndexPagesItem(Item):
     @cached_property
     def children(self):
         return [LogicalIndexPageItem(self._ctx, i) for i in
-                    range(self._ctx.cim.index_mapping.header.mapping_entry_count)]
+                range(self._ctx.cim.index_mapping.map.header.mapping_entry_count)]
 
     @property
     def type(self):
@@ -364,7 +363,7 @@ class IndexRootItem(Item):
     def children(self):
         return [
             IndexNodeItem(self._ctx,
-                self._ctx.cim.logical_index_store.root_page_number),
+                          self._ctx.cim.logical_index_store.root_page_number),
         ]
 
     @property
@@ -443,7 +442,6 @@ class ClassInstanceListItem(Item):
         for instance in cd.instances:
             ret.append(ClassInstanceItem(self._ctx, self._ns, self._class, instance.instance_key))
         return sorted(ret, key=lambda r: r.name)
-
 
     @property
     def type(self):
@@ -756,11 +754,11 @@ class CimUiForm(QWidget, LoggingObject):
         super(CimUiForm, self).__init__(parent)
         self._ctx = ctx
         self._tree_model = TreeModel(
-                CimRootItem(ctx),
-                [
-                    ColumnDef("Name", "name"),
-                    ColumnDef("Type", "type"),
-                ])
+            CimRootItem(ctx),
+            [
+                ColumnDef("Name", "name"),
+                ColumnDef("Type", "type"),
+            ])
 
         # TODO: maybe subclass the loaded .ui and use that instance directly
 
@@ -906,7 +904,8 @@ class CimUiForm(QWidget, LoggingObject):
         if self._save_buffer is None:
             return
 
-        filename, filter = QFileDialog.getSaveFileName(self, "Save binary...", QDir.currentPath(), "Binary files (*.bin)")
+        filename, filter = QFileDialog.getSaveFileName(self, "Save binary...", QDir.currentPath(),
+                                                       "Binary files (*.bin)")
         if not filename:
             return
 
@@ -933,4 +932,5 @@ def main(type_, path):
 
 if __name__ == "__main__":
     import sys
+
     main(*sys.argv[1:])

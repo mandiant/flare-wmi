@@ -16,7 +16,8 @@ class LoggingObject(object):
         self._logger = logging.getLogger("{:s}.{:s}".format(
             self.__module__, self.__class__.__name__))
 
-    def _getCallerFunction(self):
+    @staticmethod
+    def _getCallerFunction():
         FUNCTION_NAME_INDEX = 3
         return inspect.stack()[3][FUNCTION_NAME_INDEX]
 
@@ -33,7 +34,7 @@ class LoggingObject(object):
 
     def w(self, *args, **kwargs):
         if self._logger.isEnabledFor(logging.WARN):
-            self._logger.warn(*self._formatFormatString(args), **kwargs)
+            self._logger.warning(*self._formatFormatString(args), **kwargs)
 
     def e(self, *args, **kwargs):
         if self._logger.isEnabledFor(logging.ERROR):

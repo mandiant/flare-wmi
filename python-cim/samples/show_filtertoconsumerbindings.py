@@ -26,8 +26,8 @@ def main(type_, path):
                 print("    payload: ", consumer.properties["CommandLineTemplate"].value)
 
 
-
 if __name__ == "__main__":
     logging.basicConfig(level=logging.INFO)
     import sys
+
     main(*sys.argv[1:])

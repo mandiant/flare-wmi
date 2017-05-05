@@ -1,0 +1,20 @@
+env:
+language: python
+
+matrix:
+    include:
+        - os: linux
+          sudo: required
+          python: 2.7
+
+        - os: linux
+          sudo: required
+          python: 3.5
+
+install:
+    - pip install pep8
+    - pip install -e ./python-cim
+
+script:
+    - find . -name \*.py -exec pep8 --ignore=E501 {} \;
+    - py.test ./python-cim/tests/ -v

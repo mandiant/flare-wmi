@@ -17,7 +17,7 @@ def dump_definition(cd, cl):
     for k, v in cd.qualifiers.items():
         ret.append("  %s: %s" % (k, str(v)))
     ret.append("properties:")
-    for propname, prop in sorted(cd.properties.items(), key=lambda p:p[1].index):
+    for propname, prop in sorted(cd.properties.items(), key=lambda p: p[1].index):
         ret.append("  name: %s" % prop.name)
         ret.append("    type: %s" % prop.type)
         ret.append("    index: %s" % prop.index)
@@ -29,7 +29,7 @@ def dump_definition(cd, cl):
     ret.append("layout:")
     off = 0
     if cl is not None:
-        for prop in sorted(cl.properties.values(), key=lambda p:p.index):
+        for prop in sorted(cl.properties.values(), key=lambda p: p.index):
             ret.append("  (%s)   %s %s" % (h(off), prop.type, prop.name))
             if prop.type.is_array:
                 off += 0x4
@@ -38,7 +38,7 @@ def dump_definition(cd, cl):
     ret.append("=" * 80)
     ret.append("keys:")
     for key in cd.keys:
-        ret.append("  %s" % (key))
+        ret.append("  %s" % key)
     ret.append("=" * 80)
     ret.append(cd.tree())
     return "\n".join(ret)
@@ -59,7 +59,7 @@ def dump_layout(cd, cl):
     for k, v in cd.qualifiers.items():
         ret.append("  %s: %s" % (k, str(v)))
     ret.append("properties:")
-    for propname, prop in sorted(cl.properties.items(), key=lambda p:p[1].index):
+    for propname, prop in sorted(cl.properties.items(), key=lambda p: p[1].index):
         ret.append("  name: %s" % prop.name)
         ret.append("    type: %s" % prop.type)
         ret.append("    index: %s" % prop.index)
@@ -72,11 +72,11 @@ def dump_layout(cd, cl):
         if prop.has_default_value:
             ret.append("      is inherited: %s" % str(prop.is_inherited))
             dv = str(prop.default_value)
-            ret.append("      default value: %s" % (dv))
+            ret.append("      default value: %s" % dv)
     ret.append("layout:")
     off = 0
     if cl is not None:
-        for prop in sorted(cl.properties.values(), key=lambda p:p.index):
+        for prop in sorted(cl.properties.values(), key=lambda p: p.index):
             ret.append("  (%s)   %s %s" % (h(off), prop.type, prop.name))
             if prop.type.is_array:
                 off += 0x4
@@ -85,7 +85,7 @@ def dump_layout(cd, cl):
     ret.append("=" * 80)
     ret.append("keys:")
     for key in cd.keys:
-        ret.append("  %s" % (key))
+        ret.append("  %s" % key)
     ret.append("=" * 80)
     ret.append(cd.tree())
     return "\n".join(ret)
