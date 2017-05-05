@@ -220,7 +220,7 @@ class CimType(vstruct.VStruct):
         elif self.type == CIM_TYPES.CIM_TYPE_REFERENCE:
             return v_uint32
         else:
-            raise RuntimeError("unknown type: %s", hex(self.type))
+            raise RuntimeError("unknown type: %s" % (hex(self.type)))
 
     @property
     def value_parser(self):
@@ -235,7 +235,7 @@ class CimType(vstruct.VStruct):
             r += "arrayref to "
         typename = CIM_TYPES.vsReverseMapping(self.type)
         if typename is None:
-            raise RuntimeError("unknown type: %s", hex(self.type))
+            raise RuntimeError("unknown type: %s" % (hex(self.type)))
         r += typename
         return r
 
@@ -581,7 +581,7 @@ class DataRegion(vstruct.VStruct):
             else:
                 return value
         else:
-            raise RuntimeError("unknown type: %s", str(value_type))
+            raise RuntimeError("unknown type: %s" % (str(value_type)))
 
     def get_qualifier_value(self, qualifier):
         return self.get_value(qualifier.value, qualifier.value_type)
