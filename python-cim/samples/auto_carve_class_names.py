@@ -196,7 +196,7 @@ def main(argv=None):
                 logger.debug('failed: %s', str(e), exc_info=True)
                 continue
 
-    for carve in sorted(carves, key=lambda c: c.timestamp, reverse=True):
+    for carve in sorted(carves, key=lambda c: c.timestamp):
         print('{ts:s}\t{name:s}'.format(name=carve.class_name, ts=carve.timestamp.isoformat('T')))
 
     return 0
