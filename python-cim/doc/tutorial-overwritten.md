@@ -1,8 +1,9 @@
 # tutorial: recovering data from an overwritten class
 
-consider the example available in `tests/repos/win7/overwritten-instance`.
+
+consider the example data available in [tests/repos/win7/overwritten-instance](../tests/repos/win7/overwritten-instance).
 it simulates an actor that creates a malicious WMI class and uses it to store data.
-the "malicious" script `overwrite_test.ps1` does the following:
+the "malicious" script [overwrite_test1.ps1](../tests/repos/win7/overwritten-instance/overwrite_test1.ps1) does the following:
   1. creates a static class named `testClass`,
   2. creates the property `TestProp`,
   3. stores some data in it,
