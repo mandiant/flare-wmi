@@ -12,7 +12,7 @@ You should review the scripts in the [samples directory](./samples) and the [tes
 
 For example, you can use `python-cim` to [extract malicious code configured for persistence](./samples/show_filtertoconsumerbindings.py) ([doc](https://www.fireeye.com/content/dam/fireeye-www/global/en/current-threats/pdfs/wp-windows-management-instrumentation.pdf)),
  [identify commonly executed software](./samples/show_CCM_RecentlyUsedApps.py) ([doc](https://www.fireeye.com/blog/threat-research/2016/12/do_you_see_what_icc.html)),
- and [recover deleted data](./doc/data-recover.md).
+ and [recover deleted data](./doc/data-recovery.md).
 
 
 Installation
