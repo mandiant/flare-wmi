@@ -19,7 +19,7 @@ we can use these data recovery techniques to extract forensic artifacts of an in
         continue reading.
      2. carve metadata from unallocated pages and slack spaces and look for anomalies.
         the section on [dumping unused space](./dump-unused-space.md) discusses how to extract these raw bytes, while
-        the tutorial on [carving class names](.) describes using tools that are purpose-built for carving from unused space.
+        the tutorial on [carving class names](./tutorial-wmikatz.md) describes using tools that are purpose-built for carving from unused space.
         review the artifact timeline and correlate events with external activity.
         once you find interesting class or property names, continue with step (2).
      3. extract strings from unallocated pages and slack spaces and manually review.

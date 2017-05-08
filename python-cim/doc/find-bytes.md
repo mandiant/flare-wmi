@@ -27,7 +27,7 @@ hex dumps of these pages can help you identify suspicious wmi repository objects
 here are some of the search terms that i like to use:
 
   - `<#`: the powershell block comment separator.
-  - `==`: the base64 padding characters. also used in source code for the equals operator.
+  - `==`: the base64 padding characters. also used in source code for the equality operator.
   - `TVqQAA`: the common MZ header `4D 5A 90 00` base64 encoded.
   - `ps1`: the powershell file extension.
   - `mattifestation`: the online persona for some hacker.
