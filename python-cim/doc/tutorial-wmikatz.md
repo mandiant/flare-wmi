@@ -1,31 +1,25 @@
 # tutorial: recovering evidence of the wmikatz hacking utility
 
-# TODO: link to samples and directories
-
-
 ## background scenario
 
 consider the example data available in [tests/repos/win7/wmikatz](../tests/repos/win7/wmikatz).
 it contains a wmi repository in which a malicious actor has installed and used a variant of the Mimikatz credential stealer.
-the malware script [tests/repos/win7/wmikatz/wmim2.ps1](../tests/repos/win7/wmikatz/wmim2.ps1_) does the following:
-  1. decodes mimikatz from an embedded base64 string, and
-  2. if run with the `local` flag: runs mimikatz, prints results, and exits.
-  3. if run with the `get` flag: fetches data from the (possibly remote) WMI object: `\\$computer\root\cimv2:Win32_AuditCode`.
-  4. if run with the `delete` flag: deletes data from the (possibly remote) WMI object: `\\$computer\root\cimv2:Win32_AuditCode`.
-  5. otherwise, it:
-    1. writes the mimikatz payload into the (possibly remote) WMI object: `\\$computer\root\cimv2:Win32_AuditCode`, and
-    2. runs a (possibly remote) powershell command as a new process via WMI to invoke mimikatz and save the result, and
-    3. fetches the results from the (possibly remote) WMI object: `\\$computer\root\cimv2:Win32_AuditCode`, and
-    4. prints the results.
+the malware script [wmim2.ps1](../tests/repos/win7/wmikatz/wmim2.ps1_) does the following:
 
-we might wonder "do we have any change at recovering the original payloads?". let's find out!
-
-first, here is the source code to the "malicious" script:
+  - decodes mimikatz from an embedded base64 string, and
+  - if run with the `local` flag: runs mimikatz, prints results, and exits.
+  - if run with the `get` flag: fetches data from the (possibly remote) WMI object `\\$computer\root\cimv2:Win32_AuditCode`.
+  - if run with the `delete` flag: deletes data from the (possibly remote) WMI object `\\$computer\root\cimv2:Win32_AuditCode`.
+  - otherwise, it:
+    - writes the mimikatz payload into the (possibly remote) WMI object `\\$computer\root\cimv2:Win32_AuditCode`, and
+    - runs a (possibly remote) powershell command as a new process via WMI to invoke mimikatz and save the result, and
+    - fetches the results from the (possibly remote) WMI object `\\$computer\root\cimv2:Win32_AuditCode`, and
+    - prints the results.
 
 
 ## analysis
 
-now lets imagine that we have haven't seen the script, and are unaware as to what it does.
+*now lets imagine that we have haven't seen the script*, and are unaware as to what it does.
 all we have is the possibly-infected wmi repository, and a suspicion that something bad happened in early 2017.
 what information can we recover that would confirm compromise and indicate its scope?
 
@@ -241,13 +235,13 @@ classname: RSoP_PolicySettingLink
 ```
 
 unfortunately, the script was not able to recover `Win32_AuditCode`.
-perhaps this is the class definition contains a large amount of static property data that overflowed into multiple pages.
+perhaps this is the class definition contains a large amount of static property data that overflowed across multiple pages.
 its not currently possible to recover the mapping of unallocated physical pages to their past logical page number.
 
 instead, we must use manual techniques to recover the class definition.
 this strategy is also detailed in the [overwritten objects tutorial](./tutorial-overwritten.md).
 
-
+find the structures or regions that reference the class name:
 
 ```
  $ python find_bytes.py . "Win32_AuditCode"
@@ -255,8 +249,7 @@ found hit on physical page 0xd0 at offset 0x6e
   this page not mapped to a logical page (unallocated page)
 ```
 
-
-
+review the region manually, and note it looks like a class definition:
 
 ```
 $ python dump_page.py --addressing_mode physical . 0xd0 | xxd
@@ -395,7 +388,7 @@ fortunately, by googling around, we're able to determine which script is stored 
 
 ## pivoting
 
-now that we know that we are dealing with invoke-mimikatz, lets see where mimikatz is referenced in the repository.
+now that we know that we are dealing with invoke-mimikatz, lets see where the term "mimikatz" is referenced within the repository.
 has it been installed only once? or perhaps multiple times?
 
 ```
@@ -414,7 +407,7 @@ found hit on physical page 0xd0 at offset 0x109
   this page not mapped to a logical page (unallocated page)
 ```
 
-we've already reviewed physical page 0xd0, so lets focus on 0x67d, 0x70b, and 0x70d.
+we've already reviewed physical page 0xd0, so lets focus on physical pages 0x67d, 0x70b, and 0x70d.
 
 
 ### physical page 0x67d
@@ -715,7 +708,7 @@ Bye!
 ## other findings
 
 with some luck, we can maybe find some other interesting regions.
-the section on [searching for bytes](./find-bytes.md) has more examples of this techniques.
+the section on [searching for bytes](./find-bytes.md) has more examples of these techniques.
 
 
 ### search: base64 padding:
