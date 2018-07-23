@@ -18,12 +18,19 @@ def main(type_, path):
             consumer = ns.get(ns.parse_object_path(consumerref))
 
             print("  filter: ", filter)
-            print("    language: ", filter.properties["QueryLanguage"].value)
-            print("    query: ", filter.properties["Query"].value)
+            try:
+                print("    language: ", filter.properties["QueryLanguage"].value)
+                print("    query: ", filter.properties["Query"].value)
+            except IndexError:
+                print("    not found.")
+
 
             print("  consumer: ", consumer)
-            if "CommandLineTemplate" in consumer.properties:
-                print("    payload: ", consumer.properties["CommandLineTemplate"].value)
+            try:
+                if "CommandLineTemplate" in consumer.properties:
+                    print("    payload: ", consumer.properties["CommandLineTemplate"].value)
+            except IndexError:
+                print("    not found.")
 
 
 if __name__ == "__main__":
