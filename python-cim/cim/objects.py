@@ -1624,7 +1624,8 @@ class TreeClassInstance(object):
         try:
             return super(TreeClassInstance, self).__getattr__(attr)
         except AttributeError:
-            return getattr(self.ci, attr)
+            pass
+        return getattr(self.ci, attr)
 
 
 class Tree(object):
